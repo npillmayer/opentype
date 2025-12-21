@@ -116,6 +116,18 @@ func extractLayoutInfo(otf *Font) error {
 	otf.Layout.GDef = otf.tables[T("GDEF")].Self().AsGDef()
 	//otf.Layout.Base = otf.tables[T("BASE")].Self().AsBase()
 	//otf.Layout.Jstf = otf.tables[T("JSTF")].Self().AsJstf()
+
+	// GDEF must have valid version and at least one definition table
+	major, minor := otf.Layout.GDef.Header().Version()
+	if major != 1 || minor > 3 {
+		return errFontFormat("unsupported GDEF version")
+	}
+	// GSUB/GPOS must have ScriptList, FeatureList, and LookupList
+	gsub := otf.Layout.GSub
+	if gsub.ScriptList.IsVoid() || gsub.FeatureList.Len() == 0 {
+		return errFontFormat("GSUB table missing required lists")
+	}
+
 	return nil
 }
 

@@ -262,7 +262,27 @@ type tagList struct {
 }
 
 func parseTagList(b binarySegm) tagList {
-	tl := tagList{Count: int(u16(b))}
+	if len(b) < 2 {
+		return tagList{Count: 0}
+	}
+
+	count := int(u16(b))
+
+	// Validate against reasonable limit
+	if count > MaxTagListCount {
+		tracer().Errorf("tag list count %d exceeds maximum %d", count, MaxTagListCount)
+		return tagList{Count: 0}
+	}
+
+	// Validate against buffer size (each tag is 4 bytes)
+	requiredSize := 2 + count*4
+	if requiredSize > len(b) {
+		tracer().Errorf("tag list: count %d requires %d bytes, have %d",
+			count, requiredSize, len(b))
+		return tagList{Count: 0}
+	}
+
+	tl := tagList{Count: count}
 	tl.link = link16{
 		base:   b,
 		offset: 2,
@@ -376,7 +396,6 @@ func parseLink32(b binarySegm, offset int, base binarySegm, target string) (NavL
 	if n > 0 && int(n) > len(base) {
 		return link32{}, fmt.Errorf("offset32 to %s out of bounds: %d > %d", target, n, len(base))
 	}
-
 	return link32{
 		target: target,
 		base:   base,
@@ -468,13 +487,22 @@ func viewArray16(b binarySegm) array {
 }
 
 func parseArray(b binarySegm, offset int, recordSize int, name, target string) (array, error) {
-	if len(b) < offset {
+	if len(b) < offset+2 {
 		return array{name: name, target: target}, errBufferBounds
 	}
 	n, err := b.u16(offset)
 	if err != nil {
 		return array{}, err
 	}
+
+	// Validate count against buffer size
+	headerSize := offset + 2
+	requiredSize := headerSize + int(n)*recordSize
+	if requiredSize > len(b) {
+		return array{}, fmt.Errorf("array %s: count %d * recordSize %d requires %d bytes, have %d",
+			name, n, recordSize, requiredSize, len(b))
+	}
+
 	return array{
 		name:       name,
 		target:     target,
@@ -485,13 +513,22 @@ func parseArray(b binarySegm, offset int, recordSize int, name, target string) (
 }
 
 func parseArray16(b binarySegm, offset int, name, target string) (array, error) {
-	if len(b) < offset {
+	if len(b) < offset+2 {
 		return array{name: name, target: target}, errBufferBounds
 	}
 	n, err := b.u16(offset)
 	if err != nil {
 		return array{}, err
 	}
+
+	// Validate count against buffer size (record size is 2 for offsets)
+	headerSize := offset + 2
+	requiredSize := headerSize + int(n)*2
+	if requiredSize > len(b) {
+		return array{}, fmt.Errorf("array16 %s: count %d requires %d bytes, have %d",
+			name, n, requiredSize, len(b))
+	}
+
 	return array{
 		name:       name,
 		target:     target,
@@ -563,14 +600,25 @@ func ParseVarArray(loc NavLocation, sizeOffset, arrayDataGap int, name string) V
 }
 
 func parseVarArray16(b binarySegm, szOffset, gap, indirections int, name string) varArray {
-	if len(b) < 6 {
+	minSize := szOffset + gap + 2
+	if len(b) < minSize {
 		tracer().Errorf("byte segment too small to parse variable array")
 		return varArray{}
 	}
+
 	cnt, _ := b.u16(szOffset)
+
+	// Validate count against buffer size (each pointer is 2 bytes)
+	requiredSize := szOffset + gap + int(cnt)*2
+	if requiredSize > len(b) {
+		tracer().Errorf("varArray %s: count %d requires %d bytes, have %d",
+			name, cnt, requiredSize, len(b))
+		return varArray{}
+	}
+
 	va := varArray{name: name, indirections: indirections, base: b}
 	va.ptrs = array{recordSize: 2, length: int(cnt), loc: b[szOffset+gap:]}
-	tracer().Debugf("parsing VarArray of size %d = %v", cnt, b[szOffset+gap:szOffset+gap+20].Glyphs())
+	tracer().Debugf("parsing VarArray of size %d", cnt)
 	return va
 }
 
@@ -614,19 +662,49 @@ var _ VarArray = varArray{}
 
 // recsize is the byte size of the record entry not including the Tag.
 func parseTagRecordMap16(b binarySegm, offset int, base binarySegm, name, target string) tagRecordMap16 {
+	if len(b) < offset+2 {
+		tracer().Errorf("buffer too small for tag record map")
+		return tagRecordMap16{}
+	}
+
 	N, err := b.u16(offset)
 	if err != nil {
 		return tagRecordMap16{}
 	}
+
+	// Apply reasonable limit based on context
+	var maxCount int
+	switch name {
+	case "ScriptList":
+		maxCount = MaxScriptCount
+	case "FeatureList":
+		maxCount = MaxFeatureCount
+	default:
+		maxCount = MaxRecordMapCount
+	}
+
+	if int(N) > maxCount {
+		tracer().Errorf("tag record map %s: count %d exceeds maximum %d", name, N, maxCount)
+		return tagRecordMap16{}
+	}
+
+	// Validate count against buffer size (Tag=4 bytes + offset=2 bytes)
+	const recordSize = 6
+	requiredSize := offset + 2 + int(N)*recordSize
+	if requiredSize > len(b) {
+		tracer().Errorf("tag record map %s: count %d requires %d bytes, have %d",
+			name, N, requiredSize, len(b))
+		return tagRecordMap16{}
+	}
+
 	tracer().Debugf("view on tag record map with %d entries", N)
-	// we add 4 (byte length of a Tag) transparently, having 4+2 record size
 	m := tagRecordMap16{
 		name:   name,
 		target: target,
 		base:   base,
 	}
-	arrBase := b[offset+2 : offset+2+int(N)*(4+2)]
-	m.records = viewArray(arrBase, 4+2)
+	arrBase := b[offset+2 : offset+2+int(N)*recordSize]
+	m.records = viewArray(arrBase, recordSize)
 	return m
 }
 

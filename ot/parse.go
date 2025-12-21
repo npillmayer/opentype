@@ -13,6 +13,22 @@ import (
 
 // ---------------------------------------------------------------------------
 
+// Maximum reasonable counts for OpenType table structures.
+// These limits prevent malicious fonts from claiming unreasonably large counts
+// that could lead to excessive memory allocation or out-of-bounds reads.
+const (
+	MaxScriptCount    = 50    // Scripts: typically < 10
+	MaxFeatureCount   = 500   // Features: typically < 200
+	MaxLookupCount    = 1000  // Lookups: typically < 100
+	MaxTagListCount   = 100   // Tag lists
+	MaxGlyphCount     = 65536 // Maximum glyph index (uint16)
+	MaxCoverageCount  = 65535 // Coverage tables
+	MaxClassDefCount  = 65535 // Class definitions
+	MaxRecordMapCount = 1000  // Generic tag record maps
+)
+
+// ---------------------------------------------------------------------------
+
 // Parse parses an OpenType font from a byte slice.
 // An ot.Font needs ongoing access to the fonts byte-data after the Parse function returns.
 // Its elements are assumed immutable while the ot.Font remains in use.
@@ -618,18 +634,34 @@ func parseAttachmentPointList(gdef *GDefTable, b binarySegm, err error) error {
 		return io.ErrUnexpectedEOF
 	}
 	b = b[offset:]
-	if count, err := b.u16(2); count == 0 {
-		if err != nil {
-			return errFontFormat("GDEF has corrupt attachment point list")
-		}
+	if len(b) < 4 {
+		return errFontFormat("GDEF attachment point list header too small")
+	}
+
+	count, err := b.u16(2)
+	if err != nil {
+		return errFontFormat("GDEF has corrupt attachment point list")
+	}
+	if count == 0 {
 		return nil // no entries
 	}
+
+	// Validate count and buffer size (each offset is 2 bytes)
+	requiredSize := 4 + int(count)*2
+	if requiredSize > len(b) {
+		return fmt.Errorf("GDEF attachment point list: count %d requires %d bytes, have %d",
+			count, requiredSize, len(b))
+	}
+
 	covOffset := u16(b)
+	if int(covOffset) >= len(b) {
+		return errFontFormat("GDEF attachment point coverage offset out of bounds")
+	}
 	coverage := parseCoverage(b[covOffset:])
 	if coverage.GlyphRange == nil {
-		return errFontFormat("GDEF attachement point coverage table unreadable")
+		return errFontFormat("GDEF attachment point coverage table unreadable")
 	}
-	count, _ := b.u16(2)
+
 	gdef.AttachmentPointList = AttachmentPointList{
 		Count:              int(count),
 		Coverage:           coverage.GlyphRange,
@@ -668,9 +700,24 @@ func parseMarkGlyphSets(gdef *GDefTable, b binarySegm, err error) error {
 		return io.ErrUnexpectedEOF
 	}
 	b = b[offset:]
+	if len(b) < 4 {
+		return errFontFormat("GDEF mark glyph sets header too small")
+	}
+
 	count, _ := b.u16(2)
+
+	// Validate count and buffer size (each offset is 4 bytes)
+	requiredSize := 4 + int(count)*4
+	if requiredSize > len(b) {
+		return fmt.Errorf("GDEF mark glyph sets: count %d requires %d bytes, have %d",
+			count, requiredSize, len(b))
+	}
+
 	for i := 0; i < int(count); i++ {
-		covOffset, _ := b.u32(i * 4)
+		covOffset, _ := b.u32(4 + i*4)
+		if int(covOffset) >= len(b) {
+			return fmt.Errorf("GDEF mark glyph set %d: coverage offset %d out of bounds", i, covOffset)
+		}
 		coverage := parseCoverage(b[covOffset:])
 		if coverage.GlyphRange == nil {
 			return errFontFormat("GDEF mark glyph set coverage table unreadable")
@@ -870,9 +917,21 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error) error {
 		return io.ErrUnexpectedEOF
 	}
 	b = b[lloffset:]
-	//
+
+	// Validate lookup count before parsing
+	if len(b) < 2 {
+		return errFontFormat("lookup list header too small")
+	}
+	count, _ := b.u16(0)
+	if int(count) > MaxLookupCount {
+		return fmt.Errorf("lookup list count %d exceeds maximum %d", count, MaxLookupCount)
+	}
+
 	ll := LookupList{base: b}
-	ll.array, ll.err = parseArray16(b, 0, "Lookup", "Lookup-Subtales")
+	ll.array, ll.err = parseArray16(b, 0, "Lookup", "Lookup-Subtables")
+	if ll.err != nil {
+		return ll.err
+	}
 	lytt.LookupList = ll
 	return nil
 }

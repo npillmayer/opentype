@@ -28,7 +28,7 @@ No font collections nor variable fonts are supported yet.
 We borrow the contract expressed by Rust's `ttf-parser`.
 ttf-parser does not try to prove that a font is correct, but enforces a narrower, more useful contract:
 
-   If this parser accepts the font, then any further reads will be memory-safe, bounded, and internally consistent.
+    If this parser accepts the font, then any further reads will be memory-safe, bounded, and internally consistent.
 
 ### Other Solutions to Font Parsing
 

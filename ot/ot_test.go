@@ -1,13 +1,12 @@
 package ot
 
 import (
+	"fmt"
 	"testing"
 
-	"github.com/npillmayer/schuko/schukonf/testconfig"
 	"github.com/npillmayer/schuko/tracing"
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
 	"github.com/npillmayer/tyse/core/font"
-	"github.com/npillmayer/tyse/core/locate/resources"
 )
 
 func TestLookupRecordTypeString(t *testing.T) {
@@ -56,7 +55,23 @@ func TestTableName(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+func loadTestdataFont(t *testing.T, pattern string) *Font {
+	level := tracer().GetTraceLevel()
+	tracer().SetTraceLevel(tracing.LevelInfo)
+	defer tracer().SetTraceLevel(level)
+	//
+	otf := &Font{}
+	fname := fmt.Sprintf("../testdata/%s.ttf", pattern)
+	f, err := font.LoadOpenTypeFont(fname)
+	if err != nil {
+		t.Fatalf("cannot load font: %s", pattern)
+	}
+	otf.F = f
+	t.Logf("loaded font = %s", otf.F.Fontname)
+	return otf
+}
 
+/*
 func loadTestFont(t *testing.T, pattern string) *Font {
 	level := tracer().GetTraceLevel()
 	tracer().SetTraceLevel(tracing.LevelInfo)
@@ -86,3 +101,4 @@ func loadTestFont(t *testing.T, pattern string) *Font {
 	t.Logf("loaded font = %s", otf.F.Fontname)
 	return otf
 }
+*/

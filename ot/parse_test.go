@@ -7,10 +7,10 @@ import (
 )
 
 func TestParseHeader(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
-	f := loadTestFont(t, "gentiumplus")
+	f := loadTestdataFont(t, "GentiumPlus-R")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
 		UserError(err)
@@ -24,10 +24,10 @@ func TestParseHeader(t *testing.T) {
 
 // TODO TODO
 func TestCMapTableGlyphIndex(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
-	otf := parseFont(t, "calibri")
+	otf := parseFont(t, "Calibri")
 	t.Logf("otf.header.tag = %x", otf.Header.FontType)
 	table := getTable(otf, "cmap", t)
 	cmap := table.Self().AsCMap()
@@ -46,10 +46,10 @@ func TestCMapTableGlyphIndex(t *testing.T) {
 }
 
 func TestParseGPos(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
-	f := loadTestFont(t, "calibri")
+	f := loadTestdataFont(t, "Calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
 		UserError(err)
@@ -88,10 +88,10 @@ func TestParseGPos(t *testing.T) {
 }
 
 func TestParseGSub(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
-	f := loadTestFont(t, "gentiumplus")
+	f := loadTestdataFont(t, "GentiumPlus-R")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
 		UserError(err)
@@ -128,10 +128,10 @@ func TestParseGSub(t *testing.T) {
 }
 
 func TestParseKern(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
-	f := loadTestFont(t, "calibri")
+	f := loadTestdataFont(t, "Calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
 		UserError(err)
@@ -155,10 +155,10 @@ func TestParseKern(t *testing.T) {
 }
 
 func TestParseOtherTables(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
-	f := loadTestFont(t, "calibri")
+	f := loadTestdataFont(t, "Calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
 		UserError(err)
@@ -187,10 +187,10 @@ func TestParseOtherTables(t *testing.T) {
 }
 
 func TestParseGDef(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
-	otf := parseFont(t, "calibri")
+	otf := parseFont(t, "Calibri")
 	table := getTable(otf, "GDEF", t)
 	gdef := table.Self().AsGDef()
 	if gdef.GlyphClassDef.format == 0 {
@@ -207,10 +207,10 @@ func TestParseGDef(t *testing.T) {
 }
 
 func TestParseGSubLookups(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
-	otf := parseFont(t, "calibri")
+	otf := parseFont(t, "Calibri")
 	table := getTable(otf, "GSUB", t)
 	gsub := table.Self().AsGSub()
 	ll := gsub.LookupList
@@ -261,7 +261,7 @@ func getTable(otf *Font, name string, t *testing.T) Table {
 }
 
 func parseFont(t *testing.T, pattern string) *Font {
-	otf := loadTestFont(t, pattern)
+	otf := loadTestdataFont(t, pattern)
 	if otf == nil {
 		return nil
 	}

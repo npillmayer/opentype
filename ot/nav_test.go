@@ -69,7 +69,8 @@ func TestTableNavOS2(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func loadCalibri(t *testing.T) *Font {
-	f := loadTestFont(t, "calibri")
+	//f := loadTestFont(t, "calibri")
+	f := loadTestdataFont(t, "Calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
 		core.UserError(err)

@@ -1432,7 +1432,7 @@ func parseCoverage(b binarySegm) Coverage {
 
 // --- Sequence context ------------------------------------------------------
 
-// The contextual lookup types support specifying input glyph sequences that will can be
+// The contextual lookup types support specifying input glyph sequences that can be
 // acted upon, as well as a list of actions to be taken on any glyph within the sequence.
 // Actions are specified as references to separate nested lookups (an index into the
 // LookupList). The actions are specified for each glyph position, but the entire sequence
@@ -1537,8 +1537,7 @@ func parseChainedSequenceContext(b binarySegm, sub LookupSubtable) (LookupSubtab
 	case 1:
 		//parseSequenceContextFormat1(sub.Format, b, sub)
 		// nothing to to for format 1
-		panic("TODO chained 1")
-		//return sub, nil
+		return sub, nil
 	case 2:
 		return parseChainedSequenceContextFormat2(b, sub)
 	case 3:

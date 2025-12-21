@@ -605,7 +605,7 @@ func parseVarArray16(b binarySegm, szOffset, gap, indirections int, name string)
 		tracer().Errorf("byte segment too small to parse variable array")
 		return varArray{}
 	}
-
+	//
 	// Enforce maximum indirection depth to prevent stack overflow
 	if indirections > MaxIndirectionDepth {
 		tracer().Errorf("varArray %s: indirection depth %d exceeds maximum %d",

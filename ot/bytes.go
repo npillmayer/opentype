@@ -302,6 +302,12 @@ func parseLink16(b binarySegm, offset int, base binarySegm, target string) (NavL
 		return link16{}, errBufferBounds
 	}
 	n, _ := b.u16(offset)
+
+	// Validate offset points within base bounds (offset 0 is valid NULL pointer)
+	if n > 0 && int(n) > len(base) {
+		return link16{}, fmt.Errorf("offset16 to %s out of bounds: %d > %d", target, n, len(base))
+	}
+
 	return link16{
 		target: target,
 		base:   base,
@@ -366,6 +372,11 @@ func parseLink32(b binarySegm, offset int, base binarySegm, target string) (NavL
 		return link32{}, errBufferBounds
 	}
 	n, _ := b.u32(offset)
+	// Validate offset points within base bounds (offset 0 is valid NULL pointer)
+	if n > 0 && int(n) > len(base) {
+		return link32{}, fmt.Errorf("offset32 to %s out of bounds: %d > %d", target, n, len(base))
+	}
+
 	return link32{
 		target: target,
 		base:   base,

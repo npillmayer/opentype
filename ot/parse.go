@@ -517,20 +517,64 @@ func parseGDefHeader(gdef *GDefTable, b binarySegm, err error) error {
 	if err != nil {
 		return err
 	}
+	if len(b) < 12 {
+		return errFontFormat("GDEF table header too small")
+	}
+
 	h := GDefHeader{}
 	r := bytes.NewReader(b)
 	if err = binary.Read(r, binary.BigEndian, &h.gDefHeaderV1_0); err != nil {
 		return err
 	}
 	headerlen := 12
+
+	// Validate version
+	if h.Major != 1 || h.Minor > 3 {
+		return fmt.Errorf("unsupported GDEF version %d.%d", h.Major, h.Minor)
+	}
+
 	if h.versionHeader.Minor >= 2 {
+		if len(b) < headerlen+2 {
+			return errFontFormat("GDEF v1.2+ header incomplete")
+		}
 		h.MarkGlyphSetsDefOffset, _ = b.u16(headerlen)
 		headerlen += 2
 	}
 	if h.versionHeader.Minor >= 3 {
+		if len(b) < headerlen+4 {
+			return errFontFormat("GDEF v1.3+ header incomplete")
+		}
 		h.ItemVarStoreOffset, _ = b.u32(headerlen)
 		headerlen += 4
 	}
+
+	// Validate all offsets point within table bounds
+	tableSize := len(b)
+	if h.GlyphClassDefOffset > 0 && int(h.GlyphClassDefOffset) >= tableSize {
+		return fmt.Errorf("GDEF GlyphClassDef offset out of bounds: %d >= %d",
+			h.GlyphClassDefOffset, tableSize)
+	}
+	if h.AttachListOffset > 0 && int(h.AttachListOffset) >= tableSize {
+		return fmt.Errorf("GDEF AttachList offset out of bounds: %d >= %d",
+			h.AttachListOffset, tableSize)
+	}
+	if h.LigCaretListOffset > 0 && int(h.LigCaretListOffset) >= tableSize {
+		return fmt.Errorf("GDEF LigCaretList offset out of bounds: %d >= %d",
+			h.LigCaretListOffset, tableSize)
+	}
+	if h.MarkAttachClassDefOffset > 0 && int(h.MarkAttachClassDefOffset) >= tableSize {
+		return fmt.Errorf("GDEF MarkAttachClassDef offset out of bounds: %d >= %d",
+			h.MarkAttachClassDefOffset, tableSize)
+	}
+	if h.Minor >= 2 && h.MarkGlyphSetsDefOffset > 0 && int(h.MarkGlyphSetsDefOffset) >= tableSize {
+		return fmt.Errorf("GDEF MarkGlyphSetsDef offset out of bounds: %d >= %d",
+			h.MarkGlyphSetsDefOffset, tableSize)
+	}
+	if h.Minor >= 3 && h.ItemVarStoreOffset > 0 && int(h.ItemVarStoreOffset) >= tableSize {
+		return fmt.Errorf("GDEF ItemVarStore offset out of bounds: %d >= %d",
+			h.ItemVarStoreOffset, tableSize)
+	}
+
 	gdef.header = h
 	gdef.header.headerSize = uint8(headerlen)
 	return err
@@ -689,6 +733,10 @@ func parseLayoutHeader(lytt *LayoutTable, b binarySegm, err error) error {
 	if err != nil {
 		return err
 	}
+	if len(b) < 10 {
+		return errFontFormat("layout table header too small")
+	}
+
 	h := &LayoutHeader{}
 	r := bytes.NewReader(b)
 	if err = binary.Read(r, binary.BigEndian, &h.versionHeader); err != nil {
@@ -698,16 +746,44 @@ func parseLayoutHeader(lytt *LayoutTable, b binarySegm, err error) error {
 		return fmt.Errorf("unsupported layout version (major: %d, minor: %d)",
 			h.Major, h.Minor)
 	}
+
 	switch h.Minor {
 	case 0:
+		if len(b) < 10 {
+			return errFontFormat("layout v1.0 header incomplete")
+		}
 		if err = binary.Read(r, binary.BigEndian, &h.offsets.layoutHeader10); err != nil {
 			return err
 		}
 	case 1:
+		if len(b) < 14 {
+			return errFontFormat("layout v1.1 header incomplete")
+		}
 		if err = binary.Read(r, binary.BigEndian, &h.offsets); err != nil {
 			return err
 		}
 	}
+
+	// Validate all offsets point within table bounds
+	tableSize := len(b)
+	if h.offsets.ScriptListOffset > 0 && int(h.offsets.ScriptListOffset) >= tableSize {
+		return fmt.Errorf("layout ScriptList offset out of bounds: %d >= %d",
+			h.offsets.ScriptListOffset, tableSize)
+	}
+	if h.offsets.FeatureListOffset > 0 && int(h.offsets.FeatureListOffset) >= tableSize {
+		return fmt.Errorf("layout FeatureList offset out of bounds: %d >= %d",
+			h.offsets.FeatureListOffset, tableSize)
+	}
+	if h.offsets.LookupListOffset > 0 && int(h.offsets.LookupListOffset) >= tableSize {
+		return fmt.Errorf("layout LookupList offset out of bounds: %d >= %d",
+			h.offsets.LookupListOffset, tableSize)
+	}
+	if h.Minor >= 1 && h.offsets.FeatureVariationsOffset > 0 &&
+		int(h.offsets.FeatureVariationsOffset) >= tableSize {
+		return fmt.Errorf("layout FeatureVariations offset out of bounds: %d >= %d",
+			h.offsets.FeatureVariationsOffset, tableSize)
+	}
+
 	lytt.header = h
 	return nil
 }
@@ -966,21 +1042,43 @@ func parseGPosLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) Loo
 // glyph indices into the same class.
 func parseClassDefinitions(b binarySegm) (ClassDefinitions, error) {
 	tracer().Debugf("HELLO, parsing a ClassDef")
+	if len(b) < 4 {
+		return ClassDefinitions{}, errFontFormat("ClassDef table too small")
+	}
+
 	cdef := ClassDefinitions{}
 	r := bytes.NewReader(b)
 	if err := binary.Read(r, binary.BigEndian, &cdef.format); err != nil {
 		return cdef, err
 	}
+
 	var n, g uint16
 	if cdef.format == 1 {
 		tracer().Debugf("parsing a ClassDef of format 1")
+		if len(b) < 6 {
+			return cdef, errFontFormat("ClassDef format 1 header incomplete")
+		}
 		n, _ = b.u16(4) // number of glyph IDs in table
 		g, _ = b.u16(2) // start glyph ID
+
+		// Validate array bounds: each entry is 2 bytes (uint16 class value)
+		if len(b) < 6+int(n)*2 {
+			return cdef, fmt.Errorf("ClassDef format 1 array extends beyond bounds: need %d bytes, have %d",
+				6+int(n)*2, len(b))
+		}
 	} else if cdef.format == 2 {
 		tracer().Debugf("parsing a ClassDef of format 2")
+		if len(b) < 4 {
+			return cdef, errFontFormat("ClassDef format 2 header incomplete")
+		}
 		n, _ = b.u16(2) // number of glyph ID ranges in table
+		// Validate array bounds: each range record is 6 bytes (start, end, class)
+		if len(b) < 4+int(n)*6 {
+			return cdef, fmt.Errorf("ClassDef format 2 array extends beyond bounds: need %d bytes, have %d",
+				4+int(n)*6, len(b))
+		}
 	} else {
-		return cdef, errFontFormat(fmt.Sprintf("unknown ClassDef format %d", n))
+		return cdef, errFontFormat(fmt.Sprintf("unknown ClassDef format %d", cdef.format))
 	}
 	records := cdef.makeArray(b, int(n), cdef.format)
 	cdef.setRecords(records, GlyphIndex(g))
@@ -997,12 +1095,30 @@ func parseCoverage(b binarySegm) Coverage {
 	h := coverageHeader{}
 	h.CoverageFormat = b.U16(0)
 	h.Count = b.U16(2)
-	// r := bytes.NewReader(b)
-	// if err := binary.Read(r, binary.BigEndian, &h); err != nil {
-	// 	return Coverage{}
-	// }
 	tracer().Debugf("coverage header format %d has count = %d ", h.CoverageFormat, h.Count)
-	//trace().Debugf("cont = %v", asU16Slice(b[:20]))
+
+	// Validate based on format
+	if h.CoverageFormat == 1 {
+		// Format 1: array of glyph IDs (2 bytes each)
+		requiredSize := 4 + int(h.Count)*2
+		if len(b) < requiredSize {
+			tracer().Errorf("coverage format 1 extends beyond bounds: need %d, have %d",
+				requiredSize, len(b))
+			return Coverage{}
+		}
+	} else if h.CoverageFormat == 2 {
+		// Format 2: array of range records (6 bytes each: start, end, startCoverageIndex)
+		requiredSize := 4 + int(h.Count)*6
+		if len(b) < requiredSize {
+			tracer().Errorf("coverage format 2 extends beyond bounds: need %d, have %d",
+				requiredSize, len(b))
+			return Coverage{}
+		}
+	} else {
+		tracer().Errorf("unknown coverage format %d", h.CoverageFormat)
+		return Coverage{}
+	}
+
 	return Coverage{
 		coverageHeader: h,
 		GlyphRange:     buildGlyphRangeFromCoverage(h, b),

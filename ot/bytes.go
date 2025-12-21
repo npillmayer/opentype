@@ -606,6 +606,13 @@ func parseVarArray16(b binarySegm, szOffset, gap, indirections int, name string)
 		return varArray{}
 	}
 
+	// Enforce maximum indirection depth to prevent stack overflow
+	if indirections > MaxIndirectionDepth {
+		tracer().Errorf("varArray %s: indirection depth %d exceeds maximum %d",
+			name, indirections, MaxIndirectionDepth)
+		return varArray{}
+	}
+
 	cnt, _ := b.u16(szOffset)
 
 	// Validate count against buffer size (each pointer is 2 bytes)
@@ -618,7 +625,7 @@ func parseVarArray16(b binarySegm, szOffset, gap, indirections int, name string)
 
 	va := varArray{name: name, indirections: indirections, base: b}
 	va.ptrs = array{recordSize: 2, length: int(cnt), loc: b[szOffset+gap:]}
-	tracer().Debugf("parsing VarArray of size %d", cnt)
+	tracer().Debugf("parsing VarArray of size %d with %d indirections", cnt, indirections)
 	return va
 }
 

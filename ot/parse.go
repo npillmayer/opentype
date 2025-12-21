@@ -27,6 +27,13 @@ const (
 	MaxRecordMapCount = 1000  // Generic tag record maps
 )
 
+// Maximum recursion/nesting depths to prevent stack overflow.
+// These limits follow ttf-parser's approach of bounded recursion.
+const (
+	MaxExtensionDepth   = 16 // Maximum Extension lookup nesting
+	MaxIndirectionDepth = 8  // Maximum varArray indirection levels
+)
+
 // ---------------------------------------------------------------------------
 
 // Parse parses an OpenType font from a byte slice.
@@ -937,22 +944,33 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error) error {
 }
 
 func parseLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) LookupSubtable {
+	return parseLookupSubtableWithDepth(b, lookupType, 0)
+}
+
+func parseLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookupType, depth int) LookupSubtable {
 	tracer().Debugf("parse lookup subtable b = %v", asU16Slice(b[:20]))
 	if len(b) < 4 {
 		return LookupSubtable{}
 	}
-	if IsGPosLookupType(lookupType) {
-		return parseGPosLookupSubtable(b, GPosLookupType(lookupType))
+	if depth > MaxExtensionDepth {
+		tracer().Errorf("lookup subtable exceeds maximum extension depth %d", MaxExtensionDepth)
+		return LookupSubtable{}
 	}
-	return parseGSubLookupSubtable(b, GSubLookupType(lookupType))
+	if IsGPosLookupType(lookupType) {
+		return parseGPosLookupSubtableWithDepth(b, GPosLookupType(lookupType), depth)
+	}
+	return parseGSubLookupSubtableWithDepth(b, GSubLookupType(lookupType), depth)
 }
 
 // parseGSubLookupSubtable parses a segment of binary data from a font file (NavLocation)
 // and expects to read a lookup subtable.
 func parseGSubLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) LookupSubtable {
-	//trace().Debugf("parse lookup subtable b = %v", asU16Slice(b[:20]))
+	return parseGSubLookupSubtableWithDepth(b, lookupType, 0)
+}
+
+func parseGSubLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookupType, depth int) LookupSubtable {
 	format := b.U16(0)
-	tracer().Debugf("parsing GSUB sub-table type %s, format %d", lookupType.GSubString(), format)
+	tracer().Debugf("parsing GSUB sub-table type %s, format %d at depth %d", lookupType.GSubString(), format, depth)
 	sub := LookupSubtable{LookupType: lookupType, Format: format}
 	// Most of the subtable formats use a coverage table in some form to decide on which glyphs to
 	// operate on. parseGSubLookupSubtable will parse this coverage table and put it into
@@ -971,7 +989,7 @@ func parseGSubLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) Loo
 	case 6:
 		return parseGSubLookupSubtableType6(b, sub)
 	case 7:
-		return parseGSubLookupSubtableType7(b, sub)
+		return parseGSubLookupSubtableType7WithDepth(b, sub, depth)
 	}
 	tracer().Errorf("unknown GSUB lookup type: %d", lookupType)
 	return LookupSubtable{}
@@ -1073,23 +1091,38 @@ func parseGSubLookupSubtableType6(b binarySegm, sub LookupSubtable) LookupSubtab
 // a 32-bit offset location in the GSUB table.
 // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#lookuptype-7-extension-substitution
 func parseGSubLookupSubtableType7(b binarySegm, sub LookupSubtable) LookupSubtable {
+	return parseGSubLookupSubtableType7WithDepth(b, sub, 0)
+}
+
+func parseGSubLookupSubtableType7WithDepth(b binarySegm, sub LookupSubtable, depth int) LookupSubtable {
 	if b.Size() < 8 {
 		tracer().Errorf("OpenType GSUB lookup subtable type %d corrupt", sub.LookupType)
 		return LookupSubtable{}
 	}
-	if sub.LookupType = LayoutTableLookupType(b.U16(2)); sub.LookupType == GSubLookupTypeExtensionSubs {
-		tracer().Errorf("OpenType GSUB lookup subtable type 7 recursion detected")
+
+	actualType := LayoutTableLookupType(b.U16(2))
+	if actualType == GSubLookupTypeExtensionSubs {
+		tracer().Errorf("OpenType GSUB extension subtable cannot recursively reference extension type")
 		return LookupSubtable{}
 	}
-	tracer().Debugf("OpenType GSUB extension subtable is of type %s", sub.LookupType.GSubString())
+
+	tracer().Debugf("OpenType GSUB extension subtable is of type %s at depth %d", actualType.GSubString(), depth)
 	link, _ := parseLink32(b, 4, b, "ext.LookupSubtable")
 	loc := link.Jump()
-	return parseGSubLookupSubtable(loc.Bytes(), sub.LookupType)
+
+	// Recurse with incremented depth
+	return parseGSubLookupSubtableWithDepth(loc.Bytes(), actualType, depth+1)
 }
 
 func parseGPosLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) LookupSubtable {
+	return parseGPosLookupSubtableWithDepth(b, lookupType, 0)
+}
+
+func parseGPosLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookupType, depth int) LookupSubtable {
 	format := b.U16(0)
-	tracer().Debugf("parsing GPOS sub-table type %s, format %d", lookupType.GPosString(), format)
+	tracer().Debugf("parsing GPOS sub-table type %s, format %d at depth %d", lookupType.GPosString(), format, depth)
+	// TODO: Implement GPOS lookup subtable parsing similar to GSUB
+	// For now, this maintains the existing behavior
 	panic("TODO GPOS Lookup Subtable")
 	//return LookupSubtable{}
 }

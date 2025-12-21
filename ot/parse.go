@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 )
 
 // Code comment often will cite passage from the
@@ -36,6 +37,57 @@ const (
 
 // ---------------------------------------------------------------------------
 
+// Checked arithmetic operations to prevent integer overflow
+
+// checkedMulInt checks for overflow in multiplication of two integers
+func checkedMulInt(a, b int) (int, error) {
+	if a == 0 || b == 0 {
+		return 0, nil
+	}
+	if a > 0 && b > 0 && a > math.MaxInt/b {
+		return 0, fmt.Errorf("integer overflow: %d * %d", a, b)
+	}
+	if a < 0 && b < 0 && a < math.MaxInt/b {
+		return 0, fmt.Errorf("integer overflow: %d * %d", a, b)
+	}
+	if (a < 0 && b > 0 && a < math.MinInt/b) || (a > 0 && b < 0 && b < math.MinInt/a) {
+		return 0, fmt.Errorf("integer overflow: %d * %d", a, b)
+	}
+	return a * b, nil
+}
+
+// checkedAddInt checks for overflow in addition of two integers
+func checkedAddInt(a, b int) (int, error) {
+	if b > 0 && a > math.MaxInt-b {
+		return 0, fmt.Errorf("integer overflow: %d + %d", a, b)
+	}
+	if b < 0 && a < math.MinInt-b {
+		return 0, fmt.Errorf("integer overflow: %d + %d", a, b)
+	}
+	return a + b, nil
+}
+
+// checkedMulUint32 checks for overflow in multiplication of two uint32 values
+func checkedMulUint32(a, b uint32) (uint32, error) {
+	if a == 0 || b == 0 {
+		return 0, nil
+	}
+	if a > math.MaxUint32/b {
+		return 0, fmt.Errorf("integer overflow: %d * %d", a, b)
+	}
+	return a * b, nil
+}
+
+// checkedAddUint32 checks for overflow in addition of two uint32 values
+func checkedAddUint32(a, b uint32) (uint32, error) {
+	if a > math.MaxUint32-b {
+		return 0, fmt.Errorf("integer overflow: %d + %d", a, b)
+	}
+	return a + b, nil
+}
+
+// ---------------------------------------------------------------------------
+
 // Parse parses an OpenType font from a byte slice.
 // An ot.Font needs ongoing access to the fonts byte-data after the Parse function returns.
 // Its elements are assumed immutable while the ot.Font remains in use.
@@ -56,7 +108,14 @@ func Parse(font []byte) (*Font, error) {
 	src := binarySegm(font)
 	// "The Offset Table is followed immediately by the Table Record entries …
 	// sorted in ascending order by tag", 16 bytes each.
-	buf, err := src.view(12, 16*int(h.TableCount))
+
+	// Check for arithmetic overflow in table record size calculation
+	tableRecordsSize, err := checkedMulInt(16, int(h.TableCount))
+	if err != nil {
+		return nil, errFontFormat(fmt.Sprintf("table count too large: %v", err))
+	}
+
+	buf, err := src.view(12, tableRecordsSize)
 	if err != nil {
 		return nil, errFontFormat("table record entries")
 	}
@@ -70,7 +129,18 @@ func Parse(font []byte) (*Font, error) {
 		if off&3 != 0 { // ignore checksums, but "all tables must begin on four byte boundries".
 			return nil, errFontFormat("invalid table offset")
 		}
-		otf.tables[tag], err = parseTable(tag, src[off:off+size], off, size)
+
+		// Validate table bounds before slicing to prevent panic
+		tableEnd, err := checkedAddUint32(off, size)
+		if err != nil {
+			return nil, errFontFormat(fmt.Sprintf("table %s: size calculation overflow: %v", tag, err))
+		}
+		if off > uint32(len(src)) || tableEnd > uint32(len(src)) {
+			return nil, errFontFormat(fmt.Sprintf("table %s: bounds [%d:%d] exceed font size %d",
+				tag, off, tableEnd, len(src)))
+		}
+
+		otf.tables[tag], err = parseTable(tag, src[off:tableEnd], off, size)
 		if err != nil {
 			return nil, err
 		}
@@ -126,6 +196,23 @@ func extractLayoutInfo(otf *Font) error {
 		}
 	}
 	otf.CMap = otf.tables[T("cmap")].Self().AsCMap()
+
+	// Set NumGlyphs in CMap and GlyphIndexMap for glyph index validation
+	if maxpTable := otf.Table(T("maxp")); maxpTable != nil {
+		maxp := maxpTable.Self().AsMaxP()
+		otf.CMap.NumGlyphs = maxp.NumGlyphs
+
+		// Set numGlyphs in the concrete glyph index map types
+		switch gim := otf.CMap.GlyphIndexMap.(type) {
+		case format4GlyphIndex:
+			gim.numGlyphs = maxp.NumGlyphs
+			otf.CMap.GlyphIndexMap = gim
+		case format12GlyphIndex:
+			gim.numGlyphs = maxp.NumGlyphs
+			otf.CMap.GlyphIndexMap = gim
+		}
+	}
+
 	// We'll operate on OpenType fonts only, i.e. fonts containing GSUB and GPOS tables.
 	for _, tag := range LayoutTables {
 		h := otf.tables[T(tag)]
@@ -149,6 +236,104 @@ func extractLayoutInfo(otf *Font) error {
 	gsub := otf.Layout.GSub
 	if gsub.ScriptList.IsVoid() || gsub.FeatureList.Len() == 0 {
 		return errFontFormat("GSUB table missing required lists")
+	}
+
+	// Perform cross-table consistency validation
+	if err := validateCrossTableConsistency(otf); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateCrossTableConsistency performs cross-table validation to ensure
+// internal consistency between related tables.
+func validateCrossTableConsistency(otf *Font) error {
+	// Get maxp table for glyph count
+	maxpTable := otf.Table(T("maxp"))
+	if maxpTable == nil {
+		return errFontFormat("maxp table required for validation")
+	}
+	maxp := maxpTable.Self().AsMaxP()
+	numGlyphs := maxp.NumGlyphs
+
+	// Validate hhea.NumberOfHMetrics against hmtx table capacity
+	hheaTable := otf.Table(T("hhea"))
+	hmtxTable := otf.Table(T("hmtx"))
+	if hheaTable != nil && hmtxTable != nil {
+		hhea := hheaTable.Self().AsHHea()
+		hmtx := hmtxTable.Self().AsHMtx()
+
+		// NumberOfHMetrics must not exceed numGlyphs
+		if hhea.NumberOfHMetrics > numGlyphs {
+			return errFontFormat(fmt.Sprintf("hhea.NumberOfHMetrics (%d) exceeds maxp.NumGlyphs (%d)",
+				hhea.NumberOfHMetrics, numGlyphs))
+		}
+
+		// hmtx table size validation
+		// hmtx contains NumberOfHMetrics longHorMetrics (4 bytes each) +
+		// (numGlyphs - NumberOfHMetrics) leftSideBearings (2 bytes each)
+		longMetricsSize, err := checkedMulInt(int(hhea.NumberOfHMetrics), 4)
+		if err != nil {
+			return errFontFormat(fmt.Sprintf("hmtx longMetrics size overflow: %v", err))
+		}
+
+		lsbCount := numGlyphs - hhea.NumberOfHMetrics
+		lsbSize, err := checkedMulInt(lsbCount, 2)
+		if err != nil {
+			return errFontFormat(fmt.Sprintf("hmtx leftSideBearings size overflow: %v", err))
+		}
+
+		requiredSize, err := checkedAddInt(longMetricsSize, lsbSize)
+		if err != nil {
+			return errFontFormat(fmt.Sprintf("hmtx total size overflow: %v", err))
+		}
+
+		if int(hmtx.length) < requiredSize {
+			return errFontFormat(fmt.Sprintf("hmtx table size (%d) insufficient for %d glyphs (need %d)",
+				hmtx.length, numGlyphs, requiredSize))
+		}
+	}
+
+	// Validate head.IndexToLocFormat consistency with loca table
+	headTable := otf.Table(T("head"))
+	locaTable := otf.Table(T("loca"))
+	if headTable != nil && locaTable != nil {
+		head := headTable.Self().AsHead()
+		loca := locaTable.Self().AsLoca()
+
+		// Calculate expected loca table size based on IndexToLocFormat
+		if head.IndexToLocFormat == 0 {
+			// Short format: (numGlyphs + 1) * 2 bytes
+			expectedLocaSize, err := checkedMulInt(numGlyphs+1, 2)
+			if err != nil {
+				return errFontFormat(fmt.Sprintf("loca size calculation overflow: %v", err))
+			}
+			if int(loca.length) < expectedLocaSize {
+				return errFontFormat(fmt.Sprintf("loca table size (%d) insufficient for %d glyphs in short format (need %d)",
+					loca.length, numGlyphs, expectedLocaSize))
+			}
+		} else if head.IndexToLocFormat == 1 {
+			// Long format: (numGlyphs + 1) * 4 bytes
+			expectedLocaSize, err := checkedMulInt(numGlyphs+1, 4)
+			if err != nil {
+				return errFontFormat(fmt.Sprintf("loca size calculation overflow: %v", err))
+			}
+			if int(loca.length) < expectedLocaSize {
+				return errFontFormat(fmt.Sprintf("loca table size (%d) insufficient for %d glyphs in long format (need %d)",
+					loca.length, numGlyphs, expectedLocaSize))
+			}
+		} else {
+			return errFontFormat(fmt.Sprintf("invalid head.IndexToLocFormat: %d (must be 0 or 1)",
+				head.IndexToLocFormat))
+		}
+	}
+
+	// Validate that glyph indices in cmap don't exceed numGlyphs
+	if otf.CMap != nil {
+		// This is validated during cmap lookup, but we can add a spot check here
+		// The actual validation happens in the Lookup methods
+		tracer().Debugf("Cross-table validation: maxp.NumGlyphs = %d", numGlyphs)
 	}
 
 	return nil
@@ -304,7 +489,17 @@ func parseCMap(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 	tracer().Debugf("font cmap has %d sub-tables in %d|%d bytes", n, len(b), size)
 	t := newCMapTable(tag, b, offset, size)
 	const headerSize, entrySize = 4, 8
-	if size < headerSize+entrySize*uint32(n) {
+
+	// Check for overflow in cmap size calculation
+	entriesSize, err := checkedMulUint32(entrySize, uint32(n))
+	if err != nil {
+		return nil, errFontFormat(fmt.Sprintf("cmap entries size overflow: %v", err))
+	}
+	requiredSize, err := checkedAddUint32(headerSize, entriesSize)
+	if err != nil {
+		return nil, errFontFormat(fmt.Sprintf("cmap table size overflow: %v", err))
+	}
+	if size < requiredSize {
 		return nil, errFontFormat("size of cmap table")
 	}
 	var enc encodingRecord
@@ -332,8 +527,8 @@ func parseCMap(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 	if enc.width == 0 {
 		return nil, errFontFormat("no supported cmap format found")
 	}
-	var err error
-	if t.GlyphIndexMap, err = makeGlyphIndex(b, enc); err != nil {
+	t.GlyphIndexMap, err = makeGlyphIndex(b, enc)
+	if err != nil {
 		return nil, err
 	}
 	return t, nil
@@ -407,7 +602,10 @@ func parseKern(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 		// For some fonts, size calculation of kern sub-tables is off; see
 		// https://github.com/fonttools/fonttools/issues/314#issuecomment-118116527
 		// Testable with the Calibri font.
-		sz := kerncnt * 6 // kern pair is of size 6
+		sz, err := checkedMulUint32(kerncnt, 6) // kern pair is of size 6
+		if err != nil {
+			return nil, errFontFormat(fmt.Sprintf("kern sub-table size overflow: %v", err))
+		}
 		if sz != h.length {
 			tracer().Infof("kern sub-table size should be 0x%x, but given as 0x%x; fixing",
 				sz, h.length)
@@ -497,12 +695,27 @@ func parseNames(b binarySegm) (nameNames, error) {
 	N, _ := b.u16(2)
 	names := nameNames{}
 	strOffset, _ := b.u16(4)
+
+	// Validate string offset bounds
+	if int(strOffset) > len(b) {
+		return nameNames{}, errFontFormat(fmt.Sprintf("name table string offset %d exceeds table size %d", strOffset, len(b)))
+	}
 	names.strbuf = b[strOffset:]
 	tracer().Debugf("name table has %d strings, starting at %d", N, strOffset)
-	if len(b) < 6+12*int(N) {
+
+	// Check for arithmetic overflow in name records size calculation
+	nameRecsSize, err := checkedMulInt(12, int(N))
+	if err != nil {
+		return nameNames{}, errFontFormat(fmt.Sprintf("name table records size overflow: %v", err))
+	}
+	requiredSize, err := checkedAddInt(6, nameRecsSize)
+	if err != nil {
+		return nameNames{}, errFontFormat(fmt.Sprintf("name table size calculation overflow: %v", err))
+	}
+	if len(b) < requiredSize {
 		return nameNames{}, errFontFormat("name section corrupt")
 	}
-	recs := b[6 : 6+12*int(N)]
+	recs := b[6 : 6+nameRecsSize]
 	names.nameRecs = viewArray(recs, 12)
 	return names, nil
 }
@@ -1412,7 +1625,20 @@ func (lksub LookupSubtable) SequenceRule(b binarySegm) sequenceRule {
 		recordSize: 2, // sizeof(uint16)
 		length:     int(seqrule.glyphCount) - 1,
 	}
-	seqrule.inputSequence.loc = b[4 : 4+seqrule.inputSequence.length*2]
+
+	// Check for overflow in input sequence size calculation
+	inputSeqSize, err := checkedMulInt(seqrule.inputSequence.length, 2)
+	if err != nil {
+		tracer().Errorf("SequenceRule input sequence size overflow: %v", err)
+		return sequenceRule{}
+	}
+	inputSeqEnd, err := checkedAddInt(4, inputSeqSize)
+	if err != nil || inputSeqEnd > len(b) {
+		tracer().Errorf("SequenceRule input sequence bounds check failed")
+		return sequenceRule{}
+	}
+	seqrule.inputSequence.loc = b[4:inputSeqEnd]
+
 	// SequenceLookupRecord:
 	// Type     Name             Description
 	// uint16   sequenceIndex    Index (zero-based) into the input glyph sequence
@@ -1421,7 +1647,7 @@ func (lksub LookupSubtable) SequenceRule(b binarySegm) sequenceRule {
 	seqrule.lookupRecords = array{
 		recordSize: 4, // 2* sizeof(uint16)
 		length:     int(cnt),
-		loc:        b[4+seqrule.inputSequence.length*2:],
+		loc:        b[inputSeqEnd:],
 	}
 	return seqrule
 }

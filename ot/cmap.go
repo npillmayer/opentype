@@ -25,6 +25,7 @@ this module.
 type CMapTable struct {
 	tableBase
 	GlyphIndexMap CMapGlyphIndex
+	NumGlyphs     int // Maximum valid glyph index + 1 (from maxp table)
 }
 
 func newCMapTable(tag Tag, b binarySegm, offset, size uint32) *CMapTable {
@@ -128,9 +129,10 @@ type CMapGlyphIndex interface {
 // fall into several contiguous ranges, possibly with holes in some or all of the ranges
 // (that is, some of the codes in a range may not have a representation in the font).
 type format4GlyphIndex struct {
-	segCnt   int
-	entries  []cmapEntry16
-	glyphIds array
+	segCnt    int
+	entries   []cmapEntry16
+	glyphIds  array
+	numGlyphs int // Maximum valid glyph index + 1 (from maxp table)
 }
 
 // Format 4 holds four parallel arrays to describe the segments (one segment for
@@ -156,7 +158,13 @@ func (f4 format4GlyphIndex) Lookup(r rune) GlyphIndex {
 			i = h + 1
 		} else if entry.offset == 0 {
 			//tracer().Debugf("direct access of glyph ID as delta = %d", c+entry.delta)
-			return GlyphIndex(c + entry.delta)
+			gid := GlyphIndex(c + entry.delta)
+			// Validate glyph index
+			if f4.numGlyphs > 0 && int(gid) >= f4.numGlyphs {
+				tracer().Errorf("cmap format4: glyph index %d exceeds numGlyphs %d", gid, f4.numGlyphs)
+				return 0
+			}
+			return gid
 		} else {
 			// The spec describes the calculation the find the link into the glyph ID array
 			// as follows:
@@ -196,6 +204,11 @@ func (f4 format4GlyphIndex) Lookup(r rune) GlyphIndex {
 				// If the value obtained from the indexing operation is not 0 (which indicates
 				// missingGlyph), idDelta[i] is added to it to get the glyph index
 				glyphInx += entry.delta
+			}
+			// Validate glyph index
+			if f4.numGlyphs > 0 && int(glyphInx) >= f4.numGlyphs {
+				tracer().Errorf("cmap format4: glyph index %d exceeds numGlyphs %d", glyphInx, f4.numGlyphs)
+				return 0
 			}
 			// g2 := f4.glyphIds.UnsafeGet(index + 1).U16(0)
 			// trace().Debugf("next glyph ID = %d", g2)
@@ -289,8 +302,9 @@ type cmapEntry32 struct {
 // Each sequential map group record specifies a character range and the starting glyph ID
 // mapped from the first character. Glyph IDs for subsequent characters follow in sequence.
 type format12GlyphIndex struct {
-	grpCnt  int
-	entries []cmapEntry32
+	grpCnt    int
+	entries   []cmapEntry32
+	numGlyphs int // Maximum valid glyph index + 1 (from maxp table)
 }
 
 func (f12 format12GlyphIndex) Lookup(r rune) GlyphIndex {
@@ -303,7 +317,13 @@ func (f12 format12GlyphIndex) Lookup(r rune) GlyphIndex {
 		} else if entry.end < c {
 			i = h + 1
 		} else {
-			return GlyphIndex(c - entry.start + entry.delta)
+			gid := GlyphIndex(c - entry.start + entry.delta)
+			// Validate glyph index
+			if f12.numGlyphs > 0 && int(gid) >= f12.numGlyphs {
+				tracer().Errorf("cmap format12: glyph index %d exceeds numGlyphs %d", gid, f12.numGlyphs)
+				return 0
+			}
+			return gid
 		}
 	}
 	return 0

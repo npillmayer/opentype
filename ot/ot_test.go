@@ -26,7 +26,7 @@ func TestLookupRecordTypeString(t *testing.T) {
 }
 
 func TestTags(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
 	tag := Tag(0x636d6170)
@@ -44,7 +44,7 @@ func TestTags(t *testing.T) {
 }
 
 func TestTableName(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
 	tb := tableBase{}

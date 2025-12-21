@@ -194,7 +194,6 @@ in Rust:
 
 import (
 	"github.com/npillmayer/schuko/tracing"
-	"github.com/npillmayer/tyse/core"
 )
 
 // Valuable resource:
@@ -202,10 +201,5 @@ import (
 
 // tracer writes to trace with key 'tyse.fonts'
 func tracer() tracing.Trace {
-	return tracing.Select("tyse.fonts")
-}
-
-// errFontFormat produces user level errors for font parsing.
-func errFontFormat(x string) error {
-	return core.Error(core.EINVALID, "OpenType font format: %s", x)
+	return tracing.Select("font.opentype")
 }

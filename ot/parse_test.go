@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
-	"github.com/npillmayer/tyse/core"
 )
 
 func TestParseHeader(t *testing.T) {
@@ -14,7 +13,7 @@ func TestParseHeader(t *testing.T) {
 	f := loadTestFont(t, "gentiumplus")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		core.UserError(err)
+		UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("otf.header.tag = %x", otf.Header.FontType)
@@ -53,7 +52,7 @@ func TestParseGPos(t *testing.T) {
 	f := loadTestFont(t, "calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		core.UserError(err)
+		UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("font contains tables:")
@@ -95,7 +94,7 @@ func TestParseGSub(t *testing.T) {
 	f := loadTestFont(t, "gentiumplus")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		core.UserError(err)
+		UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("font contains tables:")
@@ -135,7 +134,7 @@ func TestParseKern(t *testing.T) {
 	f := loadTestFont(t, "calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		core.UserError(err)
+		UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("font contains tables:")
@@ -162,7 +161,7 @@ func TestParseOtherTables(t *testing.T) {
 	f := loadTestFont(t, "calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		core.UserError(err)
+		UserError(err)
 		t.Fatal(err)
 	}
 	maxp := otf.tables[T("maxp")].Self().AsMaxP()
@@ -268,7 +267,7 @@ func parseFont(t *testing.T, pattern string) *Font {
 	}
 	otf, err := Parse(otf.F.Binary)
 	if err != nil {
-		core.UserError(err)
+		UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("--- font parsed ---")

@@ -8,7 +8,7 @@ import (
 )
 
 func TestNavLink(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
 	otf := loadCalibri(t)
@@ -28,7 +28,7 @@ func TestNavLink(t *testing.T) {
 }
 
 func TestTableNav(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
 	otf := loadCalibri(t)
@@ -48,7 +48,7 @@ func TestTableNav(t *testing.T) {
 }
 
 func TestTableNavOS2(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//
 	otf := loadCalibri(t)

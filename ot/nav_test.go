@@ -58,7 +58,7 @@ func TestTableNavOS2(t *testing.T) {
 	}
 	name := table.Fields().Name()
 	if name != "OS/2" {
-		t.Errorf(name)
+		t.Errorf("expected table name to be 'OS/2', is %s", name)
 	}
 	loc := table.Fields().List().Get(1)
 	if loc.U16(0) != 400 {

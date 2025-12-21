@@ -23,7 +23,12 @@ applications in their own right. I often need a break from the vast desert of
 bytes (without any sign posts), which is what font data files are at their core. Breaks,
 where I talk to myself and ask, this is what you do in your spare time? Really?
 
- No font collections nor variable fonts are supported yet. 
+No font collections nor variable fonts are supported yet. 
+
+We borrow the contract expressed by Rust's `ttf-parser`.
+ttf-parser does not try to prove that a font is correct, but enforces a narrower, more useful contract:
+
+   If this parser accepts the font, then any further reads will be memory-safe, bounded, and internally consistent.
 
 ### Other Solutions to Font Parsing
 

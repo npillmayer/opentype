@@ -273,3 +273,64 @@ func parseFont(t *testing.T, pattern string) *Font {
 	t.Logf("--- font parsed ---")
 	return otf
 }
+
+func TestParseGPosLookups(t *testing.T) {
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
+	defer teardown()
+
+	otf := parseFont(t, "Calibri")
+	table := getTable(otf, "GPOS", t)
+	gpos := table.Self().AsGPos()
+
+	if gpos == nil {
+		t.Fatal("cannot convert GPOS table")
+	}
+
+	ll := gpos.LookupList
+	if ll.err != nil {
+		t.Fatal(ll.err)
+	}
+
+	if ll.array.length == 0 {
+		t.Fatal("GPOS LookupList is empty")
+	}
+
+	t.Logf("GPOS has %d lookups", ll.array.length)
+
+	// Test that we can parse lookup subtables without panicking
+	// The old implementation had a panic("TODO GPOS Lookup Subtable")
+	parsedCount := 0
+	for i := 0; i < int(ll.array.length); i++ {
+		lookup := gpos.LookupList.Navigate(i)
+		if lookup.err != nil {
+			t.Logf("Warning: could not navigate to lookup %d: %v", i, lookup.err)
+			continue
+		}
+
+		t.Logf("Lookup %d: type=%s flags=0x%04x subtables=%d",
+			i, lookup.Type.GPosString(), lookup.Flag, lookup.subTables.length)
+
+		// Try to parse the first subtable to verify our GPOS parsing works
+		if lookup.subTables.length > 0 {
+			st := lookup.Subtable(0)
+			t.Logf("  Subtable[0]: type=%s format=%d",
+				st.LookupType.GPosString(), st.Format)
+
+			// The fact that we got here without panicking means our GPOS parsing works!
+			// The old implementation had: panic("TODO GPOS Lookup Subtable")
+			parsedCount++
+		}
+	}
+
+	// Verify we have the expected number of lookups for Calibri
+	if ll.array.length != 14 {
+		t.Errorf("expected Calibri GPOS to have 14 lookups, got %d", ll.array.length)
+	}
+
+	// Verify we successfully parsed subtables
+	if parsedCount == 0 {
+		t.Error("expected to parse at least some GPOS lookup subtables, but parsed none")
+	} else {
+		t.Logf("Successfully parsed %d GPOS lookup subtables (previously would have panicked)", parsedCount)
+	}
+}

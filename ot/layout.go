@@ -545,6 +545,7 @@ type LookupList struct {
 	lookupsCache []Lookup
 	name         string
 	err          error
+	isGPos       bool // true if this is a GPOS lookup list, false for GSUB
 }
 
 func (ll LookupList) Name() string {
@@ -573,7 +574,7 @@ func (ll LookupList) Navigate(i int) Lookup {
 	}
 	lookupPtr := ll.Get(i)
 	lookup := ll.base[lookupPtr.U16(0):]
-	ll.lookupsCache[i] = viewLookup(lookup)
+	ll.lookupsCache[i] = viewLookup(lookup, ll.isGPos)
 	tracer().Debugf("cached new lookup #%d of type %d", i, ll.lookupsCache[i].Type)
 	return ll.lookupsCache[i]
 }
@@ -625,13 +626,20 @@ type lookupInfo struct {
 
 // viewLookup reads a Lookup from the bytes of a NavLocation. It first parses the
 // lookupInfo and after that parses the subtable record list.
-func viewLookup(b NavLocation) Lookup {
+// The isGPos parameter indicates whether this is a GPOS lookup (true) or GSUB lookup (false).
+func viewLookup(b NavLocation, isGPos bool) Lookup {
 	tracer().Debugf("lookup location has size %d", b.Size())
 	if b.Size() < 10 {
 		return Lookup{}
 	}
 	lookup := Lookup{loc: b}
-	lookup.Type = LayoutTableLookupType(b.U16(0))
+	lookupType := LayoutTableLookupType(b.U16(0))
+	// Mask the lookup type to indicate GPOS vs GSUB
+	if isGPos {
+		lookup.Type = MaskGPosLookupType(lookupType)
+	} else {
+		lookup.Type = lookupType // GSUB types are not masked (use low byte)
+	}
 	lookup.Flag = LayoutTableLookupFlag(b.U16(2))
 	lookup.SubTableCount = b.U16(4)
 	// r := b.Reader()

@@ -348,7 +348,10 @@ func parseTable(t Tag, b binarySegm, offset, size uint32) (Table, error) {
 	case T("head"):
 		return parseHead(t, b, offset, size)
 	case T("glyf"):
-		return newTable(t, b, offset, size), nil // TODO
+		// We do not parse the glyf table (glyph outline data).
+		// For shaping and layout, all necessary metrics are provided by hmtx (advance width, LSB).
+		// The glyf table contains outline data for rendering, which is out of scope.
+		return newTable(t, b, offset, size), nil
 	case T("GDEF"):
 		return parseGDef(t, b, offset, size)
 	case T("GPOS"):
@@ -730,9 +733,12 @@ func parseGDef(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 	err = parseGDefHeader(gdef, b, err)
 	err = parseGlyphClassDefinitions(gdef, b, err)
 	err = parseAttachmentPointList(gdef, b, err)
-	// we currently do not parse the Ligature Caret List Table
+	// We do not parse the Ligature Caret List Table (used for text editing/cursor positioning).
+	// This is not needed for layout analysis and glyph metrics extraction.
 	err = parseMarkAttachmentClassDef(gdef, b, err)
 	err = parseMarkGlyphSets(gdef, b, err)
+	// We do not parse the Item Variation Store (GDEF v1.3, variable fonts only).
+	// Variable font support may be added in the future.
 	if err != nil {
 		tracer().Errorf("error parsing GDEF table: %v", err)
 		return gdef, err

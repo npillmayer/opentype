@@ -108,15 +108,17 @@ func Parse(font []byte) (*Font, error) {
 		return nil, err
 	}
 	tracer().Debugf("header = %v, tag = %x|%s", h, h.FontType, Tag(h.FontType).String())
-	if !(h.FontType == 0x4f54544f || // OTTO
-		h.FontType == 0x00010000 || // TrueType
-		h.FontType == 0x74727565) { // true
-		return nil, errFontFormat(fmt.Sprintf("font type not supported: %x", h.FontType))
-	}
-	otf := &Font{Header: &h, tables: make(map[Tag]Table)}
 
 	// Create error collector for accumulating errors during parsing
 	ec := &errorCollector{}
+
+	if !(h.FontType == 0x4f54544f || // OTTO
+		h.FontType == 0x00010000 || // TrueType
+		h.FontType == 0x74727565) { // true
+		ec.addError(T(""), "Header", fmt.Sprintf("font type not supported: %x", h.FontType), SeverityCritical, 0)
+		return nil, errFontFormat(fmt.Sprintf("font type not supported: %x", h.FontType))
+	}
+	otf := &Font{Header: &h, tables: make(map[Tag]Table)}
 	src := binarySegm(font)
 	// "The Offset Table is followed immediately by the Table Record entries …
 	// sorted in ascending order by tag", 16 bytes each.
@@ -124,30 +126,36 @@ func Parse(font []byte) (*Font, error) {
 	// Check for arithmetic overflow in table record size calculation
 	tableRecordsSize, err := checkedMulInt(16, int(h.TableCount))
 	if err != nil {
+		ec.addError(T(""), "TableRecords", fmt.Sprintf("table count too large: %v", err), SeverityCritical, 12)
 		return nil, errFontFormat(fmt.Sprintf("table count too large: %v", err))
 	}
 
 	buf, err := src.view(12, tableRecordsSize)
 	if err != nil {
+		ec.addError(T(""), "TableRecords", "table record entries", SeverityCritical, 12)
 		return nil, errFontFormat("table record entries")
 	}
 	for b, prevTag := buf, Tag(0); len(b) > 0; b = b[16:] {
 		tag := MakeTag(b)
 		if tag < prevTag {
+			ec.addError(T(""), "TableRecords", "table order", SeverityCritical, 12)
 			return nil, errFontFormat("table order")
 		}
 		prevTag = tag
 		off, size := u32(b[8:12]), u32(b[12:16])
 		if off&3 != 0 { // ignore checksums, but "all tables must begin on four byte boundries".
+			ec.addError(tag, "Offset", "invalid table offset", SeverityCritical, off)
 			return nil, errFontFormat("invalid table offset")
 		}
 
 		// Validate table bounds before slicing to prevent panic
 		tableEnd, err := checkedAddUint32(off, size)
 		if err != nil {
+			ec.addError(tag, "Size", fmt.Sprintf("size calculation overflow: %v", err), SeverityCritical, off)
 			return nil, errFontFormat(fmt.Sprintf("table %s: size calculation overflow: %v", tag, err))
 		}
 		if off > uint32(len(src)) || tableEnd > uint32(len(src)) {
+			ec.addError(tag, "Bounds", fmt.Sprintf("bounds [%d:%d] exceed font size %d", off, tableEnd, len(src)), SeverityCritical, off)
 			return nil, errFontFormat(fmt.Sprintf("table %s: bounds [%d:%d] exceed font size %d",
 				tag, off, tableEnd, len(src)))
 		}
@@ -209,6 +217,7 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 	for _, tag := range RequiredTables {
 		h := otf.tables[T(tag)]
 		if h == nil {
+			ec.addError(T(tag), "Missing", "missing required table", SeverityCritical, 0)
 			return errFontFormat("missing required table " + tag)
 		}
 	}
@@ -234,6 +243,7 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 	for _, tag := range LayoutTables {
 		h := otf.tables[T(tag)]
 		if h == nil {
+			ec.addError(T(tag), "Missing", "missing advanced layout table", SeverityCritical, 0)
 			return errFontFormat("missing advanced layout table " + tag)
 		}
 	}
@@ -247,11 +257,13 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 	// GDEF must have valid version and at least one definition table
 	major, minor := otf.Layout.GDef.Header().Version()
 	if major != 1 || minor > 3 {
+		ec.addError(T("GDEF"), "Version", fmt.Sprintf("unsupported GDEF version %d.%d", major, minor), SeverityCritical, 0)
 		return errFontFormat("unsupported GDEF version")
 	}
 	// GSUB/GPOS must have ScriptList, FeatureList, and LookupList
 	gsub := otf.Layout.GSub
 	if gsub.ScriptList.IsVoid() || gsub.FeatureList.Len() == 0 {
+		ec.addError(T("GSUB"), "Structure", "GSUB table missing required lists", SeverityCritical, 0)
 		return errFontFormat("GSUB table missing required lists")
 	}
 
@@ -269,6 +281,7 @@ func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 	// Get maxp table for glyph count
 	maxpTable := otf.Table(T("maxp"))
 	if maxpTable == nil {
+		ec.addError(T("maxp"), "Missing", "maxp table required for validation", SeverityCritical, 0)
 		return errFontFormat("maxp table required for validation")
 	}
 	maxp := maxpTable.Self().AsMaxP()
@@ -333,9 +346,11 @@ func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 			// Short format: (numGlyphs + 1) * 2 bytes
 			expectedLocaSize, err := checkedMulInt(numGlyphs+1, 2)
 			if err != nil {
+				ec.addError(T("loca"), "Size", fmt.Sprintf("size calculation overflow: %v", err), SeverityCritical, 0)
 				return errFontFormat(fmt.Sprintf("loca size calculation overflow: %v", err))
 			}
 			if int(loca.length) < expectedLocaSize {
+				ec.addError(T("loca"), "Size", fmt.Sprintf("table size (%d) insufficient for %d glyphs in short format (need %d)", loca.length, numGlyphs, expectedLocaSize), SeverityCritical, 0)
 				return errFontFormat(fmt.Sprintf("loca table size (%d) insufficient for %d glyphs in short format (need %d)",
 					loca.length, numGlyphs, expectedLocaSize))
 			}
@@ -343,13 +358,16 @@ func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 			// Long format: (numGlyphs + 1) * 4 bytes
 			expectedLocaSize, err := checkedMulInt(numGlyphs+1, 4)
 			if err != nil {
+				ec.addError(T("loca"), "Size", fmt.Sprintf("size calculation overflow: %v", err), SeverityCritical, 0)
 				return errFontFormat(fmt.Sprintf("loca size calculation overflow: %v", err))
 			}
 			if int(loca.length) < expectedLocaSize {
+				ec.addError(T("loca"), "Size", fmt.Sprintf("table size (%d) insufficient for %d glyphs in long format (need %d)", loca.length, numGlyphs, expectedLocaSize), SeverityCritical, 0)
 				return errFontFormat(fmt.Sprintf("loca table size (%d) insufficient for %d glyphs in long format (need %d)",
 					loca.length, numGlyphs, expectedLocaSize))
 			}
 		} else {
+			ec.addError(T("head"), "IndexToLocFormat", fmt.Sprintf("invalid value: %d (must be 0 or 1)", head.IndexToLocFormat), SeverityCritical, 0)
 			return errFontFormat(fmt.Sprintf("invalid head.IndexToLocFormat: %d (must be 0 or 1)",
 				head.IndexToLocFormat))
 		}
@@ -405,6 +423,7 @@ func parseTable(t Tag, b binarySegm, offset, size uint32, ec *errorCollector) (T
 
 func parseHead(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	if size < 54 {
+		ec.addError(tag, "Size", fmt.Sprintf("head table too small: %d bytes (need 54)", size), SeverityCritical, offset)
 		return nil, errFontFormat("size of head table")
 	}
 	t := newHeadTable(tag, b, offset, size)
@@ -430,6 +449,7 @@ func parseBase(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 	xaxis, errx := parseLink16(b, 4, b, "Axis")
 	yaxis, erry := parseLink16(b, 6, b, "Axis")
 	if errx != nil || erry != nil {
+		ec.addError(tag, "Axis", "BASE table axis-tables", SeverityCritical, offset)
 		return nil, errFontFormat("BASE table axis-tables")
 	}
 	err = parseBaseAxis(base, 0, xaxis, err)
@@ -563,7 +583,7 @@ func parseCMap(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 		ec.addError(tag, "Format", "no supported cmap format found", SeverityMajor, offset)
 		return nil, errFontFormat("no supported cmap format found")
 	}
-	t.GlyphIndexMap, err = makeGlyphIndex(b, enc)
+	t.GlyphIndexMap, err = makeGlyphIndex(b, enc, tag, offset, ec)
 	if err != nil {
 		return nil, err
 	}
@@ -615,6 +635,7 @@ func parseKern(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 	t := newKernTable(tag, b, offset, size)
 	for i := 0; i < N; i++ { // read in N sub-tables
 		if suboffset+subheaderlen >= int(size) { // check for sub-table header size
+			ec.addError(tag, "Format", fmt.Sprintf("sub-table %d header exceeds table size", i), SeverityCritical, offset+uint32(suboffset))
 			return nil, errFontFormat("kern table format")
 		}
 		h := kernSubTableHeader{
@@ -640,6 +661,7 @@ func parseKern(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 		// Testable with the Calibri font.
 		sz, err := checkedMulUint32(kerncnt, 6) // kern pair is of size 6
 		if err != nil {
+			ec.addError(tag, "Size", fmt.Sprintf("sub-table %d size overflow: %v", i, err), SeverityCritical, offset+uint32(suboffset))
 			return nil, errFontFormat(fmt.Sprintf("kern sub-table size overflow: %v", err))
 		}
 		if sz != h.length {
@@ -649,6 +671,7 @@ func parseKern(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 			ec.addWarning(tag, fmt.Sprintf("kern sub-table size mismatch: expected 0x%x, got 0x%x", sz, h.length), offset+uint32(suboffset))
 		}
 		if uint32(suboffset)+sz >= size {
+			ec.addError(tag, "Bounds", fmt.Sprintf("sub-table %d exceeds table bounds", i), SeverityCritical, offset+uint32(suboffset))
 			return nil, errFontFormat("kern sub-table size exceeds kern table bounds")
 		}
 		t.headers = append(t.headers, h)
@@ -697,6 +720,7 @@ func parseHHea(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 	}
 	tracer().Debugf("HHea table has size %d", size)
 	if size < 36 {
+		ec.addError(tag, "Size", fmt.Sprintf("hhea table too small: %d bytes (need 36)", size), SeverityCritical, offset)
 		return nil, errFontFormat("hhea table incomplete")
 	}
 	t := newHHeaTable(tag, b, offset, size)
@@ -765,13 +789,13 @@ func parseNames(b binarySegm) (nameNames, error) {
 func parseGDef(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	var err error
 	gdef := newGDefTable(tag, b, offset, size)
-	err = parseGDefHeader(gdef, b, err)
+	err = parseGDefHeader(gdef, b, err, tag, offset, ec)
 	err = parseGlyphClassDefinitions(gdef, b, err)
-	err = parseAttachmentPointList(gdef, b, err)
+	err = parseAttachmentPointList(gdef, b, err, tag, offset, ec)
 	// We do not parse the Ligature Caret List Table (used for text editing/cursor positioning).
 	// This is not needed for layout analysis and glyph metrics extraction.
 	err = parseMarkAttachmentClassDef(gdef, b, err)
-	err = parseMarkGlyphSets(gdef, b, err)
+	err = parseMarkGlyphSets(gdef, b, err, tag, offset, ec)
 	// We do not parse the Item Variation Store (GDEF v1.3, variable fonts only).
 	// Variable font support may be added in the future.
 	if err != nil {
@@ -790,11 +814,12 @@ func parseGDef(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 // Class Definition table (MarkAttachClassDef). Version 1.2 also includes an offset to
 // a Mark Glyph Sets Definition table (MarkGlyphSetsDef). Version 1.3 also includes an
 // offset to an Item Variation Store table.
-func parseGDefHeader(gdef *GDefTable, b binarySegm, err error) error {
+func parseGDefHeader(gdef *GDefTable, b binarySegm, err error, tag Tag, offset uint32, ec *errorCollector) error {
 	if err != nil {
 		return err
 	}
 	if len(b) < 12 {
+		ec.addError(tag, "Header", fmt.Sprintf("GDEF header too small: %d bytes (need 12)", len(b)), SeverityCritical, offset)
 		return errFontFormat("GDEF table header too small")
 	}
 
@@ -812,6 +837,7 @@ func parseGDefHeader(gdef *GDefTable, b binarySegm, err error) error {
 
 	if h.versionHeader.Minor >= 2 {
 		if len(b) < headerlen+2 {
+			ec.addError(tag, "Header", "GDEF v1.2+ header incomplete", SeverityCritical, offset)
 			return errFontFormat("GDEF v1.2+ header incomplete")
 		}
 		h.MarkGlyphSetsDefOffset, _ = b.u16(headerlen)
@@ -819,6 +845,7 @@ func parseGDefHeader(gdef *GDefTable, b binarySegm, err error) error {
 	}
 	if h.versionHeader.Minor >= 3 {
 		if len(b) < headerlen+4 {
+			ec.addError(tag, "Header", "GDEF v1.3+ header incomplete", SeverityCritical, offset)
 			return errFontFormat("GDEF v1.3+ header incomplete")
 		}
 		h.ItemVarStoreOffset, _ = b.u32(headerlen)
@@ -886,7 +913,7 @@ Offset16  attachPointOffsets[glyphCount]  Array of offsets to AttachPoint tables
 
 	AttachList table-in Coverage Index order
 */
-func parseAttachmentPointList(gdef *GDefTable, b binarySegm, err error) error {
+func parseAttachmentPointList(gdef *GDefTable, b binarySegm, err error, tag Tag, tableOffset uint32, ec *errorCollector) error {
 	if err != nil {
 		return err
 	}
@@ -896,11 +923,13 @@ func parseAttachmentPointList(gdef *GDefTable, b binarySegm, err error) error {
 	}
 	b = b[offset:]
 	if len(b) < 4 {
+		ec.addError(tag, "AttachList", "attachment point list header too small", SeverityCritical, tableOffset+uint32(offset))
 		return errFontFormat("GDEF attachment point list header too small")
 	}
 
 	count, err := b.u16(2)
 	if err != nil {
+		ec.addError(tag, "AttachList", "corrupt attachment point list", SeverityCritical, tableOffset+uint32(offset))
 		return errFontFormat("GDEF has corrupt attachment point list")
 	}
 	if count == 0 {
@@ -916,10 +945,12 @@ func parseAttachmentPointList(gdef *GDefTable, b binarySegm, err error) error {
 
 	covOffset := u16(b)
 	if int(covOffset) >= len(b) {
+		ec.addError(tag, "AttachList", "coverage offset out of bounds", SeverityCritical, tableOffset+uint32(offset))
 		return errFontFormat("GDEF attachment point coverage offset out of bounds")
 	}
 	coverage := parseCoverage(b[covOffset:])
 	if coverage.GlyphRange == nil {
+		ec.addError(tag, "AttachList", "coverage table unreadable", SeverityCritical, tableOffset+uint32(offset)+uint32(covOffset))
 		return errFontFormat("GDEF attachment point coverage table unreadable")
 	}
 
@@ -952,7 +983,7 @@ func parseMarkAttachmentClassDef(gdef *GDefTable, b binarySegm, err error) error
 
 // Mark glyph sets are defined in a MarkGlyphSets table, which contains offsets to
 // individual sets each represented by a standard Coverage table.
-func parseMarkGlyphSets(gdef *GDefTable, b binarySegm, err error) error {
+func parseMarkGlyphSets(gdef *GDefTable, b binarySegm, err error, tag Tag, tableOffset uint32, ec *errorCollector) error {
 	if err != nil {
 		return err
 	}
@@ -962,6 +993,7 @@ func parseMarkGlyphSets(gdef *GDefTable, b binarySegm, err error) error {
 	}
 	b = b[offset:]
 	if len(b) < 4 {
+		ec.addError(tag, "MarkGlyphSets", "mark glyph sets header too small", SeverityCritical, tableOffset+uint32(offset))
 		return errFontFormat("GDEF mark glyph sets header too small")
 	}
 
@@ -981,6 +1013,7 @@ func parseMarkGlyphSets(gdef *GDefTable, b binarySegm, err error) error {
 		}
 		coverage := parseCoverage(b[covOffset:])
 		if coverage.GlyphRange == nil {
+			ec.addError(tag, "MarkGlyphSets", fmt.Sprintf("mark glyph set %d coverage table unreadable", i), SeverityCritical, tableOffset+uint32(offset)+covOffset)
 			return errFontFormat("GDEF mark glyph set coverage table unreadable")
 		}
 		gdef.MarkGlyphSets = append(gdef.MarkGlyphSets, coverage.GlyphRange)

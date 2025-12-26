@@ -1,5 +1,7 @@
 package ot
 
+import "fmt"
+
 /*
 We replicate some of the code of the Go core team here, available from
 https://github.com/golang/image/tree/master/font/sfnt.
@@ -103,13 +105,13 @@ func supportedCmapFormat(format, pid, psid uint16) bool {
 }
 
 // Dispatcher to create the correct implementation of a CMapGlyphIndex from a given format.
-func makeGlyphIndex(b binarySegm, which encodingRecord) (CMapGlyphIndex, error) {
+func makeGlyphIndex(b binarySegm, which encodingRecord, tag Tag, offset uint32, ec *errorCollector) (CMapGlyphIndex, error) {
 	subtable := which.link.Jump()
 	switch which.format {
 	case 4:
-		return makeGlyphIndexFormat4(subtable.Bytes())
+		return makeGlyphIndexFormat4(subtable.Bytes(), tag, offset, ec)
 	case 12:
-		return makeGlyphIndexFormat12(subtable.Bytes())
+		return makeGlyphIndexFormat12(subtable.Bytes(), tag, offset, ec)
 	}
 	panic("unreachable") // unsupported formats should have been weeded out beforehand
 }
@@ -249,20 +251,23 @@ func (f4 format4GlyphIndex) ReverseLookup(gid GlyphIndex) rune {
 // - A four-word header gives parameters for an optimized search of the segment list;
 // - Four parallel arrays describe the segments (one segment for each contiguous range of codes);
 // - A variable-length array of glyph IDs (unsigned words).
-func makeGlyphIndexFormat4(b binarySegm) (CMapGlyphIndex, error) {
+func makeGlyphIndexFormat4(b binarySegm, tag Tag, offset uint32, ec *errorCollector) (CMapGlyphIndex, error) {
 	const headerSize = 14
 	if headerSize > b.Size() {
+		ec.addError(tag, "Format4", "subtable bounds overflow", SeverityCritical, offset)
 		return nil, errFontFormat("cmap subtable bounds overflow")
 	}
 	size, _ := b.u16(2)
 	segCount, _ := b.u16(6)
 	if segCount&1 != 0 {
 		tracer().Debugf("cmap format 4 segment count is %d", segCount)
+		ec.addError(tag, "Format4", fmt.Sprintf("illegal segment count: %d (must be even)", segCount), SeverityCritical, offset)
 		return nil, errFontFormat("cmap table format, illegal segment count")
 	}
 	segCount /= 2
 	eLength := 8*int(segCount) + 2
 	if eLength > b.Size() || headerSize+eLength > int(size) {
+		ec.addError(tag, "Format4", "internal structure invalid", SeverityCritical, offset)
 		return nil, errFontFormat("cmap internal structure")
 	}
 	b = b[headerSize:size]
@@ -354,15 +359,17 @@ func (f12 format12GlyphIndex) ReverseLookup(gid GlyphIndex) rune {
 // Format 12 is similar to format 4 in that it defines segments for sparse representation.
 // It differs, however, in that it uses 32-bit character codes, and Glyph ID lookup
 // and calculation is a lot simpler.
-func makeGlyphIndexFormat12(b binarySegm) (CMapGlyphIndex, error) {
+func makeGlyphIndexFormat12(b binarySegm, tag Tag, offset uint32, ec *errorCollector) (CMapGlyphIndex, error) {
 	const headerSize = 16
 	if headerSize > b.Size() {
+		ec.addError(tag, "Format12", "subtable bounds overflow", SeverityCritical, offset)
 		return nil, errFontFormat("cmap subtable bounds overflow")
 	}
 	size, _ := b.u32(4)
 	grpCount, _ := b.u32(12)
 	eLength := 12 * int(grpCount)
 	if eLength > b.Size() || eLength+headerSize > int(size) {
+		ec.addError(tag, "Format12", "internal structure invalid", SeverityCritical, offset)
 		return nil, errFontFormat("cmap internal structure")
 	}
 	b = b[headerSize:size]

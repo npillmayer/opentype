@@ -283,6 +283,9 @@ func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 
 		// NumberOfHMetrics must not exceed numGlyphs
 		if hhea.NumberOfHMetrics > numGlyphs {
+			ec.addError(T("hhea"), "NumberOfHMetrics",
+				fmt.Sprintf("value %d exceeds maxp.NumGlyphs %d", hhea.NumberOfHMetrics, numGlyphs),
+				SeverityMajor, 0)
 			return errFontFormat(fmt.Sprintf("hhea.NumberOfHMetrics (%d) exceeds maxp.NumGlyphs (%d)",
 				hhea.NumberOfHMetrics, numGlyphs))
 		}
@@ -292,21 +295,27 @@ func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 		// (numGlyphs - NumberOfHMetrics) leftSideBearings (2 bytes each)
 		longMetricsSize, err := checkedMulInt(int(hhea.NumberOfHMetrics), 4)
 		if err != nil {
+			ec.addError(T("hmtx"), "Size", fmt.Sprintf("longMetrics size overflow: %v", err), SeverityCritical, 0)
 			return errFontFormat(fmt.Sprintf("hmtx longMetrics size overflow: %v", err))
 		}
 
 		lsbCount := numGlyphs - hhea.NumberOfHMetrics
 		lsbSize, err := checkedMulInt(lsbCount, 2)
 		if err != nil {
+			ec.addError(T("hmtx"), "Size", fmt.Sprintf("leftSideBearings size overflow: %v", err), SeverityCritical, 0)
 			return errFontFormat(fmt.Sprintf("hmtx leftSideBearings size overflow: %v", err))
 		}
 
 		requiredSize, err := checkedAddInt(longMetricsSize, lsbSize)
 		if err != nil {
+			ec.addError(T("hmtx"), "Size", fmt.Sprintf("total size overflow: %v", err), SeverityCritical, 0)
 			return errFontFormat(fmt.Sprintf("hmtx total size overflow: %v", err))
 		}
 
 		if int(hmtx.length) < requiredSize {
+			ec.addError(T("hmtx"), "Size",
+				fmt.Sprintf("table size %d insufficient for %d glyphs (need %d)", hmtx.length, numGlyphs, requiredSize),
+				SeverityCritical, 0)
 			return errFontFormat(fmt.Sprintf("hmtx table size (%d) insufficient for %d glyphs (need %d)",
 				hmtx.length, numGlyphs, requiredSize))
 		}
@@ -387,6 +396,8 @@ func parseTable(t Tag, b binarySegm, offset, size uint32, ec *errorCollector) (T
 		return parseMaxP(t, b, offset, size, ec)
 	}
 	tracer().Infof("font contains table (%s), will not be interpreted", t)
+	// Record as minor warning - not parsed but not a problem
+	ec.addWarning(t, fmt.Sprintf("table not interpreted"), offset)
 	return newTable(t, b, offset, size), nil
 }
 
@@ -513,13 +524,16 @@ func parseCMap(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 	// Check for overflow in cmap size calculation
 	entriesSize, err := checkedMulUint32(entrySize, uint32(n))
 	if err != nil {
+		ec.addError(tag, "Header", fmt.Sprintf("entries size overflow: %v", err), SeverityCritical, offset)
 		return nil, errFontFormat(fmt.Sprintf("cmap entries size overflow: %v", err))
 	}
 	requiredSize, err := checkedAddUint32(headerSize, entriesSize)
 	if err != nil {
+		ec.addError(tag, "Header", fmt.Sprintf("table size overflow: %v", err), SeverityCritical, offset)
 		return nil, errFontFormat(fmt.Sprintf("cmap table size overflow: %v", err))
 	}
 	if size < requiredSize {
+		ec.addError(tag, "Header", fmt.Sprintf("table size %d < required %d", size, requiredSize), SeverityCritical, offset)
 		return nil, errFontFormat("size of cmap table")
 	}
 	var enc encodingRecord
@@ -533,6 +547,7 @@ func parseCMap(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 		link, err := parseLink32(rec, 4, b, "cmap.Subtable")
 		if err != nil {
 			tracer().Infof("cmap sub-table cannot be parsed")
+			ec.addWarning(tag, fmt.Sprintf("sub-table %d (platform=%d, encoding=%d) cannot be parsed", i, pid, psid), offset)
 			continue
 		}
 		subtable := link.Jump()
@@ -545,6 +560,7 @@ func parseCMap(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 		}
 	}
 	if enc.width == 0 {
+		ec.addError(tag, "Format", "no supported cmap format found", SeverityMajor, offset)
 		return nil, errFontFormat("no supported cmap format found")
 	}
 	t.GlyphIndexMap, err = makeGlyphIndex(b, enc)
@@ -977,11 +993,12 @@ func parseMarkGlyphSets(gdef *GDefTable, b binarySegm, err error) error {
 // parseLayoutHeader parses a layout table header, i.e. reads version information
 // and header information (containing offsets).
 // Supports header versions 1.0 and 1.1
-func parseLayoutHeader(lytt *LayoutTable, b binarySegm, err error, ec *errorCollector) error {
+func parseLayoutHeader(lytt *LayoutTable, b binarySegm, err error, tableTag Tag, ec *errorCollector) error {
 	if err != nil {
 		return err
 	}
 	if len(b) < 10 {
+		ec.addError(tableTag, "Header", fmt.Sprintf("header too small: %d bytes", len(b)), SeverityCritical, 0)
 		return errFontFormat("layout table header too small")
 	}
 
@@ -991,6 +1008,7 @@ func parseLayoutHeader(lytt *LayoutTable, b binarySegm, err error, ec *errorColl
 		return err
 	}
 	if h.Major != 1 || (h.Minor != 0 && h.Minor != 1) {
+		ec.addError(tableTag, "Header", fmt.Sprintf("unsupported version %d.%d", h.Major, h.Minor), SeverityMajor, 0)
 		return fmt.Errorf("unsupported layout version (major: %d, minor: %d)",
 			h.Major, h.Minor)
 	}
@@ -998,6 +1016,7 @@ func parseLayoutHeader(lytt *LayoutTable, b binarySegm, err error, ec *errorColl
 	switch h.Minor {
 	case 0:
 		if len(b) < 10 {
+			ec.addError(tableTag, "Header", "v1.0 header incomplete", SeverityCritical, 0)
 			return errFontFormat("layout v1.0 header incomplete")
 		}
 		if err = binary.Read(r, binary.BigEndian, &h.offsets.layoutHeader10); err != nil {
@@ -1005,6 +1024,7 @@ func parseLayoutHeader(lytt *LayoutTable, b binarySegm, err error, ec *errorColl
 		}
 	case 1:
 		if len(b) < 14 {
+			ec.addError(tableTag, "Header", "v1.1 header incomplete", SeverityCritical, 0)
 			return errFontFormat("layout v1.1 header incomplete")
 		}
 		if err = binary.Read(r, binary.BigEndian, &h.offsets); err != nil {
@@ -1109,7 +1129,7 @@ func parseLangSys(b binarySegm, offset int, target string) (langSys, error) {
 
 // parseLookupList parses the LookupList.
 // See https://www.microsoft.com/typography/otspec/chapter2.htm#lulTbl
-func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ec *errorCollector) error {
+func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, tableTag Tag, ec *errorCollector) error {
 	if err != nil {
 		return err
 	}
@@ -1121,10 +1141,12 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ec
 
 	// Validate lookup count before parsing
 	if len(b) < 2 {
+		ec.addError(tableTag, "LookupList", "header too small", SeverityCritical, 0)
 		return errFontFormat("lookup list header too small")
 	}
 	count, _ := b.u16(0)
 	if int(count) > MaxLookupCount {
+		ec.addError(tableTag, "LookupList", fmt.Sprintf("count %d exceeds maximum %d", count, MaxLookupCount), SeverityCritical, 0)
 		return fmt.Errorf("lookup list count %d exceeds maximum %d", count, MaxLookupCount)
 	}
 

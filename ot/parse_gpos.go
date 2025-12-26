@@ -4,8 +4,8 @@ package ot
 func parseGPos(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	var err error
 	gpos := newGPosTable(tag, b, offset, size)
-	err = parseLayoutHeader(&gpos.LayoutTable, b, err, ec)
-	err = parseLookupList(&gpos.LayoutTable, b, err, true, ec) // true = GPOS
+	err = parseLayoutHeader(&gpos.LayoutTable, b, err, tag, ec)
+	err = parseLookupList(&gpos.LayoutTable, b, err, true, tag, ec) // true = GPOS
 	err = parseFeatureList(&gpos.LayoutTable, b, err)
 	err = parseScriptList(&gpos.LayoutTable, b, err)
 	if err != nil {

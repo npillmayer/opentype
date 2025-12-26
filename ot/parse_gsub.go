@@ -4,8 +4,8 @@ package ot
 func parseGSub(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	var err error
 	gsub := newGSubTable(tag, b, offset, size)
-	err = parseLayoutHeader(&gsub.LayoutTable, b, err, ec)
-	err = parseLookupList(&gsub.LayoutTable, b, err, false, ec) // false = GSUB
+	err = parseLayoutHeader(&gsub.LayoutTable, b, err, tag, ec)
+	err = parseLookupList(&gsub.LayoutTable, b, err, false, tag, ec) // false = GSUB
 	err = parseFeatureList(&gsub.LayoutTable, b, err)
 	err = parseScriptList(&gsub.LayoutTable, b, err)
 	if err != nil {

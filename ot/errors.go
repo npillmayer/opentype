@@ -3,6 +3,33 @@ package ot
 import "fmt"
 
 // ErrorSeverity represents the severity level of a font parsing error.
+//
+// Severity Classification Guidelines:
+//
+// SeverityCritical:
+//   - Buffer overruns that would cause panics
+//   - Required tables missing or corrupted
+//   - Header validation failures
+//   - Arithmetic overflow in size calculations
+//   - Invalid offsets that exceed font bounds
+//
+// SeverityMajor:
+//   - Format errors that affect functionality
+//   - Invalid data structures that can be partially recovered
+//   - Cross-table consistency violations
+//   - Lookup type not supported
+//   - Invalid glyph indices
+//
+// SeverityMinor:
+//   - Missing optional features
+//   - Unused or empty structures
+//   - Suboptimal but valid configurations
+//   - Deprecated formats
+//
+// Warnings (not errors):
+//   - Auto-corrected inconsistencies
+//   - Performance concerns
+//   - Recommendations for improvement
 type ErrorSeverity int
 
 const (

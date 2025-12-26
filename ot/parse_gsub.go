@@ -25,6 +25,12 @@ func parseGSubLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) Loo
 }
 
 func parseGSubLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookupType, depth int) LookupSubtable {
+	// Validate minimum buffer size to prevent panics
+	if len(b) < 4 {
+		tracer().Errorf("GSUB lookup subtable buffer too small: %d bytes", len(b))
+		return LookupSubtable{}
+	}
+
 	format := b.U16(0)
 	tracer().Debugf("parsing GSUB sub-table type %s, format %d at depth %d", lookupType.GSubString(), format, depth)
 	sub := LookupSubtable{LookupType: lookupType, Format: format}
@@ -32,8 +38,10 @@ func parseGSubLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookup
 	// operate on. parseGSubLookupSubtable will parse this coverage table and put it into
 	// `sub.Coverage`, then branch down to the different lookup types.
 	if !(lookupType == 7 && format == 3) { // GSUB type Extension has no coverage table
-		covlink, _ := parseLink16(b, 2, b, "Coverage")
-		sub.Coverage = parseCoverage(covlink.Jump().Bytes())
+		covlink, err := parseLink16(b, 2, b, "Coverage")
+		if err == nil {
+			sub.Coverage = parseCoverage(covlink.Jump().Bytes())
+		}
 	}
 	switch lookupType {
 	case 1:
@@ -56,6 +64,11 @@ func parseGSubLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookup
 // another glyph.
 // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#lookuptype-1-single-substitution-subtable
 func parseGSubLookupSubtableType1(b binarySegm, sub LookupSubtable) LookupSubtable {
+	if len(b) < 6 {
+		tracer().Errorf("GSUB type 1 buffer too small: %d bytes", len(b))
+		return LookupSubtable{}
+	}
+
 	if sub.Format == 1 {
 		sub.Support = int16(b.U16(4))
 	} else {
@@ -120,23 +133,45 @@ func parseGSubLookupSubtableType5(b binarySegm, sub LookupSubtable) LookupSubtab
 // combinations, and one or more substitutions for glyphs in each input sequence.
 // https://docs.microsoft.com/en-us/typography/opentype/spec/chapter2#chained-sequence-context-format-1-simple-glyph-contexts
 func parseGSubLookupSubtableType6(b binarySegm, sub LookupSubtable) LookupSubtable {
+	if len(b) < 6 {
+		tracer().Errorf("GSUB type 6 buffer too small: %d bytes", len(b))
+		return LookupSubtable{}
+	}
+
 	var err error
 	sub, err = parseChainedSequenceContext(b, sub)
 	if err != nil {
-		tracer().Errorf(err.Error()) // nothing we can/will do about it
+		tracer().Errorf("GSUB type 6 chained context error: %v", err)
+		return LookupSubtable{}
 	}
+
 	switch sub.Format {
 	case 1:
 		sub.Index = parseVarArray16(b, 4, 2, 2, "LookupSubtableGSub6-1")
 	case 2:
+		if len(b) < 12 {
+			tracer().Errorf("GSUB type 6 format 2 buffer too small: %d bytes", len(b))
+			return LookupSubtable{}
+		}
 		sub.Index = parseVarArray16(b, 10, 2, 2, "LookupSubtableGSub6-2")
 	case 3:
+		// Safe type assertion to prevent panic
+		seqctx, ok := sub.Support.(*SequenceContext)
+		if !ok {
+			tracer().Errorf("GSUB type 6 format 3: Support is not *SequenceContext")
+			return LookupSubtable{}
+		}
+
 		offset := 2 // skip over format field
-		// TODO treat error conditions
-		seqctx := sub.Support.(*SequenceContext)
 		offset += 2 + len(seqctx.BacktrackCoverage)*2
 		offset += 2 + len(seqctx.InputCoverage)*2
 		offset += 2 + len(seqctx.LookaheadCoverage)*2
+
+		if offset >= len(b) {
+			tracer().Errorf("GSUB type 6 format 3: offset %d exceeds buffer size %d", offset, len(b))
+			return LookupSubtable{}
+		}
+
 		sub.Index = parseVarArray16(b, offset, 2, 2, "LookupSubtableGSub6-3")
 	}
 	return sub

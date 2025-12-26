@@ -125,14 +125,22 @@ func parseGPosLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) Loo
 }
 
 func parseGPosLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookupType, depth int) LookupSubtable {
+	// Validate minimum buffer size to prevent panics
+	if len(b) < 4 {
+		tracer().Errorf("GPOS lookup subtable buffer too small: %d bytes", len(b))
+		return LookupSubtable{}
+	}
+
 	format := b.U16(0)
 	tracer().Debugf("parsing GPOS sub-table type %s, format %d at depth %d", lookupType.GPosString(), format, depth)
 	sub := LookupSubtable{LookupType: lookupType, Format: format}
 
 	// Most GPOS types have coverage at offset 2 (except Extension format 1)
 	if !(lookupType == 9 && format == 1) {
-		covlink, _ := parseLink16(b, 2, b, "Coverage")
-		sub.Coverage = parseCoverage(covlink.Jump().Bytes())
+		covlink, err := parseLink16(b, 2, b, "Coverage")
+		if err == nil {
+			sub.Coverage = parseCoverage(covlink.Jump().Bytes())
+		}
 	}
 
 	switch lookupType {
@@ -163,6 +171,11 @@ func parseGPosLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookup
 // Adjusts the placement or advance of a single glyph.
 // https://docs.microsoft.com/en-us/typography/opentype/spec/gpos#lookuptype-1-single-adjustment-positioning-subtable
 func parseGPosLookupSubtableType1(b binarySegm, sub LookupSubtable) LookupSubtable {
+	if len(b) < 6 {
+		tracer().Errorf("GPOS type 1 buffer too small: %d bytes", len(b))
+		return LookupSubtable{}
+	}
+
 	format := ValueFormat(b.U16(4))
 
 	if sub.Format == 1 {
@@ -171,6 +184,10 @@ func parseGPosLookupSubtableType1(b binarySegm, sub LookupSubtable) LookupSubtab
 		sub.Support = vr
 	} else if sub.Format == 2 {
 		// Format 2: Array of positioning values, one per covered glyph
+		if len(b) < 8 {
+			tracer().Errorf("GPOS type 1 format 2 buffer too small: %d bytes", len(b))
+			return LookupSubtable{}
+		}
 		valueCount := b.U16(6)
 		values := make([]ValueRecord, valueCount)
 		offset := 8
@@ -353,22 +370,45 @@ func parseGPosLookupSubtableType7(b binarySegm, sub LookupSubtable) LookupSubtab
 // Positions one or more glyphs in chained context with backtrack and lookahead.
 // https://docs.microsoft.com/en-us/typography/opentype/spec/gpos#lookuptype-8-chained-contexts-positioning-subtable
 func parseGPosLookupSubtableType8(b binarySegm, sub LookupSubtable) LookupSubtable {
+	if len(b) < 6 {
+		tracer().Errorf("GPOS type 8 buffer too small: %d bytes", len(b))
+		return LookupSubtable{}
+	}
+
 	var err error
 	sub, err = parseChainedSequenceContext(b, sub)
 	if err != nil {
-		tracer().Errorf(err.Error())
+		tracer().Errorf("GPOS type 8 chained context error: %v", err)
+		return LookupSubtable{}
 	}
+
 	switch sub.Format {
 	case 1:
 		sub.Index = parseVarArray16(b, 4, 2, 2, "LookupSubtableGPos8-1")
 	case 2:
+		if len(b) < 12 {
+			tracer().Errorf("GPOS type 8 format 2 buffer too small: %d bytes", len(b))
+			return LookupSubtable{}
+		}
 		sub.Index = parseVarArray16(b, 10, 2, 2, "LookupSubtableGPos8-2")
 	case 3:
+		// Safe type assertion to prevent panic
+		seqctx, ok := sub.Support.(*SequenceContext)
+		if !ok {
+			tracer().Errorf("GPOS type 8 format 3: Support is not *SequenceContext")
+			return LookupSubtable{}
+		}
+
 		offset := 2
-		seqctx := sub.Support.(*SequenceContext)
 		offset += 2 + len(seqctx.BacktrackCoverage)*2
 		offset += 2 + len(seqctx.InputCoverage)*2
 		offset += 2 + len(seqctx.LookaheadCoverage)*2
+
+		if offset >= len(b) {
+			tracer().Errorf("GPOS type 8 format 3: offset %d exceeds buffer size %d", offset, len(b))
+			return LookupSubtable{}
+		}
+
 		sub.Index = parseVarArray16(b, offset, 2, 2, "LookupSubtableGPos8-3")
 	}
 	return sub

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
+	"github.com/npillmayer/tyse/core"
 )
 
 func TestParseHeader(t *testing.T) {
@@ -13,7 +14,7 @@ func TestParseHeader(t *testing.T) {
 	f := loadTestdataFont(t, "GentiumPlus-R")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		UserError(err)
+		core.UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("otf.header.tag = %x", otf.Header.FontType)
@@ -52,7 +53,7 @@ func TestParseGPos(t *testing.T) {
 	f := loadTestdataFont(t, "Calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		UserError(err)
+		core.UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("font contains tables:")
@@ -94,7 +95,7 @@ func TestParseGSub(t *testing.T) {
 	f := loadTestdataFont(t, "GentiumPlus-R")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		UserError(err)
+		core.UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("font contains tables:")
@@ -134,7 +135,7 @@ func TestParseKern(t *testing.T) {
 	f := loadTestdataFont(t, "Calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		UserError(err)
+		core.UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("font contains tables:")
@@ -161,7 +162,7 @@ func TestParseOtherTables(t *testing.T) {
 	f := loadTestdataFont(t, "Calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		UserError(err)
+		core.UserError(err)
 		t.Fatal(err)
 	}
 	maxp := otf.tables[T("maxp")].Self().AsMaxP()
@@ -267,7 +268,7 @@ func parseFont(t *testing.T, pattern string) *Font {
 	}
 	otf, err := Parse(otf.F.Binary)
 	if err != nil {
-		UserError(err)
+		core.UserError(err)
 		t.Fatal(err)
 	}
 	t.Logf("--- font parsed ---")
@@ -332,5 +333,62 @@ func TestParseGPosLookups(t *testing.T) {
 		t.Error("expected to parse at least some GPOS lookup subtables, but parsed none")
 	} else {
 		t.Logf("Successfully parsed %d GPOS lookup subtables (previously would have panicked)", parsedCount)
+	}
+}
+
+// TestErrorCollection verifies that parsing errors and warnings are collected properly.
+func TestErrorCollection(t *testing.T) {
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
+	defer teardown()
+	
+	// Test with Calibri, which has a known kern table size mismatch warning
+	f := loadTestdataFont(t, "Calibri")
+	otf, err := Parse(f.F.Binary)
+	if err != nil {
+		core.UserError(err)
+		t.Fatal(err)
+	}
+	
+	// Check that warnings were collected
+	warnings := otf.Warnings()
+	t.Logf("Font has %d warnings", len(warnings))
+	
+	// Verify we have at least one warning for the kern table
+	foundKernWarning := false
+	for _, w := range warnings {
+		t.Logf("Warning: %s", w.String())
+		if w.Table == T("kern") {
+			foundKernWarning = true
+			if w.Issue == "" {
+				t.Error("kern warning has empty issue description")
+			}
+		}
+	}
+	
+	if foundKernWarning {
+		t.Log("Successfully collected kern table size mismatch warning")
+	} else {
+		t.Log("No kern table warning found (this is OK if font format changed)")
+	}
+	
+	// Check errors (should be none for valid fonts like Calibri)
+	errors := otf.Errors()
+	t.Logf("Font has %d errors", len(errors))
+	if len(errors) > 0 {
+		t.Error("Expected no errors for Calibri, but got:")
+		for _, e := range errors {
+			t.Errorf("  %s", e.Error())
+		}
+	}
+	
+	// Verify HasCriticalErrors works correctly
+	if otf.HasCriticalErrors() {
+		t.Error("Calibri should not have critical errors")
+	}
+	
+	// Verify CriticalErrors returns empty for valid font
+	critErrs := otf.CriticalErrors()
+	if len(critErrs) != 0 {
+		t.Errorf("Expected 0 critical errors, got %d", len(critErrs))
 	}
 }

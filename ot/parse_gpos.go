@@ -1,11 +1,11 @@
 package ot
 
 // parseGPos parses the GPOS (Glyph Positioning) table.
-func parseGPos(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseGPos(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	var err error
 	gpos := newGPosTable(tag, b, offset, size)
-	err = parseLayoutHeader(&gpos.LayoutTable, b, err)
-	err = parseLookupList(&gpos.LayoutTable, b, err, true) // true = GPOS
+	err = parseLayoutHeader(&gpos.LayoutTable, b, err, ec)
+	err = parseLookupList(&gpos.LayoutTable, b, err, true, ec) // true = GPOS
 	err = parseFeatureList(&gpos.LayoutTable, b, err)
 	err = parseScriptList(&gpos.LayoutTable, b, err)
 	if err != nil {

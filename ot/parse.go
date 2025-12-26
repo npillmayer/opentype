@@ -88,6 +88,15 @@ func checkedAddUint32(a, b uint32) (uint32, error) {
 
 // ---------------------------------------------------------------------------
 
+// errFontFormat produces user level errors for font parsing.
+// This is a compatibility helper that returns a simple error.
+// In the future, this will be replaced with proper error collection.
+func errFontFormat(message string) error {
+	return fmt.Errorf("OpenType font format: %s", message)
+}
+
+// ---------------------------------------------------------------------------
+
 // Parse parses an OpenType font from a byte slice.
 // An ot.Font needs ongoing access to the fonts byte-data after the Parse function returns.
 // Its elements are assumed immutable while the ot.Font remains in use.
@@ -105,6 +114,9 @@ func Parse(font []byte) (*Font, error) {
 		return nil, errFontFormat(fmt.Sprintf("font type not supported: %x", h.FontType))
 	}
 	otf := &Font{Header: &h, tables: make(map[Tag]Table)}
+
+	// Create error collector for accumulating errors during parsing
+	ec := &errorCollector{}
 	src := binarySegm(font)
 	// "The Offset Table is followed immediately by the Table Record entries …
 	// sorted in ascending order by tag", 16 bytes each.
@@ -140,12 +152,12 @@ func Parse(font []byte) (*Font, error) {
 				tag, off, tableEnd, len(src)))
 		}
 
-		otf.tables[tag], err = parseTable(tag, src[off:tableEnd], off, size)
+		otf.tables[tag], err = parseTable(tag, src[off:tableEnd], off, size, ec)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if err := extractLayoutInfo(otf); err != nil {
+	if err := extractLayoutInfo(otf, ec); err != nil {
 		return nil, err
 	}
 	// Collect and centralize font information:
@@ -172,6 +184,11 @@ func Parse(font []byte) (*Font, error) {
 			}
 		}
 	}
+
+	// Transfer accumulated errors and warnings to the Font
+	otf.parseErrors = ec.errors
+	otf.parseWarnings = ec.warnings
+
 	return otf, nil
 }
 
@@ -188,7 +205,7 @@ var LayoutTables = []string{
 }
 
 // Consistency check and shortcuts to essential tables, including layout tables.
-func extractLayoutInfo(otf *Font) error {
+func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 	for _, tag := range RequiredTables {
 		h := otf.tables[T(tag)]
 		if h == nil {
@@ -239,7 +256,7 @@ func extractLayoutInfo(otf *Font) error {
 	}
 
 	// Perform cross-table consistency validation
-	if err := validateCrossTableConsistency(otf); err != nil {
+	if err := validateCrossTableConsistency(otf, ec); err != nil {
 		return err
 	}
 
@@ -248,7 +265,7 @@ func extractLayoutInfo(otf *Font) error {
 
 // validateCrossTableConsistency performs cross-table validation to ensure
 // internal consistency between related tables.
-func validateCrossTableConsistency(otf *Font) error {
+func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 	// Get maxp table for glyph count
 	maxpTable := otf.Table(T("maxp"))
 	if maxpTable == nil {
@@ -339,35 +356,35 @@ func validateCrossTableConsistency(otf *Font) error {
 	return nil
 }
 
-func parseTable(t Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseTable(t Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	switch t {
 	case T("BASE"):
-		return parseBase(t, b, offset, size)
+		return parseBase(t, b, offset, size, ec)
 	case T("cmap"):
-		return parseCMap(t, b, offset, size)
+		return parseCMap(t, b, offset, size, ec)
 	case T("head"):
-		return parseHead(t, b, offset, size)
+		return parseHead(t, b, offset, size, ec)
 	case T("glyf"):
 		// We do not parse the glyf table (glyph outline data).
 		// For shaping and layout, all necessary metrics are provided by hmtx (advance width, LSB).
 		// The glyf table contains outline data for rendering, which is out of scope.
 		return newTable(t, b, offset, size), nil
 	case T("GDEF"):
-		return parseGDef(t, b, offset, size)
+		return parseGDef(t, b, offset, size, ec)
 	case T("GPOS"):
-		return parseGPos(t, b, offset, size)
+		return parseGPos(t, b, offset, size, ec)
 	case T("GSUB"):
-		return parseGSub(t, b, offset, size)
+		return parseGSub(t, b, offset, size, ec)
 	case T("hhea"):
-		return parseHHea(t, b, offset, size)
+		return parseHHea(t, b, offset, size, ec)
 	case T("hmtx"):
-		return parseHMtx(t, b, offset, size)
+		return parseHMtx(t, b, offset, size, ec)
 	case T("kern"):
-		return parseKern(t, b, offset, size)
+		return parseKern(t, b, offset, size, ec)
 	case T("loca"):
-		return parseLoca(t, b, offset, size)
+		return parseLoca(t, b, offset, size, ec)
 	case T("maxp"):
-		return parseMaxP(t, b, offset, size)
+		return parseMaxP(t, b, offset, size, ec)
 	}
 	tracer().Infof("font contains table (%s), will not be interpreted", t)
 	return newTable(t, b, offset, size), nil
@@ -375,7 +392,7 @@ func parseTable(t Tag, b binarySegm, offset, size uint32) (Table, error) {
 
 // --- Head table ------------------------------------------------------------
 
-func parseHead(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseHead(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	if size < 54 {
 		return nil, errFontFormat("size of head table")
 	}
@@ -393,7 +410,7 @@ func parseHead(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 // The Baseline table (BASE) provides information used to align glyphs of different
 // scripts and sizes in a line of text, whether the glyphs are in the same font or
 // in different fonts.
-func parseBase(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseBase(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	var err error
 	base := newBaseTable(tag, b, offset, size)
 	// The BASE table begins with offsets to Axis tables that describe layout data for
@@ -487,7 +504,7 @@ func parseBaseAxis(base *BaseTable, hOrV int, link NavLink, err error) error {
 //	0 (Unicode)  4    12  Unicode full
 //	3 (Win)      1    4   Unicode BMP
 //	3 (Win)      10   12  Unicode full
-func parseCMap(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseCMap(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	n, _ := b.u16(2) // number of sub-tables
 	tracer().Debugf("font cmap has %d sub-tables in %d|%d bytes", n, len(b), size)
 	t := newCMapTable(tag, b, offset, size)
@@ -564,7 +581,7 @@ type kernSubTableHeader struct {
 // We currently only support kern table format 0, which should be supported on any
 // platform. In the real world, fonts usually have just one kern sub-table, and
 // older Windows versions cannot handle more than one.
-func parseKern(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseKern(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	if size <= 4 {
 		return nil, nil
 	}
@@ -612,6 +629,8 @@ func parseKern(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 		if sz != h.length {
 			tracer().Infof("kern sub-table size should be 0x%x, but given as 0x%x; fixing",
 				sz, h.length)
+			// Record as warning - this is a known issue with some fonts (e.g., Calibri)
+			ec.addWarning(tag, fmt.Sprintf("kern sub-table size mismatch: expected 0x%x, got 0x%x", sz, h.length), offset+uint32(suboffset))
 		}
 		if uint32(suboffset)+sz >= size {
 			return nil, errFontFormat("kern sub-table size exceeds kern table bounds")
@@ -632,7 +651,7 @@ func parseKern(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 // The 'loca' table is most intimately dependent upon the contents of the 'glyf' table
 // and vice versa. Changes to the 'loca' table must not be made unless appropriate
 // changes to the 'glyf' table are simultaneously made.
-func parseLoca(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseLoca(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	return newLocaTable(tag, b, offset, size), nil
 }
 
@@ -641,7 +660,7 @@ func parseLoca(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 // This table establishes the memory requirements for this font. Fonts with CFF data
 // must use Version 0.5 of this table, specifying only the numGlyphs field. Fonts
 // with TrueType outlines must use Version 1.0 of this table, where all data is required.
-func parseMaxP(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseMaxP(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	if size <= 6 {
 		return nil, nil
 	}
@@ -656,7 +675,7 @@ func parseMaxP(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 // This table establishes the memory requirements for this font. Fonts with CFF data
 // must use Version 0.5 of this table, specifying only the numGlyphs field. Fonts
 // with TrueType outlines must use Version 1.0 of this table, where all data is required.
-func parseHHea(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseHHea(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	if size == 0 {
 		return nil, nil
 	}
@@ -681,7 +700,7 @@ func parseHHea(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
 // the ideal metrics of the 'hmtx' table be perfectly consistent with the device metrics
 // found in other tables, but care should be taken that they are not significantly
 // inconsistent.
-func parseHMtx(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseHMtx(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	if size == 0 {
 		return nil, nil
 	}
@@ -727,7 +746,7 @@ func parseNames(b binarySegm) (nameNames, error) {
 
 // The Glyph Definition (GDEF) table provides various glyph properties used in
 // OpenType Layout processing.
-func parseGDef(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseGDef(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	var err error
 	gdef := newGDefTable(tag, b, offset, size)
 	err = parseGDefHeader(gdef, b, err)
@@ -958,7 +977,7 @@ func parseMarkGlyphSets(gdef *GDefTable, b binarySegm, err error) error {
 // parseLayoutHeader parses a layout table header, i.e. reads version information
 // and header information (containing offsets).
 // Supports header versions 1.0 and 1.1
-func parseLayoutHeader(lytt *LayoutTable, b binarySegm, err error) error {
+func parseLayoutHeader(lytt *LayoutTable, b binarySegm, err error, ec *errorCollector) error {
 	if err != nil {
 		return err
 	}
@@ -1090,7 +1109,7 @@ func parseLangSys(b binarySegm, offset int, target string) (langSys, error) {
 
 // parseLookupList parses the LookupList.
 // See https://www.microsoft.com/typography/otspec/chapter2.htm#lulTbl
-func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool) error {
+func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ec *errorCollector) error {
 	if err != nil {
 		return err
 	}

@@ -13,11 +13,13 @@ import (
 // We only support OpenType fonts with advanced layout, i.e. fonts containing tables
 // GSUB, GPOS, etc.
 type Font struct {
-	F      *font.ScalableFont
-	Header *FontHeader
-	tables map[Tag]Table
-	CMap   *CMapTable // CMAP table is mandatory
-	Layout struct {   // OpenType core layout tables
+	F             *font.ScalableFont
+	Header        *FontHeader
+	tables        map[Tag]Table
+	CMap          *CMapTable    // CMAP table is mandatory
+	parseErrors   []FontError   // Errors accumulated during parsing
+	parseWarnings []FontWarning // Warnings accumulated during parsing
+	Layout        struct {      // OpenType core layout tables
 		GSub *GSubTable // OpenType layout GSUB
 		GPos *GPosTable // OpenType layout GPOS
 		GDef *GDefTable // OpenType layout GDEF
@@ -75,6 +77,48 @@ func (otf *Font) TableTags() []Tag {
 		tags = append(tags, tag)
 	}
 	return tags
+}
+
+// Errors returns all errors encountered during font parsing.
+// These errors represent issues that were found but did not prevent parsing from completing.
+// Clients can inspect these errors to determine if the font is suitable for their use case.
+func (otf *Font) Errors() []FontError {
+	if otf.parseErrors == nil {
+		return []FontError{}
+	}
+	return otf.parseErrors
+}
+
+// Warnings returns all warnings encountered during font parsing.
+// Warnings indicate potential issues that are generally safe to ignore.
+func (otf *Font) Warnings() []FontWarning {
+	if otf.parseWarnings == nil {
+		return []FontWarning{}
+	}
+	return otf.parseWarnings
+}
+
+// CriticalErrors returns all errors with critical severity.
+// Critical errors indicate severe problems that may make the font unreliable.
+func (otf *Font) CriticalErrors() []FontError {
+	critical := make([]FontError, 0)
+	for _, err := range otf.parseErrors {
+		if err.Severity == SeverityCritical {
+			critical = append(critical, err)
+		}
+	}
+	return critical
+}
+
+// HasCriticalErrors returns true if any critical errors were encountered during parsing.
+// Fonts with critical errors may be unreliable or unusable.
+func (otf *Font) HasCriticalErrors() bool {
+	for _, err := range otf.parseErrors {
+		if err.Severity == SeverityCritical {
+			return true
+		}
+	}
+	return false
 }
 
 // GlyphIndex is a glyph index in a font.

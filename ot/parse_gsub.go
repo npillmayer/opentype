@@ -1,11 +1,11 @@
 package ot
 
 // parseGSub parses the GSUB (Glyph Substitution) table.
-func parseGSub(tag Tag, b binarySegm, offset, size uint32) (Table, error) {
+func parseGSub(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	var err error
 	gsub := newGSubTable(tag, b, offset, size)
-	err = parseLayoutHeader(&gsub.LayoutTable, b, err)
-	err = parseLookupList(&gsub.LayoutTable, b, err, false) // false = GSUB
+	err = parseLayoutHeader(&gsub.LayoutTable, b, err, ec)
+	err = parseLookupList(&gsub.LayoutTable, b, err, false, ec) // false = GSUB
 	err = parseFeatureList(&gsub.LayoutTable, b, err)
 	err = parseScriptList(&gsub.LayoutTable, b, err)
 	if err != nil {

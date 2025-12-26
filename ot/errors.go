@@ -1,131 +1,121 @@
 package ot
 
-import (
-	"errors"
-	"fmt"
-	"os"
-)
+import "fmt"
 
-// General error codes
+// ErrorSeverity represents the severity level of a font parsing error.
+type ErrorSeverity int
+
 const (
-	NOERROR     int = 0
-	EMISSING    int = 122 // resource does not exist
-	EINVALID    int = 123 // validation failed
-	ECONNECTION int = 124 // remote resource not connected
-	EINTERNAL   int = 125 // internal error
+	// SeverityCritical indicates a severe error that makes the font unusable or unreliable.
+	SeverityCritical ErrorSeverity = iota
+	// SeverityMajor indicates a significant error that may affect functionality but doesn't prevent usage.
+	SeverityMajor
+	// SeverityMinor indicates a minor issue that can be safely ignored in most cases.
+	SeverityMinor
 )
 
-func errorText(ecode int) string {
-	switch ecode {
-	case NOERROR:
-		return "OK"
-	case EMISSING:
-		return "not found"
-	case EINVALID:
-		return "invalid"
-	case ECONNECTION:
-		return "transmission-error"
-	case EINTERNAL:
-		return "internal error"
-	}
-	return "undefined error"
-}
-
-// AppError is an error with an associated error code and a user-message.
-type AppError interface {
-	error
-	ErrorCode() int
-	UserMessage() string
-}
-
-type coreError struct {
-	error
-	code int
-	msg  string
-}
-
-func (e coreError) Unwrap() error {
-	return e.error
-}
-
-func (e coreError) Error() string {
-	return fmt.Sprintf("[%d] %v", e.code, e.error)
-}
-
-func (e coreError) ErrorCode() int {
-	return e.code
-}
-
-func (e coreError) UserMessage() string {
-	return e.msg
-}
-
-var _ AppError = coreError{}
-
-// ErrorWithCode adds an error code to err's error chain.
-// Unlike pkg/errors, ErrorWithCode will wrap nil error.
-func ErrorWithCode(err error, code int) error {
-	if err == nil {
-		err = errors.New(errorText(code))
-	}
-	return coreError{err, code, errorText(code)}
-}
-
-// WrapError wraps an error in a core error, featuring an error code and
-// a user message.
-// If err is nil, an error denoting NOERROR is returned.
-func WrapError(err error, code int, format string, v ...interface{}) error {
-	if err == nil {
-		err = errors.New(errorText(code))
-	}
-	msg := fmt.Sprintf(format, v...)
-	return coreError{err, code, msg}
-}
-
-// Code returns the status code associated with an error.
-// If no status code is found, it returns EINTERNAL.
-// If err is nil, NOERROR is returned.
-func Code(err error) (code int) {
-	if err == nil {
-		return NOERROR
-	}
-	if e := AppError(nil); errors.As(err, &e) {
-		return e.ErrorCode()
-	}
-	return EINTERNAL
-}
-
-// UserMessage returns the user message associated with an error.
-// If no message is found, it checks StatusCode and returns that message.
-// If err is nil, it returns "".
-func UserMessage(err error) string {
-	if err == nil {
-		return ""
-	}
-	if e := AppError(nil); errors.As(err, &e) {
-		return e.UserMessage()
-	}
-	return errorText(Code(err))
-}
-
-// Error creates an error with an error code and a user-message.
-func Error(code int, format string, v ...interface{}) error {
-	return coreError{
-		errors.New(errorText(code)),
-		code,
-		fmt.Sprintf(format, v...),
+// String returns a human-readable representation of the error severity.
+func (s ErrorSeverity) String() string {
+	switch s {
+	case SeverityCritical:
+		return "CRITICAL"
+	case SeverityMajor:
+		return "MAJOR"
+	case SeverityMinor:
+		return "MINOR"
+	default:
+		return "UNKNOWN"
 	}
 }
 
-func UserError(err error) {
-	if e, ok := err.(AppError); ok {
-		fmt.Fprintf(os.Stderr, "[%d] %s\n", e.ErrorCode(), e.UserMessage())
-		return
-	}
-	fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+// FontError represents an error encountered during font parsing.
+// Errors are accumulated during initial parsing and can be inspected after parsing completes.
+type FontError struct {
+	Table    Tag           // The OpenType table where the error occurred (e.g., "GSUB", "GPOS")
+	Section  string        // Specific section within the table (e.g., "LookupType6", "ScriptList")
+	Issue    string        // Human-readable description of the issue
+	Severity ErrorSeverity // Severity level of the error
+	Offset   uint32        // Byte offset in the font file where the error occurred (0 if unknown)
 }
 
-// errFontFormat produces user level errors for font parsing.
-func errFontFormat(x string) error {
-	return Error(EINVALID, "OpenType font format: %s", x)
+// Error implements the error interface.
+func (e FontError) Error() string {
+	if e.Offset > 0 {
+		return fmt.Sprintf("[%s] %s/%s at offset %d: %s", e.Severity, e.Table, e.Section, e.Offset, e.Issue)
+	}
+	return fmt.Sprintf("[%s] %s/%s: %s", e.Severity, e.Table, e.Section, e.Issue)
+}
+
+// FontWarning represents a non-critical issue encountered during font parsing.
+// Warnings indicate potential problems but do not prevent font usage.
+type FontWarning struct {
+	Table  Tag    // The OpenType table where the warning occurred
+	Issue  string // Human-readable description of the warning
+	Offset uint32 // Byte offset in the font file where the warning occurred (0 if unknown)
+}
+
+// String returns a human-readable representation of the warning.
+func (w FontWarning) String() string {
+	if w.Offset > 0 {
+		return fmt.Sprintf("[WARNING] %s at offset %d: %s", w.Table, w.Offset, w.Issue)
+	}
+	return fmt.Sprintf("[WARNING] %s: %s", w.Table, w.Issue)
+}
+
+// errorCollector accumulates errors and warnings during font parsing.
+// This is an internal helper used by the parser to collect issues as they are discovered.
+type errorCollector struct {
+	errors   []FontError
+	warnings []FontWarning
+}
+
+// addError records a parsing error.
+func (ec *errorCollector) addError(table Tag, section string, issue string, severity ErrorSeverity, offset uint32) {
+	ec.errors = append(ec.errors, FontError{
+		Table:    table,
+		Section:  section,
+		Issue:    issue,
+		Severity: severity,
+		Offset:   offset,
+	})
+}
+
+// addWarning records a parsing warning.
+func (ec *errorCollector) addWarning(table Tag, issue string, offset uint32) {
+	ec.warnings = append(ec.warnings, FontWarning{
+		Table:  table,
+		Issue:  issue,
+		Offset: offset,
+	})
+}
+
+// hasErrors returns true if any errors have been recorded.
+func (ec *errorCollector) hasErrors() bool {
+	return len(ec.errors) > 0
+}
+
+// hasWarnings returns true if any warnings have been recorded.
+func (ec *errorCollector) hasWarnings() bool {
+	return len(ec.warnings) > 0
+}
+
+// criticalErrors returns all errors with critical severity.
+func (ec *errorCollector) criticalErrors() []FontError {
+	critical := make([]FontError, 0)
+	for _, err := range ec.errors {
+		if err.Severity == SeverityCritical {
+			critical = append(critical, err)
+		}
+	}
+	return critical
+}
+
+// hasCriticalErrors returns true if any critical errors have been recorded.
+func (ec *errorCollector) hasCriticalErrors() bool {
+	for _, err := range ec.errors {
+		if err.Severity == SeverityCritical {
+			return true
+		}
+	}
+	return false
 }

@@ -199,7 +199,7 @@ import (
 // Valuable resource:
 // http://opentypecookbook.com/
 
-// tracer writes to trace with key 'tyse.fonts'
+// tracer writes to trace with key 'font.opentype'
 func tracer() tracing.Trace {
 	return tracing.Select("font.opentype")
 }

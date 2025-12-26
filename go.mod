@@ -12,6 +12,5 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/flopp/go-findfont v0.0.0-20201114153133-e7393a00c15b // indirect
 	golang.org/x/text v0.32.0
 )

@@ -1,8 +1,8 @@
 package otquery
 
 import (
-	"github.com/npillmayer/tyse/core/font/opentype"
-	"github.com/npillmayer/tyse/core/font/opentype/ot"
+	"github.com/npillmayer/opentype"
+	"github.com/npillmayer/opentype/ot"
 	"golang.org/x/image/font/sfnt"
 )
 

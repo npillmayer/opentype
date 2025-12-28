@@ -4,10 +4,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/schuko/tracing"
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
 	"github.com/npillmayer/tyse/core/font"
-	"github.com/npillmayer/tyse/core/font/opentype/ot"
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/image/font/sfnt"
 )

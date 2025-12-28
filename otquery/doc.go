@@ -31,7 +31,7 @@ import (
 	"github.com/npillmayer/schuko/tracing"
 )
 
-// tracer writes to trace with key 'tyse.fonts'
+// tracer writes to trace with key 'font.opentype'
 func tracer() tracing.Trace {
-	return tracing.Select("tyse.fonts")
+	return tracing.Select("font.opentype")
 }

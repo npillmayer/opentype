@@ -1,7 +1,7 @@
 package otquery
 
 import (
-	"github.com/npillmayer/tyse/core/font/opentype/ot"
+	"github.com/npillmayer/opentype/ot"
 )
 
 // FontType returns the font type, encoded in the font header, as a string.

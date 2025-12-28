@@ -248,7 +248,7 @@ func applyLookup(lookup *ot.Lookup, feat Feature, buf []ot.GlyphIndex, pos, alt 
 func gsubLookupType1Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf []ot.GlyphIndex, pos int) (
 	int, bool, []ot.GlyphIndex) {
 	//
-	_, ok := lksub.Coverage.GlyphRange.Match(buf[pos])
+	_, ok := lksub.Coverage.GlyphRange.Match(buf[pos]) // format 1 does not use the Coverage index
 	tracer().Debugf("coverage of glyph ID %d is %d", buf[pos], ok)
 	if !ok {
 		return pos, false, buf
@@ -256,6 +256,7 @@ func gsubLookupType1Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf []ot.GlyphI
 	// support is deltaGlyphID: add to original glyph ID to get substitute glyph ID
 	delta := lksub.Support.(ot.GlyphIndex)
 	tracer().Debugf("OT lookup GSUB 1/1: subst %d for %d", buf[pos]+delta, buf[pos])
+	// TODO: check bounds against max glyph ID
 	buf[pos] = buf[pos] + delta
 	return pos + 1, true, buf
 }
@@ -624,8 +625,7 @@ func replaceGlyphs(buf []ot.GlyphIndex, from, to int, glyphs []ot.GlyphIndex) []
 var nullGlyphs = []ot.GlyphIndex{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 
 // lookupGlyph is a small helper which looks up an index for a glyph (previously
-// returned from a coverage table), checks for errors, and returns the resulting bytes.
-// TODO check that this is inlined by the compiler.
+// returned from a coverage table), checks for errors, and returns the resulting glyph index.
 func lookupGlyph(index ot.VarArray, ginx int, deep bool) ot.GlyphIndex {
 	outglyph, err := index.Get(ginx, deep)
 	if err != nil {

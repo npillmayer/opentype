@@ -3,9 +3,9 @@ package otquery
 import (
 	"testing"
 
+	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/schuko/tracing"
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
-	"github.com/npillmayer/tyse/core/font/opentype/ot"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -67,7 +67,8 @@ func (env *InfoTestEnviron) TestReverseLookup() {
 
 func (env *InfoTestEnviron) TestGlyphClasses() {
 	clz := ClassesForGlyph(env.otf, 4) // 4 = 'A'
-	env.Equal(1, clz.Class, "expected class of 'A' to be 1, is %d", clz.Class)
+	one := GlyphClass(1)
+	env.Equal(one, clz.Class, "expected class of 'A' to be 1, is %d", clz.Class)
 }
 
 // --- Helpers ----------------------------------------------------------

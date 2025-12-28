@@ -11,6 +11,7 @@ CLAUDE.md
 *.dll
 *.so
 *.dylib
+otcli
 
 # Test binary, built with `go test -c`
 *.test

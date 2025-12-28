@@ -45,7 +45,6 @@ func main() {
 	flag.Parse()
 	tracer().SetTraceLevel(tracing.LevelError)    // will set the correct level later
 	pterm.Info.Println("Welcome to OpenType CLI") // colored welcome message
-	tracer().Infof("Trace level is %s", *tlevel)
 	//
 	// set up REPL
 	repl, err := readline.New("ot > ")
@@ -63,7 +62,18 @@ func main() {
 	//
 	// start receiving commands
 	pterm.Info.Println("Quit with <ctrl>D") // inform user how to stop the CLI
-	tracer().SetTraceLevel(tracing.LevelDebug)
+	switch *tlevel {
+	case "Debug":
+		tracer().SetTraceLevel(tracing.LevelDebug)
+	case "Info":
+		tracer().SetTraceLevel(tracing.LevelInfo)
+	case "Error":
+		tracer().SetTraceLevel(tracing.LevelError)
+	default:
+		tracer().Errorf("Invalid trace level: %s", *tlevel)
+		os.Exit(5)
+	}
+	tracer().Infof("Trace level is %s", *tlevel)
 	intp.REPL() // go into interactive mode
 }
 
@@ -186,7 +196,7 @@ func (intp *Intp) parseCommand(line string) (*Command, error) {
 }
 
 func (intp *Intp) execute(cmd *Command) (error, bool) {
-	tracer().Infof("cmd = %v", cmd.op)
+	tracer().Debugf("cmd = %v", cmd.op)
 	if cmd.op[0].code == HELP {
 		help(cmd.op[0].arg)
 		return nil, false

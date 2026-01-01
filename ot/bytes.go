@@ -30,7 +30,7 @@ func u32(b []byte) uint32 {
 // underlying (unstructured) font data. It is the client's responsibility to interpret the
 // structure and impose it onto the NavLocation's bytes.
 //
-// If somewhere along a chain of navigation calls an error occured, the finally resulting NavLocation
+// If an error occured somewhere along a chain of navigation calls, the finally resulting NavLocation
 // may be of size 0.
 type NavLocation interface {
 	Size() int                  // size in bytes

@@ -94,6 +94,24 @@ type pathNode struct {
 	table    ot.Table
 	location ot.Navigator
 	link     ot.NavLink
+	key      string
+	inx      int
+}
+
+func (n *pathNode) String() string {
+	if n == nil || n.location == nil {
+		return "<none>"
+	}
+	s := n.location.Name()
+	if n.key != "" {
+		s += fmt.Sprintf("[%s]", n.key)
+	} else if n.inx >= 0 {
+		s += fmt.Sprintf("[%d]", n.inx)
+	}
+	if n.link != nil {
+		s += " -> (" + n.link.Name() + ")"
+	}
+	return s
 }
 
 // Intp is our interpreter object
@@ -104,9 +122,22 @@ type Intp struct {
 	stack []pathNode
 }
 
+func (intp *Intp) String() string {
+	if intp == nil || intp.table == nil {
+		return "()"
+	}
+	s := fmt.Sprintf("( table=%s )", intp.table.Self().NameTag())
+	for _, node := range intp.stack {
+		s += fmt.Sprintf(" -> %s", node.String())
+	}
+	return s
+}
+
 // REPL starts interactive mode.
 func (intp *Intp) REPL() {
 	for {
+		//tracer().Infof(intp.String())
+		pterm.Println(intp.String())
 		line, err := intp.repl.Readline()
 		if err != nil { // io.EOF
 			break
@@ -223,11 +254,15 @@ func (intp *Intp) execute(cmd *Command) (error, bool) {
 			tag := c.arg
 			intp.table = intp.font.Table(ot.T(tag))
 			intp.stack = intp.stack[:0]
-			intp.stack = append(intp.stack, pathNode{table: intp.table})
+			//intp.stack = append(intp.stack, pathNode{table: intp.table})
 			tracer().Infof("setting table: %v", tag)
 		case MAP:
 			if intp.table == nil {
 				pterm.Error.Println("cannot map without table being set")
+				break
+			} else if len(intp.stack) == 0 || intp.lastPathNode().location == nil {
+				pterm.Info.Println("no starting point set")
+				break
 			}
 			var target ot.NavLink
 			m := intp.lastPathNode().location.Map()
@@ -242,16 +277,20 @@ func (intp *Intp) execute(cmd *Command) (error, bool) {
 					target = m.LookupTag(ot.T(tag))
 					pterm.Printf("%s table maps [%v] = %v\n", m.Name(), ot.T(tag), target.Name())
 				}
+				n := intp.lastPathNode()
+				n.key, n.link = tag, target
+				intp.setLastPathNode(n)
 			} else if m.IsTagRecordMap() {
 				trm := m.AsTagRecordMap()
 				pterm.Printf("%s map keys = %v\n", trm.Name(), trm.Tags())
 			}
-			n := intp.lastPathNode()
-			n.link = target
-			intp.setLastPathNode(n)
 		case LIST:
 			if intp.table == nil {
 				pterm.Error.Println("cannot list without table being set")
+				break
+			} else if len(intp.stack) == 0 || intp.lastPathNode().location == nil {
+				pterm.Info.Println("no starting point set")
+				break
 			}
 			l := intp.lastPathNode().location.List()
 			if c.arg == "" {
@@ -273,17 +312,23 @@ func (intp *Intp) execute(cmd *Command) (error, bool) {
 			if err := intp.checkTable(); err != nil {
 				return err, false
 			}
-			s := intp.table.Self().AsGSub().ScriptList
-			if s == nil {
+			var s ot.Navigator
+			switch intp.table.Self().NameTag().String() {
+			case "GSUB":
+				s = intp.table.Self().AsGSub().ScriptList
+			case "GPOS":
 				s = intp.table.Self().AsGPos().ScriptList
+			default:
+				return errors.New("unsupported table type for ScriptList"), false
 			}
 			if s == nil {
 				return errors.New("table has no script list"), false
 			}
 			m := s.Map().AsTagRecordMap()
 			pterm.Printf("ScriptList keys: %v\n", m.Tags())
-			n := pathNode{location: s}
+			n := pathNode{location: s, inx: -1}
 			if c.arg != "" {
+				n.key = c.arg
 				l := m.LookupTag(ot.T(c.arg))
 				if l.IsNull() {
 					tracer().Infof("script lookup [%s] returns null", ot.T(c.arg).String())
@@ -293,7 +338,18 @@ func (intp *Intp) execute(cmd *Command) (error, bool) {
 			}
 			intp.stack = append(intp.stack, n)
 		case FEATURES:
-			f := intp.table.Self().AsGSub().FeatureList
+			var f ot.TagRecordMap
+			switch intp.table.Self().NameTag().String() {
+			case "GSUB":
+				f = intp.table.Self().AsGSub().FeatureList
+			case "GPOS":
+				f = intp.table.Self().AsGPos().FeatureList
+			default:
+				return errors.New("unsupported table type for FeatureList"), false
+			}
+			if f == nil {
+				return errors.New("table has no feature list"), false
+			}
 			if c.arg == "" {
 				tracer().Infof("%s table has %d entries", f.Name(), f.Len())
 			} else if i, err := strconv.Atoi(c.arg); err == nil {
@@ -404,9 +460,9 @@ func help(topic string) {
 		pterm.Info.Println("LangSys")
 		pterm.Println(`
 	LangSys is pointed to from a Script Record.
-	It links a language with features to activate. It does to using an index into the feature table.
+	It links a language with features to activate. It does so using an index into the feature table.
 	+-----------------------------------+
-	| Infex of required feature or null |
+	| Index of required feature or null |
 	+-----------------------------------+
 	| Index of feature 1                |
 	+-----------------------------------+

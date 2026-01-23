@@ -32,6 +32,7 @@ The tool leverages the "Schrödinger's cat" navigation pattern from the `ot` pac
 | `list[:<index>]` | Navigate list structures, get item | `list:5` |
 | `scripts[:<tag>]` | Access ScriptList, navigate to script | `scripts:arab` |
 | `features[:<index>]` | Access FeatureList, get feature | `features:10` |
+| `lookups[:<index>]` | Print GSUB LookupList or a specific lookup | `lookups` |
 | `->` | Follow the current navigation link | `->` |
 | `help[:<topic>]` | Show help (topics: script, lang) | `help:script` |
 | `quit` | Exit the REPL | `quit` |

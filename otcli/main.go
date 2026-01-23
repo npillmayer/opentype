@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/chzyer/readline"
@@ -176,32 +175,82 @@ type Command struct {
 
 const NOOP = -1
 const (
+	// op-codes QUIT and NAVIGATE will not have arguments
 	QUIT int = iota
-	HELP
 	NAVIGATE
+	// op-codes below may have arguments
+	HELP
 	TABLE
 	LIST
 	MAP
 	SCRIPTS
 	FEATURES
+	LOOKUPS
+	PRINT
 )
 
+var opMap = map[string]int{
+	"quit":     QUIT,
+	"->":       NAVIGATE,
+	"help":     HELP,
+	"table":    TABLE,
+	"map":      MAP,
+	"list":     LIST,
+	"scripts":  SCRIPTS,
+	"features": FEATURES,
+	"lookups":  LOOKUPS,
+	"print":    PRINT,
+}
+
+var opNames = []string{
+	"quit",
+	"->",
+	"help",
+	"table",
+	"map",
+	"list",
+	"scripts",
+	"features",
+	"lookups",
+	"print",
+}
+
+var command = Command{}
+
+func resetCommand() {
+	command.count = 0
+	for i := range command.op {
+		command.op[i].code = NOOP
+		command.op[i].arg = ""
+		command.op[i].format = ""
+	}
+}
+
 func (intp *Intp) parseCommand(line string) (*Command, error) {
-	command := &Command{}
+	resetCommand()
 	steps := strings.Split(line, " ")
 	command.count = len(steps)
 	for i, step := range steps {
+		c := strings.Split(step, ":") // e.g.  "scripts:latn:tag" or "list:5:int" or "help:lang" or "map"
+		code, ok := opMap[strings.ToLower(c[0])]
+		if !ok {
+			code = HELP
+		}
+		command.op[i].code = code
 		command.op[i].arg = ""
-		switch step {
-		case "quit":
-			command.op[i].code = QUIT
-		case "->": // navigate
-			command.op[i].code = NAVIGATE
-		default:
-			c := strings.Split(step, ":") // e.g.  "scripts:latn:tag" or "list:5:int" or "help:lang" or "map"
-			tracer().Infof("parse command = %v", c)
-			command.op[i].arg = getOptArg(c, 1)
-			command.op[i].format = getOptArg(c, 2)
+		if command.op[i].code <= NAVIGATE {
+			return &command, nil
+		}
+		tracer().Infof("parsed command: %v", c)
+		command.op[i].arg = getOptArg(c, 1)
+		command.op[i].format = getOptArg(c, 2)
+		if command.op[i].arg == "" {
+			tracer().Infof("%s", opNames[command.op[i].code])
+		} else {
+			//command.op[i].arg = strings.ToLower(command.op[i].arg)
+			tracer().Infof("%s: looking for '%s'", opNames[command.op[i].code], command.op[i].arg)
+		}
+		/*
 			switch strings.ToLower(c[0]) {
 			case "table":
 				command.op[i].code = TABLE
@@ -212,157 +261,94 @@ func (intp *Intp) parseCommand(line string) (*Command, error) {
 			case "list":
 				command.op[i].code = LIST
 				tracer().Infof("list: looking for index '%v'", command.op[i].arg)
-			case "scriptlist", "scripts":
+			case "scripts":
 				command.op[i].code = SCRIPTS
 				tracer().Infof("script-list: looking for script '%s'", command.op[i].arg)
-			case "featurelist", "features":
+			case "features":
 				command.op[i].code = FEATURES
 				tracer().Infof("feature-list")
+			case "lookups", "lookup":
+				command.op[i].code = LOOKUPS
+				tracer().Infof("lookups")
 			default:
 				command.op[i].code = HELP
 			}
-		}
+		*/
 	}
-	return command, nil
+	return &command, nil
 }
 
-func (intp *Intp) execute(cmd *Command) (error, bool) {
+var commandFn = map[int]func(*Intp, *Op) (error, bool){
+	QUIT:     quitOp,
+	NAVIGATE: navigateOp,
+	HELP:     helpOp,
+	TABLE:    tableOp,
+	LIST:     listOp,
+	MAP:      mapOp,
+	SCRIPTS:  scriptsOp,
+	FEATURES: featuresOp,
+	LOOKUPS:  lookupsOp,
+	PRINT:    printOp,
+}
+
+func (intp *Intp) execute(cmd *Command) (err error, stop bool) {
 	tracer().Debugf("cmd = %v", cmd.op)
-	if cmd.op[0].code == HELP {
-		help(cmd.op[0].arg)
-		return nil, false
-	}
-	if cmd.op[0].code == QUIT {
-		return nil, true
-	}
 	for _, c := range cmd.op {
-		switch c.code {
-		case NAVIGATE:
-			if intp.table == nil {
-				pterm.Error.Println("cannot walk without table being set")
-			} else if intp.table == intp.lastPathNode().table {
-				tracer().Infof("ignoring '->'")
-			} else if intp.lastPathNode().link == nil {
-				pterm.Error.Println("no link to walk")
-			} else {
-				l := intp.lastPathNode().link
-				n := pathNode{location: l.Navigate()}
-				intp.stack = append(intp.stack, n)
-				tracer().Infof("walked to %s", n.location.Name())
-			}
-		case TABLE:
-			tag := c.arg
-			intp.table = intp.font.Table(ot.T(tag))
-			intp.stack = intp.stack[:0]
-			//intp.stack = append(intp.stack, pathNode{table: intp.table})
-			tracer().Infof("setting table: %v", tag)
-		case MAP:
-			if intp.table == nil {
-				pterm.Error.Println("cannot map without table being set")
-				break
-			} else if len(intp.stack) == 0 || intp.lastPathNode().location == nil {
-				pterm.Info.Println("no starting point set")
-				break
-			}
-			var target ot.NavLink
-			m := intp.lastPathNode().location.Map()
-			if c.arg != "" {
-				tag := c.arg
-				if m.IsTagRecordMap() {
-					trm := m.AsTagRecordMap()
-					target = trm.LookupTag(ot.T(tag))
-					tracer().Infof("%s map keys = %v", trm.Name(), trm.Tags())
-					pterm.Printf("%s table maps [tag %v] = %v\n", trm.Name(), ot.T(tag), target.Name())
-				} else {
-					target = m.LookupTag(ot.T(tag))
-					pterm.Printf("%s table maps [%v] = %v\n", m.Name(), ot.T(tag), target.Name())
-				}
-				n := intp.lastPathNode()
-				n.key, n.link = tag, target
-				intp.setLastPathNode(n)
-			} else if m.IsTagRecordMap() {
-				trm := m.AsTagRecordMap()
-				pterm.Printf("%s map keys = %v\n", trm.Name(), trm.Tags())
-			}
-		case LIST:
-			if intp.table == nil {
-				pterm.Error.Println("cannot list without table being set")
-				break
-			} else if len(intp.stack) == 0 || intp.lastPathNode().location == nil {
-				pterm.Info.Println("no starting point set")
-				break
-			}
-			l := intp.lastPathNode().location.List()
-			if c.arg == "" {
-				pterm.Printf("List has %d entries\n", l.Len())
-			} else if i, err := strconv.Atoi(c.arg); err == nil {
-				loc := l.Get(i)
-				size := loc.Size()
-				value := decodeLocation(loc, l.Name())
-				switch value.(type) {
-				case int:
-					pterm.Printf("%s list index %d holds number = %d\n", l.Name(), i, value)
-				default:
-					pterm.Printf("%s list index %d holds data of %d bytes\n", l.Name(), i, size)
-				}
-			} else {
-				pterm.Error.Printf("List index not numeric: %v\n", c.arg)
-			}
-		case SCRIPTS:
-			if err := intp.checkTable(); err != nil {
-				return err, false
-			}
-			var s ot.Navigator
-			switch intp.table.Self().NameTag().String() {
-			case "GSUB":
-				s = intp.table.Self().AsGSub().ScriptList
-			case "GPOS":
-				s = intp.table.Self().AsGPos().ScriptList
-			default:
-				return errors.New("unsupported table type for ScriptList"), false
-			}
-			if s == nil {
-				return errors.New("table has no script list"), false
-			}
-			m := s.Map().AsTagRecordMap()
-			pterm.Printf("ScriptList keys: %v\n", m.Tags())
-			n := pathNode{location: s, inx: -1}
-			if c.arg != "" {
-				n.key = c.arg
-				l := m.LookupTag(ot.T(c.arg))
-				if l.IsNull() {
-					tracer().Infof("script lookup [%s] returns null", ot.T(c.arg).String())
-					break
-				}
-				n.link = l
-			}
-			intp.stack = append(intp.stack, n)
-		case FEATURES:
-			var f ot.TagRecordMap
-			switch intp.table.Self().NameTag().String() {
-			case "GSUB":
-				f = intp.table.Self().AsGSub().FeatureList
-			case "GPOS":
-				f = intp.table.Self().AsGPos().FeatureList
-			default:
-				return errors.New("unsupported table type for FeatureList"), false
-			}
-			if f == nil {
-				return errors.New("table has no feature list"), false
-			}
-			if c.arg == "" {
-				tracer().Infof("%s table has %d entries", f.Name(), f.Len())
-			} else if i, err := strconv.Atoi(c.arg); err == nil {
-				tag, _ := f.Get(i)
-				//tag, lnk := f.Get(i)
-				pterm.Printf("%s list index %d holds feature record = %v\n", f.Name(), i, tag)
-			} else {
-				pterm.Error.Printf("List index not numeric: %v\n", c.arg)
-			}
+		if c.code == NOOP {
+			break
 		}
+		f, ok := commandFn[c.code]
+		if !ok {
+			pterm.Error.Printf("unknown command code: %d\n", c.code)
+			return nil, false
+		}
+		err, stop = f(intp, &c)
+		if err != nil {
+			pterm.Error.Println(err)
+			return
+		}
+		if stop {
+			return
+		}
+	}
+	return
+}
+
+func notimpl(intp *Intp, op *Op) (error, bool) {
+	return errors.New("not implemented"), false
+}
+
+func quitOp(intp *Intp, op *Op) (error, bool) {
+	pterm.Println("Goodbye!")
+	return nil, true
+}
+
+func navigateOp(intp *Intp, op *Op) (error, bool) {
+	if intp.table == nil {
+		pterm.Error.Println("cannot walk without table being set")
+	} else if intp.table == intp.lastPathNode().table {
+		tracer().Infof("ignoring '->'")
+	} else if intp.lastPathNode().link == nil {
+		pterm.Error.Println("no link to walk")
+	} else {
+		l := intp.lastPathNode().link
+		n := pathNode{location: l.Navigate()}
+		intp.stack = append(intp.stack, n)
+		tracer().Infof("walked to %s", n.location.Name())
 	}
 	return nil, false
 }
+
+/*
+	switch c.code {
+	case NAVIGATE:
+	case TABLE:
+	case MAP:
+	case LIST:
+	case SCRIPTS:
+	case FEATURES:
+	case LOOKUPS:
+*/
 
 func (intp *Intp) checkTable() error {
 	if intp.table == nil {
@@ -432,6 +418,11 @@ func decodeLocation(loc ot.NavLocation, name string) interface{} {
 		}
 	}
 	return nil
+}
+
+func helpOp(intp *Intp, op *Op) (error, bool) {
+	help(op.arg)
+	return nil, false
 }
 
 func help(topic string) {

@@ -13,7 +13,7 @@ func printOp(intp *Intp, op *Op) (error, bool) {
 	return nil, false
 }
 
-func printLookupList(table *ot.GSubTable) {
+func printLookupList(table *ot.LayoutTable) {
 	if table == nil {
 		pterm.Error.Println("GSUB table is nil")
 		return
@@ -39,7 +39,7 @@ func printLookupList(table *ot.GSubTable) {
 	pterm.DefaultTable.WithHasHeader().WithData(data).Render()
 }
 
-func printLookup(table *ot.GSubTable, index int) {
+func printLookup(table *ot.LayoutTable, index int) {
 	if table == nil {
 		pterm.Error.Println("GSUB table is nil")
 		return

@@ -125,11 +125,12 @@ func (intp *Intp) String() string {
 	if intp == nil || intp.table == nil {
 		return "()"
 	}
-	s := fmt.Sprintf("( table=%s )", intp.table.Self().NameTag())
+	sb := strings.Builder{}
+	sb.WriteString(fmt.Sprintf("( table=%s )", intp.table.Self().NameTag()))
 	for _, node := range intp.stack {
-		s += fmt.Sprintf(" -> %s", node.String())
+		sb.WriteString(fmt.Sprintf(" -> %s", node.String()))
 	}
-	return s
+	return sb.String()
 }
 
 // REPL starts interactive mode.
@@ -250,30 +251,6 @@ func (intp *Intp) parseCommand(line string) (*Command, error) {
 			//command.op[i].arg = strings.ToLower(command.op[i].arg)
 			tracer().Infof("%s: looking for '%s'", opNames[command.op[i].code], command.op[i].arg)
 		}
-		/*
-			switch strings.ToLower(c[0]) {
-			case "table":
-				command.op[i].code = TABLE
-				tracer().Infof("table: looking for table '%s'", command.op[i].arg)
-			case "map":
-				command.op[i].code = MAP
-				tracer().Infof("map: looking for key '%v'", command.op[i].arg)
-			case "list":
-				command.op[i].code = LIST
-				tracer().Infof("list: looking for index '%v'", command.op[i].arg)
-			case "scripts":
-				command.op[i].code = SCRIPTS
-				tracer().Infof("script-list: looking for script '%s'", command.op[i].arg)
-			case "features":
-				command.op[i].code = FEATURES
-				tracer().Infof("feature-list")
-			case "lookups", "lookup":
-				command.op[i].code = LOOKUPS
-				tracer().Infof("lookups")
-			default:
-				command.op[i].code = HELP
-			}
-		*/
 	}
 	return &command, nil
 }
@@ -350,13 +327,6 @@ func navigateOp(intp *Intp, op *Op) (error, bool) {
 	case LOOKUPS:
 */
 
-func (intp *Intp) checkTable() error {
-	if intp.table == nil {
-		return errors.New("no table set")
-	}
-	return nil
-}
-
 func (intp *Intp) loadFont(fontname string) (err error) {
 	intp.font, err = loadLocalFont(fontname)
 	if err == nil {
@@ -395,6 +365,11 @@ func (intp *Intp) setLastPathNode(n pathNode) {
 		intp.stack = append(intp.stack, n)
 	}
 	intp.stack[len(intp.stack)-1] = n
+}
+
+func (intp *Intp) clearPath() ot.Table {
+	intp.stack = intp.stack[:0]
+	return intp.table
 }
 
 func decodeLocation(loc ot.NavLocation, name string) interface{} {
@@ -468,9 +443,46 @@ func help(topic string) {
 	}
 }
 
+var ERR_NO_TABLE = errors.New("no table set")
+var ERR_NO_LOCATION = errors.New("no location set")
+var ERR_VOID = errors.New("location is void")
+
+func (intp *Intp) checkTable() error {
+	if intp.table == nil {
+		return ERR_NO_TABLE
+	}
+	return nil
+}
+
+func (intp *Intp) checkLocation() (loc ot.Navigator, err error) {
+	loc = intp.lastPathNode().location
+	if err = intp.checkTable(); err != nil {
+		return
+	} else if intp.lastPathNode().location == nil {
+		err = ERR_NO_LOCATION
+	} else if intp.lastPathNode().location.IsVoid() {
+		err = ERR_VOID
+	}
+	return loc, nil
+}
+
 func getOptArg(s []string, inx int) string {
 	if len(s) > inx {
 		return s[inx]
 	}
 	return ""
+}
+
+func (op *Op) noArg() bool {
+	if op.arg == "" {
+		return true
+	}
+	return false
+}
+
+func (op *Op) hasArg() (string, bool) {
+	if op.arg == "" {
+		return "", false
+	}
+	return op.arg, true
 }

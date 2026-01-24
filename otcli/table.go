@@ -22,7 +22,7 @@ func tableOp(intp *Intp, op *Op) (error, bool) {
 
 func listOp(intp *Intp, op *Op) (err error, stop bool) {
 	var nav ot.Navigator
-	if nav, err = intp.checkLocation(); err == nil {
+	if nav, err = intp.checkLocation(); err != nil {
 		return
 	}
 	l := nav.List()
@@ -47,7 +47,7 @@ func listOp(intp *Intp, op *Op) (err error, stop bool) {
 
 func mapOp(intp *Intp, op *Op) (err error, stop bool) {
 	var nav ot.Navigator
-	if nav, err = intp.checkLocation(); err == nil {
+	if nav, err = intp.checkLocation(); err != nil {
 		return
 	}
 	var target ot.NavLink
@@ -83,7 +83,7 @@ func scriptsOp(intp *Intp, op *Op) (err error, stop bool) {
 		return errors.New("table has no script list"), false
 	}
 	pterm.Printf("ScriptList keys: %v\n", scr.Tags())
-	n := pathNode{location: nav}
+	n := pathNode{location: nav, inx: -1}
 	var ok bool
 	if n.key, ok = op.hasArg(); ok {
 		l := scr.LookupTag(ot.T(op.arg))

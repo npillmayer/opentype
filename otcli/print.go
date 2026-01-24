@@ -5,11 +5,36 @@ import (
 	"strings"
 
 	"github.com/npillmayer/opentype/ot"
+	"github.com/npillmayer/opentype/otlayout"
 	"github.com/pterm/pterm"
 )
 
-func printOp(intp *Intp, op *Op) (error, bool) {
+func printOp(intp *Intp, op *Op) (err error, stop bool) {
 	pterm.Printf("PRINT %s\n", opNames[op.code])
+	var nav ot.Navigator
+	if nav, err = intp.checkLocation(); err != nil {
+		return
+	}
+	pterm.Printf("Current location: %s\n", nav.Name())
+	n := intp.lastPathNode()
+	sb := strings.Builder{}
+	if n.key != "" {
+		sb.WriteString(fmt.Sprintf("%s[%s]", nav.Name(), n.key))
+	} else if n.inx >= 0 {
+		sb.WriteString(fmt.Sprintf("%s[%d]", nav.Name(), n.inx))
+	} else {
+		if t, err2 := otlayout.NavAsTagRecordMap(nav); err2 == nil {
+			sb.WriteString(fmt.Sprintf("%s@%v", nav.Name(), t.Tags()))
+		} else if l, err2 := otlayout.NavAsList(nav); err2 == nil {
+			sb.WriteString(fmt.Sprintf("%s|%d|", nav.Name(), l.Len()))
+		} else {
+			sb.WriteString(nav.Name())
+		}
+	}
+	if n.link != nil {
+		sb.WriteString(fmt.Sprintf(" -> (%s)", n.link.Name()))
+	}
+	pterm.Printf("Current location: %s\n", sb.String())
 	return nil, false
 }
 

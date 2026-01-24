@@ -56,3 +56,25 @@ func peekLayoutProperty[T any](table ot.Table,
 	}
 	return nil, errors.New("not a layout table: " + table.Self().NameTag().String())
 }
+
+var ERROR_VOID error = errors.New("void")
+var ERROR_NO_TAG_RECORD_MAP error = errors.New("not a tag record map")
+var ERROR_NO_LIST error = errors.New("not a list")
+
+func NavAsTagRecordMap(nav ot.Navigator) (ot.TagRecordMap, error) {
+	if nav == nil || nav.IsVoid() {
+		return nil, ERROR_VOID
+	} else if nav.Map().IsTagRecordMap() {
+		return nav.Map().AsTagRecordMap(), nil
+	}
+	return nil, ERROR_NO_TAG_RECORD_MAP
+}
+
+func NavAsList(nav ot.Navigator) (ot.NavList, error) {
+	if nav == nil || nav.IsVoid() {
+		return nil, ERROR_VOID
+	} else if nav.List().Len() > 0 {
+		return nav.List(), nil
+	}
+	return nil, ERROR_NO_LIST
+}

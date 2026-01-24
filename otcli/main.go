@@ -291,9 +291,9 @@ func (intp *Intp) execute(cmd *Command) (err error, stop bool) {
 	return
 }
 
-func notimpl(intp *Intp, op *Op) (error, bool) {
-	return errors.New("not implemented"), false
-}
+// func notimpl(intp *Intp, op *Op) (error, bool) {
+// 	return errors.New("not implemented"), false
+// }
 
 func quitOp(intp *Intp, op *Op) (error, bool) {
 	pterm.Println("Goodbye!")
@@ -309,24 +309,16 @@ func navigateOp(intp *Intp, op *Op) (error, bool) {
 		pterm.Error.Println("no link to walk")
 	} else {
 		l := intp.lastPathNode().link
-		n := pathNode{location: l.Navigate()}
+		n := pathNode{location: l.Navigate(), inx: -1}
 		intp.stack = append(intp.stack, n)
 		tracer().Infof("walked to %s", n.location.Name())
 	}
 	return nil, false
 }
 
-/*
-	switch c.code {
-	case NAVIGATE:
-	case TABLE:
-	case MAP:
-	case LIST:
-	case SCRIPTS:
-	case FEATURES:
-	case LOOKUPS:
-*/
+// --- Font Loading -----------------------------------------------------
 
+// Test function to load a font from a file
 func (intp *Intp) loadFont(fontname string) (err error) {
 	intp.font, err = loadLocalFont(fontname)
 	if err == nil {
@@ -353,6 +345,8 @@ func loadLocalFont(fontFileName string) (*ot.Font, error) {
 	return otf, nil
 }
 
+// ----------------------------------------------------------------------
+
 func (intp *Intp) lastPathNode() pathNode {
 	if len(intp.stack) == 0 {
 		return pathNode{}
@@ -372,6 +366,7 @@ func (intp *Intp) clearPath() ot.Table {
 	return intp.table
 }
 
+// TODO
 func decodeLocation(loc ot.NavLocation, name string) interface{} {
 	if loc == nil {
 		return nil
@@ -395,54 +390,6 @@ func decodeLocation(loc ot.NavLocation, name string) interface{} {
 	return nil
 }
 
-func helpOp(intp *Intp, op *Op) (error, bool) {
-	help(op.arg)
-	return nil, false
-}
-
-func help(topic string) {
-	tracer().Infof("help %v", topic)
-	t := strings.ToLower(topic)
-	switch t {
-	case "script", "scripts", "scriptList":
-		pterm.Info.Println("ScriptList / Script")
-		pterm.Println(`
-	ScriptList is a property of GSUB and GPOS.
-	It consists of ScriptRecords:
-	+------------+----------------+
-	| Script Tag | Link to Script |
-	+------------+----------------+
-	ScriptList behaves as a map.
-
-	A Script table links to a default LangSys entry, and contains a list of LangSys records:
-	+--------------------------------+
-	| Link to LangSys record         |
-	+--------------+-----------------+
-	| Language Tag | Link to LangSys |
-	+--------------+-----------------+
-	Script behaves as a map, with entry 0 as the default link
-	`)
-	case "lang", "langsys", "langs", "language":
-		pterm.Info.Println("LangSys")
-		pterm.Println(`
-	LangSys is pointed to from a Script Record.
-	It links a language with features to activate. It does so using an index into the feature table.
-	+-----------------------------------+
-	| Index of required feature or null |
-	+-----------------------------------+
-	| Index of feature 1                |
-	+-----------------------------------+
-	| Index of feature 2                |
-	+-----------------------------------+
-	| ...                               |
-	+-----------------------------------+
-	LangSys behaves as a list.
-	`)
-	default:
-		pterm.Info.Println("General Help, TODO")
-	}
-}
-
 var ERR_NO_TABLE = errors.New("no table set")
 var ERR_NO_LOCATION = errors.New("no location set")
 var ERR_VOID = errors.New("location is void")
@@ -458,12 +405,12 @@ func (intp *Intp) checkLocation() (loc ot.Navigator, err error) {
 	loc = intp.lastPathNode().location
 	if err = intp.checkTable(); err != nil {
 		return
-	} else if intp.lastPathNode().location == nil {
+	} else if loc == nil {
 		err = ERR_NO_LOCATION
-	} else if intp.lastPathNode().location.IsVoid() {
+	} else if loc.IsVoid() {
 		err = ERR_VOID
 	}
-	return loc, nil
+	return
 }
 
 func getOptArg(s []string, inx int) string {

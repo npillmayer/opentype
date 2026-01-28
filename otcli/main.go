@@ -9,12 +9,12 @@ import (
 	"strings"
 
 	"github.com/chzyer/readline"
+	"github.com/npillmayer/opentype"
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/schuko/schukonf/testconfig"
 	"github.com/npillmayer/schuko/tracing"
 	"github.com/npillmayer/schuko/tracing/gologadapter"
 	"github.com/npillmayer/schuko/tracing/trace2go"
-	"github.com/npillmayer/tyse/core/font"
 	"github.com/pterm/pterm"
 )
 
@@ -329,7 +329,7 @@ func (intp *Intp) loadFont(fontname string) (err error) {
 
 func loadLocalFont(fontFileName string) (*ot.Font, error) {
 	path := filepath.Join("..", "testdata", fontFileName)
-	f, err := font.LoadOpenTypeFont(path)
+	f, err := opentype.LoadOpenTypeFont(path)
 	if err != nil {
 		tracer().Errorf("cannot load test font %s: %s", fontFileName, err)
 		return nil, err

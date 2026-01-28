@@ -236,7 +236,7 @@ The CLI tool is excellent for testing new features in the `ot` package:
 - [github.com/chzyer/readline](https://github.com/chzyer/readline) - Line editing with history
 - [github.com/pterm/pterm](https://github.com/pterm/pterm) - Pretty terminal output
 - github.com/npillmayer/schuko/tracing - Trace logging
-- github.com/npillmayer/tyse/core/font - Font file loading
+- github.com/npillmayer/opentype - Font file loading
 
 ## Limitations
 

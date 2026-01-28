@@ -1,4 +1,4 @@
-package otquery
+package otshape
 
 import (
 	"path/filepath"
@@ -9,25 +9,25 @@ import (
 	"github.com/npillmayer/schuko/tracing"
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
 	"github.com/stretchr/testify/suite"
-	"golang.org/x/image/font/sfnt"
+	"golang.org/x/text/language"
 )
 
 // --- Test Suite Preparation ------------------------------------------------
 
-type MetricsTestEnviron struct {
+type LanguageTestEnviron struct {
 	suite.Suite
 	calibri *ot.Font
 }
 
 // listen for 'go test' command --> run test methods
-func TestMetricsFunctions(t *testing.T) {
+func TestLanguageFunctions(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
 	defer teardown()
-	suite.Run(t, new(MetricsTestEnviron))
+	suite.Run(t, new(LanguageTestEnviron))
 }
 
 // run once, before test suite methods
-func (env *MetricsTestEnviron) SetupSuite() {
+func (env *LanguageTestEnviron) SetupSuite() {
 	env.T().Log("Setting up test suite")
 	tracing.Select("tyse.fonts").SetTraceLevel(tracing.LevelError)
 	env.calibri = loadLocalFont(env.T(), "Calibri.ttf")
@@ -35,28 +35,26 @@ func (env *MetricsTestEnviron) SetupSuite() {
 }
 
 // run once, after test suite methods
-func (env *MetricsTestEnviron) TearDownSuite() {
+func (env *LanguageTestEnviron) TearDownSuite() {
 	env.T().Log("Tearing down test suite")
 }
 
 // --- Tests -----------------------------------------------------------------
 
-func (env *MetricsTestEnviron) TestGlyphIndex() {
-	gid := GlyphIndex(env.calibri, 'A')
-	env.Equal(ot.GlyphIndex(4), gid, "expected glyph index of 'A' in test font to be 4")
-}
-
-func (env *MetricsTestEnviron) TestGlyphMetrics() {
-	gid := GlyphIndex(env.calibri, 'A')
-	m := GlyphMetrics(env.calibri, gid)
-	env.T().Logf("metrics = %v", m)
-	env.Equal(sfnt.Units(1185), m.Advance, "expected font.Advance for 'A' to be 1185 units")
-}
-
-func (env *MetricsTestEnviron) TestLanguageMatch() {
-	script, lang := FontSupportsScript(env.calibri, ot.T("latn"), ot.T("TRK"))
-	env.Equal("latn", script.String(), "expected Latin script in test font")
-	env.Equal("TRK ", lang.String(), "expected Turkish language support in test font")
+func (env *LanguageTestEnviron) TestLanguageTagForLanguage() {
+	langs := []struct {
+		in  string
+		out string
+	}{
+		{"DE", "DEU"},
+		{"DE_de", "DEU"},
+		{"DE_ch", "DEU"},
+		{"EN_us", "ENG"},
+	}
+	for _, pair := range langs {
+		tag := LanguageTagForLanguage(language.Make(pair.in), language.High)
+		env.Equal(ot.T(pair.out).String(), tag.String(), "expected language match %s", pair.out)
+	}
 }
 
 // --- Helpers ---------------------------------------------------------------

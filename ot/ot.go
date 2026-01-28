@@ -3,7 +3,7 @@ package ot
 import (
 	"fmt"
 
-	"github.com/npillmayer/tyse/core/font"
+	"github.com/npillmayer/opentype"
 	"golang.org/x/text/encoding/unicode"
 )
 
@@ -13,7 +13,7 @@ import (
 // We only support OpenType fonts with advanced layout, i.e. fonts containing tables
 // GSUB, GPOS, etc.
 type Font struct {
-	F             *font.ScalableFont
+	F             *opentype.ScalableFont
 	Header        *FontHeader
 	tables        map[Tag]Table
 	CMap          *CMapTable    // CMAP table is mandatory

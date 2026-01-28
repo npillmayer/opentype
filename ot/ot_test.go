@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/npillmayer/opentype"
 	"github.com/npillmayer/schuko/tracing"
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
-	"github.com/npillmayer/tyse/core/font"
 )
 
 func TestLookupRecordTypeString(t *testing.T) {
@@ -62,7 +62,7 @@ func loadTestdataFont(t *testing.T, pattern string) *Font {
 	//
 	otf := &Font{}
 	fname := fmt.Sprintf("../testdata/%s.ttf", pattern)
-	f, err := font.LoadOpenTypeFont(fname)
+	f, err := opentype.LoadOpenTypeFont(fname)
 	if err != nil {
 		t.Fatalf("cannot load font: %s", pattern)
 	}

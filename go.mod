@@ -7,7 +7,6 @@ toolchain go1.24.11
 require (
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e
 	github.com/npillmayer/schuko v0.2.0-alpha.2
-	github.com/npillmayer/tyse v0.1.0-experimental.3
 	github.com/pterm/pterm v0.12.7
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/image v0.34.0

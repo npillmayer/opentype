@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
-	"github.com/npillmayer/tyse/core"
 )
 
 func TestNavLink(t *testing.T) {
@@ -73,7 +72,6 @@ func loadCalibri(t *testing.T) *Font {
 	f := loadTestdataFont(t, "Calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
-		core.UserError(err)
 		t.Fatal(err)
 	}
 	tracer().Infof("========= loading done =================")

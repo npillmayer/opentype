@@ -65,6 +65,54 @@ func TestTableNavOS2(t *testing.T) {
 	}
 }
 
+func TestTagRecordMapSubset(t *testing.T) {
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
+	defer teardown()
+
+	base := binarySegm(make([]byte, 64))
+	tags := []Tag{T("f001"), T("f002"), T("f003"), T("f004")}
+	offsets := []uint16{10, 20, 30, 40}
+	values := []uint16{0x1111, 0x2222, 0x3333, 0x4444}
+
+	for i := range offsets {
+		writeU16(base, int(offsets[i]), values[i])
+	}
+
+	m := makeTagRecordMap16("FeatureList", "Feature", nil, base, 0, len(tags))
+	for i := range tags {
+		setTagRecord(m, i, tags[i], offsets[i])
+	}
+
+	indices := u16List{2, 0}
+	subset := m.Subset(indices)
+
+	if subset.Len() != 2 {
+		t.Fatalf("expected subset length 2, got %d", subset.Len())
+	}
+
+	tag0, link0 := subset.Get(0)
+	if tag0 != tags[2] {
+		t.Fatalf("expected tag %s at subset[0], got %s", tags[2], tag0)
+	}
+	if link0.Name() != "Feature" {
+		t.Fatalf("expected link target Feature, got %s", link0.Name())
+	}
+	if link0.Jump().U16(0) != values[2] {
+		t.Fatalf("expected link0 to jump to value %x, got %x", values[2], link0.Jump().U16(0))
+	}
+
+	tag1, link1 := subset.Get(1)
+	if tag1 != tags[0] {
+		t.Fatalf("expected tag %s at subset[1], got %s", tags[0], tag1)
+	}
+	if link1.Name() != "Feature" {
+		t.Fatalf("expected link target Feature, got %s", link1.Name())
+	}
+	if link1.Jump().U16(0) != values[0] {
+		t.Fatalf("expected link1 to jump to value %x, got %x", values[0], link1.Jump().U16(0))
+	}
+}
+
 // ---------------------------------------------------------------------------
 
 func loadCalibri(t *testing.T) *Font {
@@ -76,4 +124,11 @@ func loadCalibri(t *testing.T) *Font {
 	}
 	tracer().Infof("========= loading done =================")
 	return otf
+}
+
+func setTagRecord(m tagRecordMap16, i int, tag Tag, offset uint16) {
+	b := m.records.Get(i).Bytes()
+	copy(b[:4], []byte(tag.String()))
+	b[4] = byte(offset >> 8)
+	b[5] = byte(offset)
 }

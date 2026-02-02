@@ -12,14 +12,22 @@ import (
 
 var errBufferBounds = errors.New("internal inconsistency: buffer bounds error")
 
+// u16 interprets a byte slice as a 16-bit unsigned integer.
 func u16(b []byte) uint16 {
 	_ = b[1] // Bounds check hint to compiler
 	return uint16(b[0])<<8 | uint16(b[1])<<0
 }
 
+// u32 interprets a byte slice as a 32-bit unsigned integer.
 func u32(b []byte) uint32 {
 	_ = b[3] // Bounds check hint to compiler
 	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])<<0
+}
+
+// writeU16 writes a 16-bit unsigned integer to a byte slice at the specified offset.
+func writeU16(b []byte, offset int, value uint16) {
+	b[offset] = byte(value >> 8)
+	b[offset+1] = byte(value)
 }
 
 // ---Locations, i.e. byte segments/slices -----------------------------------
@@ -706,11 +714,7 @@ func makeTagRecordMap16(name, target string, b, base binarySegm, offset, N int) 
 	eob := offset + countSize + arraySize
 	if b == nil {
 		b = make(binarySegm, eob)
-		// need to set the count value to N
-		var low byte = byte(uint16(N) & 0xff)
-		var high byte = byte(uint16(N>>8) & 0xff)
-		b.Bytes()[0] = low
-		b.Bytes()[1] = high
+		writeU16(b.Bytes(), 0, uint16(N)) // need to set the count value to N
 	} else if eob > len(b) {
 		tracer().Errorf("byte buffer too small for tag record map")
 		return tagRecordMap16{}
@@ -867,7 +871,7 @@ func (m tagRecordMap16) Subset(indices NavList) TagRecordMap {
 		return tagRecordMap16{}
 	}
 	N := indices.Len() // will allocate space for N records
-	subset := makeTagRecordMap16(m.name, m.target, m.base, nil, 0, N)
+	subset := makeTagRecordMap16(m.name, m.target, nil, m.base, 0, N)
 	records := subset.records.loc[:0] // not sure we will use all slots
 	for i := range N {
 		index := indices.Get(i).U16(0)

@@ -97,6 +97,35 @@ func scriptsOp(intp *Intp, op *Op) (err error, stop bool) {
 	return
 }
 
+func subsetOp(intp *Intp, op *Op) (err error, stop bool) {
+	var nav ot.Navigator
+	if nav, err = intp.checkLocation(); err != nil {
+		return
+	}
+	l := nav.List()
+	if l.Len() == 0 {
+		err = errors.New("subset needs list to subset anything to")
+		return
+	}
+	if tableName, ok := op.hasArg(); ok {
+		switch tableName {
+		case "Feature":
+			var features ot.TagRecordMap
+			if features, err = otlayout.GetFeatureList(intp.table); err != nil {
+				return
+			}
+			subset := features.Subset(l)
+			//n := pathNode{location: nav, inx: -1}
+			pterm.Printf("Subset of features: %v\n", subset)
+		case "LookupList":
+			panic("not implemented")
+		}
+	} else {
+		err = errors.New("need to know which sub-table to subset")
+	}
+	return
+}
+
 func featuresOp(intp *Intp, op *Op) (err error, stop bool) {
 	if err = intp.checkTable(); err != nil {
 		return
@@ -134,3 +163,16 @@ func lookupsOp(intp *Intp, op *Op) (err error, stop bool) {
 	}
 	return
 }
+
+// mapNav wraps a TagRecordMap as a Navigator (map-only).
+type mapNav struct {
+	m   ot.TagRecordMap
+	err error
+}
+
+func (n mapNav) Name() string     { return n.m.Name() }
+func (n mapNav) Link() ot.NavLink { return nil }
+func (n mapNav) Map() ot.NavMap   { return n.m }
+func (n mapNav) List() ot.NavList { return nil }
+func (n mapNav) IsVoid() bool     { return n.m == nil }
+func (n mapNav) Error() error     { return n.err }

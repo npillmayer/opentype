@@ -54,9 +54,9 @@ type NavMap interface {
 // For some record maps the (tag) keys are not unique (e.g., the feature-list table),
 // so in this case the first matching entry will be returned.
 type TagRecordMap interface {
-	Name() string                   // OpenType specification name of this map
-	LookupTag(Tag) NavLink          // returns the link associated with a given tag
-	Tags() []Tag                    // returns all the tags which the map uses as keys
+	Name() string          // OpenType specification name of this map
+	LookupTag(Tag) NavLink // returns the link associated with a given tag
+	//Tags() []Tag                    // returns all the tags which the map uses as keys
 	Len() int                       // number of entries in the map
 	Get(int) (Tag, NavLink)         // get entry at position n
 	Subset(NavList) TagRecordMap    // subset with indices of a list

@@ -194,6 +194,7 @@ const (
 	SCRIPTS
 	FEATURES
 	LOOKUPS
+	SUBSET
 	PRINT
 )
 
@@ -208,6 +209,7 @@ var opMap = map[string]int{
 	"scripts":  SCRIPTS,
 	"features": FEATURES,
 	"lookups":  LOOKUPS,
+	"subset":   SUBSET,
 	"print":    PRINT,
 }
 
@@ -222,6 +224,7 @@ var opNames = []string{
 	"scripts",
 	"features",
 	"lookups",
+	"subset",
 	"print",
 }
 
@@ -275,6 +278,7 @@ var commandFn = map[int]func(*Intp, *Op) (error, bool){
 	SCRIPTS:  scriptsOp,
 	FEATURES: featuresOp,
 	LOOKUPS:  lookupsOp,
+	SUBSET:   subsetOp,
 	PRINT:    printOp,
 }
 

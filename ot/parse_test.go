@@ -74,15 +74,7 @@ func TestParseGPos(t *testing.T) {
 		t.Errorf("expected 27 GPOS features, have %d", gpos.FeatureList.Len())
 	}
 	t.Logf("otf.GPOS: %d scripts:", gpos.ScriptList.Map().AsTagRecordMap().Len())
-	_ = gpos.ScriptList.Map().AsTagRecordMap().Tags()
-	// t.Logf("otf.GPOS: %d scripts:", len(gpos.scripts))
-	// for i, sc := range gpos.scripts {
-	// 	t.Logf("[%d] script '%s'", i, sc.Tag)
-	// }
-	// if len(gpos.scripts) != 3 ||
-	// 	gpos.scripts[len(gpos.scripts)-1].Tag.String() != "latn" {
-	// 	t.Errorf("expected scripts[2] to be 'latn', isn't")
-	// }
+	_ = gpos.ScriptList.Map().AsTagRecordMap()
 }
 
 func TestParseGSub(t *testing.T) {

@@ -426,13 +426,12 @@ func (lsys langSys) Map() NavMap {
 	return tagRecordMap16{}
 }
 
-// entry 0 will be the mandatory feature
+// List will return the LangSys as a NavList.
+// The entries will be copied to a new array.
+// Entry 0 will be the mandatory feature (0xffff = unset).
 func (lsys langSys) List() NavList {
 	r := make([]uint16, lsys.featureIndices.length+1)
 	r[0] = lsys.mandatory
-	// if r[0] == 0xffff {
-	// 	r[0] = 0
-	// }
 	for i := 0; i < lsys.featureIndices.length; i++ {
 		if i < 0 || (i+1)*lsys.featureIndices.recordSize > len(lsys.featureIndices.loc.Bytes()) {
 			i = 0

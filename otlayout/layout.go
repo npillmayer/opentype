@@ -91,3 +91,14 @@ func FeatureSubsetForLangSys(langSys ot.NavList, featureList ot.TagRecordMap) (o
 	subset := featureList.Subset(langSys)
 	return subset, nil
 }
+
+func KeyTags(m ot.TagRecordMap) []ot.Tag {
+	if m == nil || m.Len() == 0 {
+		return nil
+	}
+	keyTags := make([]ot.Tag, 0, m.Len())
+	for tag, _ := range m.Range() {
+		keyTags = append(keyTags, tag)
+	}
+	return keyTags
+}

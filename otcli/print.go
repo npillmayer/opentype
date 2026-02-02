@@ -11,24 +11,41 @@ import (
 
 func printOp(intp *Intp, op *Op) (err error, stop bool) {
 	pterm.Printf("PRINT %s\n", opNames[op.code])
-	var nav ot.Navigator
-	if nav, err = intp.checkLocation(); err != nil {
+	var n pathNode
+	if n, err = intp.checkNode(); err != nil {
 		return
 	}
-	pterm.Printf("Current location: %s\n", nav.Name())
-	n := intp.lastPathNode()
+	pterm.Printf("Current location: %s\n", n.locationName())
 	sb := strings.Builder{}
 	if n.key != "" {
-		sb.WriteString(fmt.Sprintf("%s[%s]", nav.Name(), n.key))
+		sb.WriteString(fmt.Sprintf("%s[%s]", n.locationName(), n.key))
 	} else if n.inx >= 0 {
-		sb.WriteString(fmt.Sprintf("%s[%d]", nav.Name(), n.inx))
+		sb.WriteString(fmt.Sprintf("%s[%d]", n.locationName(), n.inx))
 	} else {
-		if t, err2 := otlayout.NavAsTagRecordMap(nav); err2 == nil {
-			sb.WriteString(fmt.Sprintf("%s@%v", nav.Name(), t.Tags()))
-		} else if l, err2 := otlayout.NavAsList(nav); err2 == nil {
-			sb.WriteString(fmt.Sprintf("%s|%d|", nav.Name(), l.Len()))
-		} else {
-			sb.WriteString(nav.Name())
+		switch n.kind {
+		case nodeNav:
+			if t, err2 := otlayout.NavAsTagRecordMap(n.nav); err2 == nil {
+				sb.WriteString(fmt.Sprintf("%s@%v", n.nav.Name(), otlayout.KeyTags(t)))
+			} else if l, err2 := otlayout.NavAsList(n.nav); err2 == nil {
+				sb.WriteString(fmt.Sprintf("%s|%d|", n.nav.Name(), l.Len()))
+			} else {
+				sb.WriteString(n.nav.Name())
+			}
+		case nodeTagMap:
+			sb.WriteString(fmt.Sprintf("%s@%v", n.tm.Name(), otlayout.KeyTags(n.tm)))
+		case nodeMap:
+			if n.m.IsTagRecordMap() {
+				trm := n.m.AsTagRecordMap()
+				sb.WriteString(fmt.Sprintf("%s@%v", trm.Name(), otlayout.KeyTags(trm)))
+			} else {
+				sb.WriteString(n.m.Name())
+			}
+		case nodeList:
+			sb.WriteString(fmt.Sprintf("%s|%d|", n.list.Name(), n.list.Len()))
+		case nodeLink:
+			sb.WriteString(n.link.Name())
+		default:
+			sb.WriteString(n.locationName())
 		}
 	}
 	if n.link != nil {

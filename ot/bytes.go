@@ -873,9 +873,15 @@ func (m tagRecordMap16) Subset(indices NavList) TagRecordMap {
 	N := indices.Len() // will allocate space for N records
 	subset := makeTagRecordMap16(m.name, m.target, nil, m.base, 0, N)
 	records := subset.records.loc[:0] // not sure we will use all slots
+	tracer().Errorf("subsetting indices = %v", indices.All())
+	tracer().Errorf("N = %d", N)
+	tracer().Errorf("|records| = %v", m.records.length)
+	const unusedDefaultLink = 0xffff // OpenType convention
 	for i := range N {
 		index := indices.Get(i).U16(0)
-		if int(index) >= m.records.length {
+		if index == unusedDefaultLink {
+			continue
+		} else if int(index) >= m.records.length {
 			//continue
 			panic("subset of tag record map: cannot apply link > |record array|")
 		}

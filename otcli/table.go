@@ -21,42 +21,75 @@ func tableOp(intp *Intp, op *Op) (error, bool) {
 }
 
 func listOp(intp *Intp, op *Op) (err error, stop bool) {
-	var nav ot.Navigator
-	if nav, err = intp.checkLocation(); err != nil {
+	var n pathNode
+	if n, err = intp.checkNode(); err != nil {
 		return
 	}
-	l := nav.List()
+	var l ot.NavList
+	switch n.kind {
+	case nodeNav:
+		l = n.nav.List()
+	case nodeList:
+		l = n.list
+	default:
+		err = errors.New("list is empty / not a list")
+		return
+	}
+	var inx int
 	if l.Len() == 0 {
 		err = errors.New("list is empty / not a list")
 	} else if op.noArg() {
 		pterm.Printf("List has %d entries\n", l.Len())
-	} else if i, err := strconv.Atoi(op.arg); err == nil {
-		loc := l.Get(i)
+	} else if inx, err = strconv.Atoi(op.arg); err != nil {
+		err = fmt.Errorf("List index not numeric: %v\n", op.arg)
+	} else if inx >= l.Len() {
+		err = fmt.Errorf("List index out of range: %d", inx)
+	} else {
+		loc := l.Get(inx)
 		size, value := loc.Size(), decodeLocation(loc, l.Name())
 		switch value.(type) {
 		case int:
-			pterm.Printf("%s list index %d holds number = %d\n", l.Name(), i, value)
+			pterm.Printf("%s list index %d holds number = %d\n", l.Name(), inx, value)
 		default:
-			pterm.Printf("%s list index %d holds data of %d bytes\n", l.Name(), i, size)
+			pterm.Printf("%s list index %d holds data of %d bytes\n", l.Name(), inx, size)
 		}
-	} else {
-		err = fmt.Errorf("List index not numeric: %v\n", op.arg)
 	}
 	return
 }
 
 func mapOp(intp *Intp, op *Op) (err error, stop bool) {
-	var nav ot.Navigator
-	if nav, err = intp.checkLocation(); err != nil {
+	var n pathNode
+	if n, err = intp.checkNode(); err != nil {
 		return
 	}
 	var target ot.NavLink
-	m := nav.Map()
-	if tag, ok := op.hasArg(); ok {
+	var m ot.NavMap
+	var trm ot.TagRecordMap
+	switch n.kind {
+	case nodeNav:
+		m = n.nav.Map()
 		if m.IsTagRecordMap() {
-			trm := m.AsTagRecordMap()
+			trm = m.AsTagRecordMap()
+		}
+	case nodeMap:
+		m = n.m
+		if m.IsTagRecordMap() {
+			trm = m.AsTagRecordMap()
+		}
+	case nodeTagMap:
+		trm = n.tm
+	default:
+		err = errors.New("not a map")
+		return
+	}
+	if m == nil && trm == nil {
+		err = errors.New("not a map")
+		return
+	}
+	if tag, ok := op.hasArg(); ok {
+		if trm != nil {
 			target = trm.LookupTag(ot.T(tag))
-			tracer().Infof("%s map keys = %v", trm.Name(), trm.Tags())
+			tracer().Infof("%s map keys = %v", trm.Name(), otlayout.KeyTags(trm))
 			pterm.Printf("%s table maps [tag %v] => %v\n", trm.Name(), ot.T(tag), target.Name())
 		} else {
 			target = m.LookupTag(ot.T(tag))
@@ -65,9 +98,8 @@ func mapOp(intp *Intp, op *Op) (err error, stop bool) {
 		n := intp.lastPathNode()
 		n.key, n.link = tag, target
 		intp.setLastPathNode(n)
-	} else if m.IsTagRecordMap() {
-		trm := m.AsTagRecordMap()
-		pterm.Printf("%s map keys = %v\n", trm.Name(), trm.Tags())
+	} else if trm != nil {
+		pterm.Printf("%s map keys = %v\n", trm.Name(), otlayout.KeyTags(trm))
 	}
 	return
 }
@@ -82,8 +114,8 @@ func scriptsOp(intp *Intp, op *Op) (err error, stop bool) {
 	} else if scr = nav.Map().AsTagRecordMap(); scr == nil {
 		return errors.New("table has no script list"), false
 	}
-	pterm.Printf("ScriptList keys: %v\n", scr.Tags())
-	n := pathNode{location: nav, inx: -1}
+	pterm.Printf("ScriptList keys: %v\n", otlayout.KeyTags(scr))
+	n := pathNode{kind: nodeNav, nav: nav, inx: -1}
 	var ok bool
 	if n.key, ok = op.hasArg(); ok {
 		l := scr.LookupTag(ot.T(op.arg))
@@ -98,25 +130,35 @@ func scriptsOp(intp *Intp, op *Op) (err error, stop bool) {
 }
 
 func subsetOp(intp *Intp, op *Op) (err error, stop bool) {
-	var nav ot.Navigator
-	if nav, err = intp.checkLocation(); err != nil {
+	var n pathNode
+	if n, err = intp.checkNode(); err != nil {
 		return
 	}
-	l := nav.List()
+	var l ot.NavList
+	switch n.kind {
+	case nodeNav:
+		l = n.nav.List()
+	case nodeList:
+		l = n.list
+	default:
+		err = errors.New("subset needs list to subset anything to")
+		return
+	}
 	if l.Len() == 0 {
 		err = errors.New("subset needs list to subset anything to")
 		return
 	}
 	if tableName, ok := op.hasArg(); ok {
 		switch tableName {
-		case "Feature":
+		case "FeatureList":
 			var features ot.TagRecordMap
 			if features, err = otlayout.GetFeatureList(intp.table); err != nil {
 				return
 			}
 			subset := features.Subset(l)
-			//n := pathNode{location: nav, inx: -1}
-			pterm.Printf("Subset of features: %v\n", subset)
+			pterm.Printf("Subset of %d features\n", subset.Len())
+			n := pathNode{kind: nodeTagMap, tm: subset, inx: -1}
+			intp.stack = append(intp.stack, n)
 		case "LookupList":
 			panic("not implemented")
 		}
@@ -163,16 +205,3 @@ func lookupsOp(intp *Intp, op *Op) (err error, stop bool) {
 	}
 	return
 }
-
-// mapNav wraps a TagRecordMap as a Navigator (map-only).
-type mapNav struct {
-	m   ot.TagRecordMap
-	err error
-}
-
-func (n mapNav) Name() string     { return n.m.Name() }
-func (n mapNav) Link() ot.NavLink { return nil }
-func (n mapNav) Map() ot.NavMap   { return n.m }
-func (n mapNav) List() ot.NavList { return nil }
-func (n mapNav) IsVoid() bool     { return n.m == nil }
-func (n mapNav) Error() error     { return n.err }

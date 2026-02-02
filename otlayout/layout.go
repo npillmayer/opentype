@@ -65,7 +65,10 @@ func NavAsTagRecordMap(nav ot.Navigator) (ot.TagRecordMap, error) {
 	if nav == nil || nav.IsVoid() {
 		return nil, ERROR_VOID
 	} else if nav.Map().IsTagRecordMap() {
-		return nav.Map().AsTagRecordMap(), nil
+		m := nav.Map().AsTagRecordMap()
+		if m.Len() > 0 {
+			return nav.Map().AsTagRecordMap(), nil
+		}
 	}
 	return nil, ERROR_NO_TAG_RECORD_MAP
 }
@@ -77,4 +80,14 @@ func NavAsList(nav ot.Navigator) (ot.NavList, error) {
 		return nav.List(), nil
 	}
 	return nil, ERROR_NO_LIST
+}
+
+func FeatureSubsetForLangSys(langSys ot.NavList, featureList ot.TagRecordMap) (ot.TagRecordMap, error) {
+	if langSys == nil || langSys.Len() == 0 {
+		return nil, ERROR_VOID
+	} else if featureList == nil || featureList.Len() == 0 {
+		return nil, ERROR_NO_TAG_RECORD_MAP
+	}
+	subset := featureList.Subset(langSys)
+	return subset, nil
 }

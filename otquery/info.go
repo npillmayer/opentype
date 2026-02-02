@@ -34,7 +34,7 @@ func NameInfo(otf *ot.Font, lang ot.Tag) map[string]string {
 	}
 	m := table.Fields().Map().AsTagRecordMap()
 	tracer().Debugf("table name = %q", table.Fields().Name())
-	for _, tag := range m.Tags() {
+	for tag, _ := range m.Range() {
 		tracer().Debugf("names tag %q", tag.String())
 	}
 	// font family

@@ -60,7 +60,7 @@ var gsubLookupTypeInx = [...]int{0, 7, 16, 26, 35, 43, 52, 62, 70}
 
 // GSubString interprets a layout table lookup type as a GSUB table type.
 func (lt LayoutTableLookupType) GSubString() string {
-	lt -= 1
+	lt -= 1 // array index starts at 0, GSUB lookup types start at 1
 	if lt < GSubLookupTypeReverseChaining {
 		return gsubLookupTypeNames[gsubLookupTypeInx[lt] : gsubLookupTypeInx[lt+1]-1]
 	}

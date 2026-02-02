@@ -107,7 +107,12 @@ func (n *pathNode) String() string {
 	} else if n.inx >= 0 {
 		s += fmt.Sprintf("[%d]", n.inx)
 	}
-	if n.link != nil {
+	return s
+}
+
+func (n *pathNode) PathString(isLast bool) string {
+	s := n.String()
+	if isLast && n.link != nil {
 		s += " -> (" + n.link.Name() + ")"
 	}
 	return s
@@ -127,8 +132,9 @@ func (intp *Intp) String() string {
 	}
 	sb := strings.Builder{}
 	sb.WriteString(fmt.Sprintf("( table=%s )", intp.table.Self().NameTag()))
-	for _, node := range intp.stack {
-		sb.WriteString(fmt.Sprintf(" -> %s", node.String()))
+	N := len(intp.stack) - 1
+	for i, node := range intp.stack {
+		sb.WriteString(fmt.Sprintf(" -> %s", node.PathString(i == N)))
 	}
 	return sb.String()
 }
@@ -179,6 +185,7 @@ const (
 	// op-codes QUIT and NAVIGATE will not have arguments
 	QUIT int = iota
 	NAVIGATE
+	POP
 	// op-codes below may have arguments
 	HELP
 	TABLE
@@ -193,10 +200,11 @@ const (
 var opMap = map[string]int{
 	"quit":     QUIT,
 	"->":       NAVIGATE,
+	"pop":      POP,
 	"help":     HELP,
 	"table":    TABLE,
-	"map":      MAP,
 	"list":     LIST,
+	"map":      MAP,
 	"scripts":  SCRIPTS,
 	"features": FEATURES,
 	"lookups":  LOOKUPS,
@@ -206,10 +214,11 @@ var opMap = map[string]int{
 var opNames = []string{
 	"quit",
 	"->",
+	"pop",
 	"help",
 	"table",
-	"map",
 	"list",
+	"map",
 	"scripts",
 	"features",
 	"lookups",
@@ -258,6 +267,7 @@ func (intp *Intp) parseCommand(line string) (*Command, error) {
 var commandFn = map[int]func(*Intp, *Op) (error, bool){
 	QUIT:     quitOp,
 	NAVIGATE: navigateOp,
+	POP:      popOp,
 	HELP:     helpOp,
 	TABLE:    tableOp,
 	LIST:     listOp,
@@ -312,6 +322,13 @@ func navigateOp(intp *Intp, op *Op) (error, bool) {
 		n := pathNode{location: l.Navigate(), inx: -1}
 		intp.stack = append(intp.stack, n)
 		tracer().Infof("walked to %s", n.location.Name())
+	}
+	return nil, false
+}
+
+func popOp(intp *Intp, op *Op) (error, bool) {
+	if len(intp.stack) > 0 {
+		intp.stack = intp.stack[:len(intp.stack)-1]
 	}
 	return nil, false
 }

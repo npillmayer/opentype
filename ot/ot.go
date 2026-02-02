@@ -586,7 +586,8 @@ func (n nameNames) Name() string {
 
 func (n nameNames) Map() NavMap {
 	namesMap := make(map[Tag]link16)
-	for i := 0; i < n.nameRecs.length; i++ {
+	//for i := 0; i < n.nameRecs.length; i++ {
+	for i := range n.nameRecs.length {
 		nameRecord := n.nameRecs.Get(i)
 		pltf := nameRecord.U16(0)
 		enc := nameRecord.U16(2)
@@ -604,7 +605,8 @@ func (n nameNames) Map() NavMap {
 		//trace().Debugf("copying names[0x%x] = %d", tag, nameRecord)
 		namesMap[tag] = link.(link16)
 	}
-	return mapWrapper{m: namesMap, names: n, name: n.Name()}
+	//return mapWrapper{m: namesMap, names: n, name: n.Name()}
+	return mapWrapper{m: namesMap, name: n.Name()}
 }
 
 func decodeUtf16(str []byte) (string, error) {

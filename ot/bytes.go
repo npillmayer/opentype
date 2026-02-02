@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 )
 
 // Reading bytes from a font's binary representation
@@ -317,13 +318,18 @@ type NavLink interface {
 	Name() string        // OpenType structure name of destination
 }
 
+// parseLink16 parses a byte array which is presumed to be a map16 entry, where a `uint16`
+// value is interpreted as a navigation link to another entity.
+// `offset` is the number of bytes from the beginning of the base segment to the
+// beginning of the value segment. It usually is the size of the 'key' in bytes, but
+// no semantics is enforced.
 func parseLink16(b binarySegm, offset int, base binarySegm, target string) (NavLink, error) {
-	if len(b) < offset+2 {
+	if len(b) < offset+2 { // room for key + value ?
 		return link16{}, errBufferBounds
 	}
-	n, _ := b.u16(offset)
+	n, _ := b.u16(offset) // retrieve the value
 
-	// Validate offset points within base bounds (offset 0 is valid NULL pointer)
+	// Validate offset points to be within base bounds (offset 0 is valid NULL pointer)
 	if n > 0 && int(n) > len(base) {
 		return link16{}, fmt.Errorf("offset16 to %s out of bounds: %d > %d", target, n, len(base))
 	}
@@ -667,18 +673,68 @@ var _ VarArray = varArray{}
 
 // --- Tag record map --------------------------------------------------------
 
+// tagRecordMap16 is a type for sub-tables which map from a tag to a target.
+// `record` points to a struct essentially holding a slice of bytes, which is interpreted
+// as a fixed size array of entries.
+type tagRecordMap16 struct {
+	name    string
+	target  string
+	base    binarySegm
+	records array
+}
+
+// makeTagRecordMap16 creates a map-like interpretation on a slice of bytes.
+//
+// | Type      | Name         | Descr.                      |
+// |-----------|--------------|-----------------------------|
+// | offset    | Some Info    | Additional opaque data      |
+// | uint16    | Count        | # Records                   |
+// | x-Records | Array[Count] | Array of records or indices |
+//
+// For tag record maps, the entries (x-Records) are segments of bytes, which in turn
+// are interpreted as a key + a value. The key is expected to be a 4-byte tag.
+// `offset`may be 0.
+func makeTagRecordMap16(name, target string, b, base binarySegm, offset, N int) tagRecordMap16 {
+	m := tagRecordMap16{
+		name:   name,
+		target: target,
+		base:   base,
+	}
+	const recordSize = 6 // Tag=4 bytes + offset-value=2 bytes (= map16)
+	const countSize = 2  // count is uint16
+	arraySize := N * recordSize
+	eob := offset + countSize + arraySize
+	if b == nil {
+		b = make(binarySegm, eob)
+		// need to set the count value to N
+		var low byte = byte(uint16(N) & 0xff)
+		var high byte = byte(uint16(N>>8) & 0xff)
+		b.Bytes()[0] = low
+		b.Bytes()[1] = high
+	} else if eob > len(b) {
+		tracer().Errorf("byte buffer too small for tag record map")
+		return tagRecordMap16{}
+	}
+	n, _ := b.u16(offset)
+	if int(n) != N {
+		tracer().Errorf("invalid count %d for tag record map", n)
+		panic("record count n not equal to given count N")
+	}
+	arrBase := b[offset+countSize : eob]
+	m.records = viewArray(arrBase, recordSize)
+	return m
+}
+
 // recsize is the byte size of the record entry not including the Tag.
 func parseTagRecordMap16(b binarySegm, offset int, base binarySegm, name, target string) tagRecordMap16 {
 	if len(b) < offset+2 {
 		tracer().Errorf("buffer too small for tag record map")
 		return tagRecordMap16{}
 	}
-
 	N, err := b.u16(offset)
 	if err != nil {
 		return tagRecordMap16{}
 	}
-
 	// Apply reasonable limit based on context
 	var maxCount int
 	switch name {
@@ -689,37 +745,29 @@ func parseTagRecordMap16(b binarySegm, offset int, base binarySegm, name, target
 	default:
 		maxCount = MaxRecordMapCount
 	}
-
 	if int(N) > maxCount {
 		tracer().Errorf("tag record map %s: count %d exceeds maximum %d", name, N, maxCount)
 		return tagRecordMap16{}
 	}
-
-	// Validate count against buffer size (Tag=4 bytes + offset=2 bytes)
-	const recordSize = 6
-	requiredSize := offset + 2 + int(N)*recordSize
+	const recordSize = 6 // validate count against buffer size (Tag=4 bytes + offset=2 bytes = 6)
+	const countSize = 2  // count is uint16
+	requiredSize := offset + countSize + int(N)*recordSize
 	if requiredSize > len(b) {
 		tracer().Errorf("tag record map %s: count %d requires %d bytes, have %d",
 			name, N, requiredSize, len(b))
 		return tagRecordMap16{}
 	}
-
 	tracer().Debugf("view on tag record map with %d entries", N)
-	m := tagRecordMap16{
-		name:   name,
-		target: target,
-		base:   base,
-	}
-	arrBase := b[offset+2 : offset+2+int(N)*recordSize]
-	m.records = viewArray(arrBase, recordSize)
-	return m
-}
-
-type tagRecordMap16 struct {
-	name    string
-	target  string
-	base    binarySegm
-	records array
+	return makeTagRecordMap16(name, target, b, base, offset, int(N))
+	// TODO remove this when tests pass
+	// m := tagRecordMap16{
+	// 	name:   name,
+	// 	target: target,
+	// 	base:   base,
+	// }
+	// arrBase := b[offset+2 : offset+2+int(N)*recordSize]
+	// m.records = viewArray(arrBase, recordSize)
+	// return m
 }
 
 // Lookup returns the bytes referenced by m[Tag(n)]
@@ -777,8 +825,9 @@ func (m tagRecordMap16) Len() int {
 
 func (m tagRecordMap16) Get(i int) (Tag, NavLink) {
 	b := m.records.Get(i)
-	tag := MakeTag(b.Bytes()[:4])
-	link, err := parseLink16(b.Bytes(), 4, m.base, m.target)
+	const sizeOfMapKey = 4 // tags have size of 4 bytes
+	tag := MakeTag(b.Bytes()[:sizeOfMapKey])
+	link, err := parseLink16(b.Bytes(), sizeOfMapKey, m.base, m.target)
 	if err != nil {
 		return 0, link16{}
 	}
@@ -793,10 +842,63 @@ func (m tagRecordMap16) AsTagRecordMap() TagRecordMap {
 	return m
 }
 
+// Interface TagRecordMap: `Subset` subsets a tag record map with the indices given by a NavList.
+//
+// Example map:
+// | Tag      | Target   |
+// |----------|----------|
+// | tag 1    | link 1   |
+// | tag 2    | link 2   |
+// | tag 3    | link 3   |
+// | tag 4    | link 4   |
+//
+// Example list: [1,  3]
+//
+// Subset:
+// | Tag      | Target   |
+// |----------|----------|
+// | tag 1    | link 1   |
+// | tag 3    | link 3   |
+//
+// Usually the source map is a projection onto the font's bytes. The subset map has to
+// allocate a new byte array for the subset.
+func (m tagRecordMap16) Subset(indices NavList) TagRecordMap {
+	if indices == nil || indices.Len() == 0 {
+		return tagRecordMap16{}
+	}
+	N := indices.Len() // will allocate space for N records
+	subset := makeTagRecordMap16(m.name, m.target, m.base, nil, 0, N)
+	records := subset.records.loc[:0] // not sure we will use all slots
+	for i := range N {
+		index := indices.Get(i).U16(0)
+		if int(index) >= m.records.length {
+			//continue
+			panic("subset of tag record map: cannot apply link > |record array|")
+		}
+		bytes := m.records.Get(int(index))
+		records = append(records, bytes.Bytes()...)
+	}
+	return subset
+}
+
+func (m tagRecordMap16) Range() iter.Seq2[Tag, NavLink] {
+	return func(yield func(Tag, NavLink) bool) {
+		for i := range m.Len() {
+			tag, link := m.Get(i)
+			if !yield(tag, link) {
+				return
+			}
+		}
+	}
+}
+
+// ----------------------------------------------------------------------
+
+// This will make a map of Tag to link16 conform to TagRecordMap
 type mapWrapper struct {
-	names nameNames // TODO de-couple from  table 'name'
-	m     map[Tag]link16
-	name  string
+	//names nameNames // TODO de-couple from  table 'name' -> done
+	m    map[Tag]link16
+	name string
 }
 
 func (mw mapWrapper) Name() string {
@@ -822,7 +924,8 @@ func (mw mapWrapper) Lookup(n uint32) NavLocation {
 }
 
 func (mw mapWrapper) Tags() []Tag {
-	tags := make([]Tag, 0, mw.names.nameRecs.length)
+	l := len(mw.m) // we will allocate a slice of length l for tags
+	tags := make([]Tag, 0, l)
 	for k := range mw.m {
 		tags = append(tags, k)
 	}
@@ -840,6 +943,24 @@ func (mw mapWrapper) IsTagRecordMap() bool {
 
 func (mw mapWrapper) AsTagRecordMap() TagRecordMap {
 	return mw
+}
+
+// Interface TagRecordMap
+func (mw mapWrapper) Subset(indices NavList) TagRecordMap {
+	panic("not implemented")
+}
+
+// Interface TagRecordMap
+// Range() iter.Seq2[Tag, NavLink] // range over sequence of tag-record pairs
+func (mw mapWrapper) Range() iter.Seq2[Tag, NavLink] {
+	return func(yield func(Tag, NavLink) bool) {
+		for i := range mw.Len() {
+			tag, link := mw.Get(i)
+			if !yield(tag, link) {
+				return
+			}
+		}
+	}
 }
 
 // u16List implements the NavList interface. It represents a list/array of

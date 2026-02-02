@@ -20,8 +20,8 @@ func FontSupportsScript(otf *ot.Font, scr ot.Tag, lang ot.Tag) (ot.Tag, ot.Tag) 
 		return ot.DFLT, ot.DFLT
 	}
 	tracer().Debugf("script %s is contained in GSUB", scr.String())
-	s := rec.Navigate()
-	for _, tag := range s.Map().AsTagRecordMap().Tags() {
+	s := rec.Navigate() // now we are at start of ScriptList
+	for tag, _ := range s.Map().AsTagRecordMap().Range() {
 		if tag.String() == lang.String() {
 			return scr, lang
 		}

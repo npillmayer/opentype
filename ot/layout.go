@@ -735,7 +735,7 @@ type LookupSubtable struct {
 	Format     uint16                // lookup subtables may come in more than one format
 	Coverage   Coverage              // for which glyphs is this lookup applicable
 	Index      VarArray              // Index tables/arrays to lookup up substitutions/positions
-	Support    interface{}           // some lookup variants use additional data
+	Support    any                   // some lookup variants use additional data
 }
 
 // LookupType 5: Contextual Substitution Subtable

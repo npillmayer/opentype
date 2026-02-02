@@ -1,4 +1,6 @@
 .DS_Store
+out.txt
+
 # Claude Code (AI) memory
 CLAUDE.md
 AGENTS.md

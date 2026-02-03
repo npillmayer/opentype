@@ -100,6 +100,24 @@ func FeatureSubsetForLangSys(langSys ot.NavList, featureList ot.TagRecordMap) (o
 	return subset, nil
 }
 
+func LookupSubsetForFeature(featureLookups ot.NavList, lookupList ot.NavList) (ot.RootList, error) {
+	if featureLookups == nil || featureLookups.Len() == 0 {
+		return nil, ERROR_VOID
+	} else if lookupList == nil || lookupList.Len() == 0 {
+		return nil, ERROR_NO_LIST
+	}
+	root, ok := lookupList.(ot.RootList)
+	if !ok {
+		return nil, ERROR_NO_LIST
+	}
+	indices := make([]int, 0, featureLookups.Len())
+	for _, loc := range featureLookups.Range() {
+		indices = append(indices, int(loc.U16(0)))
+	}
+	subset := root.Subset(indices)
+	return subset, nil
+}
+
 func KeyTags(m ot.TagRecordMap) []ot.Tag {
 	if m == nil || m.Len() == 0 {
 		return nil

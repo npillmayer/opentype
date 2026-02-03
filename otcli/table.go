@@ -154,21 +154,25 @@ func subsetOp(intp *Intp, op *Op) (err error, stop bool) {
 			if features, err = otlayout.GetFeatureList(intp.table); err != nil {
 				return
 			}
-			root, ok := features.(ot.RootTagMap)
-			if !ok {
-				err = errors.New("feature list is not a root tag map")
-				return
+			subset, err := otlayout.FeatureSubsetForLangSys(l, features)
+			if err != nil {
+				return err, false
 			}
-			indices := make([]int, 0, l.Len())
-			for _, loc := range l.Range() {
-				indices = append(indices, int(loc.U16(0)))
-			}
-			subset := root.Subset(indices)
 			pterm.Printf("Subset of %d features\n", subset.Len())
 			n := pathNode{kind: nodeTagMap, tm: subset, inx: -1}
 			intp.stack = append(intp.stack, n)
 		case "LookupList":
-			panic("not implemented")
+			var lyt *ot.LayoutTable
+			if lyt, err = otlayout.GetLayoutTable(intp.table); err != nil {
+				return
+			}
+			subset, err := otlayout.LookupSubsetForFeature(l, lyt.LookupList)
+			if err != nil {
+				return err, false
+			}
+			pterm.Printf("Subset of %d lookups\n", subset.Len())
+			n := pathNode{kind: nodeList, list: subset, inx: -1}
+			intp.stack = append(intp.stack, n)
 		}
 	} else {
 		err = errors.New("need to know which sub-table to subset")

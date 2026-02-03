@@ -9,6 +9,8 @@ the Justification table (JSTF), and the Glyph Definition table (GDEF).
 These tables use some of the same data formats.
 */
 
+import "iter"
+
 // --- Layout tables ---------------------------------------------------------
 
 // LayoutTable is a base type for layout tables.
@@ -551,6 +553,33 @@ func (ll LookupList) Name() string {
 	return ll.name
 }
 
+// Subset creates a new LookupList with entries selected by indices.
+// It copies the selected offset records into a new backing buffer.
+func (ll LookupList) Subset(indices []int) RootList {
+	if len(indices) == 0 {
+		return LookupList{name: ll.name, base: ll.base, isGPos: ll.isGPos}
+	}
+	buf := make([]byte, 2*len(indices))
+	for i, idx := range indices {
+		if idx < 0 || idx >= ll.length {
+			panic("subset of lookup list: index out of range")
+		}
+		off := ll.Get(idx)
+		copy(buf[i*2:(i+1)*2], off.Bytes())
+	}
+	sub := LookupList{
+		array: array{
+			recordSize: 2,
+			length:     len(indices),
+			loc:        binarySegm(buf),
+		},
+		base:   ll.base,
+		name:   ll.name,
+		isGPos: ll.isGPos,
+	}
+	return sub
+}
+
 /*
 func (ll LookupList) Get(i int) NavLocation {
 	if i < 0 || i >= ll.length {
@@ -578,7 +607,18 @@ func (ll LookupList) Navigate(i int) Lookup {
 	return ll.lookupsCache[i]
 }
 
+func (ll LookupList) Range() iter.Seq2[int, NavLocation] {
+	return func(yield func(int, NavLocation) bool) {
+		for i := range ll.Len() {
+			if !yield(i, ll.Get(i)) {
+				return
+			}
+		}
+	}
+}
+
 var _ NavList = LookupList{}
+var _ RootList = LookupList{}
 
 func GSubLookupType(ltype LayoutTableLookupType) LayoutTableLookupType {
 	return ltype & 0x00ff

@@ -585,13 +585,14 @@ func (a array) Get(i int) NavLocation {
 	return b
 }
 
-func (a array) All() []NavLocation {
-	r := make([]NavLocation, a.length)
-	for i := 0; i < a.length; i++ {
-		x := a.Get(i)
-		r = append(r, x)
+func (a array) Range() iter.Seq2[int, NavLocation] {
+	return func(yield func(int, NavLocation) bool) {
+		for i := range a.Len() {
+			if !yield(i, a.Get(i)) {
+				return
+			}
+		}
 	}
-	return r
 }
 
 // VarArray is a type for arrays of variable length records, which in turn may point to nested
@@ -866,27 +867,18 @@ func (m tagRecordMap16) AsTagRecordMap() TagRecordMap {
 //
 // Usually the source map is a projection onto the font's bytes. The subset map has to
 // allocate a new byte array for the subset.
-func (m tagRecordMap16) Subset(indices NavList) TagRecordMap {
-	if indices == nil || indices.Len() == 0 {
+func (m tagRecordMap16) Subset(indices []int) RootTagMap {
+	if len(indices) == 0 {
 		return tagRecordMap16{}
 	}
-	N := indices.Len() // will allocate space for N records
+	N := len(indices) // will allocate space for N records
 	subset := makeTagRecordMap16(m.name, m.target, nil, m.base, 0, N)
-	records := subset.records.loc[:0] // not sure we will use all slots
-	tracer().Errorf("subsetting indices = %v", indices.All())
-	tracer().Errorf("N = %d", N)
-	tracer().Errorf("|records| = %v", m.records.length)
-	const unusedDefaultLink = 0xffff // OpenType convention
-	for i := range N {
-		index := indices.Get(i).U16(0)
-		if index == unusedDefaultLink {
-			continue
-		} else if int(index) >= m.records.length {
-			//continue
+	for i, index := range indices {
+		if index < 0 || index >= m.records.length {
 			panic("subset of tag record map: cannot apply link > |record array|")
 		}
-		bytes := m.records.Get(int(index))
-		records = append(records, bytes.Bytes()...)
+		bytes := m.records.Get(index)
+		copy(subset.records.loc[i*6:(i+1)*6], bytes.Bytes())
 	}
 	return subset
 }
@@ -956,11 +948,6 @@ func (mw mapWrapper) AsTagRecordMap() TagRecordMap {
 }
 
 // Interface TagRecordMap
-func (mw mapWrapper) Subset(indices NavList) TagRecordMap {
-	panic("not implemented")
-}
-
-// Interface TagRecordMap
 // Range() iter.Seq2[Tag, NavLink] // range over sequence of tag-record pairs
 func (mw mapWrapper) Range() iter.Seq2[Tag, NavLink] {
 	return func(yield func(Tag, NavLink) bool) {
@@ -992,12 +979,14 @@ func (u16l u16List) Get(i int) NavLocation {
 	return binarySegm{byte(u16l[i] >> 8 & 0xff), byte(u16l[i] & 0xff)}
 }
 
-func (u16l u16List) All() []NavLocation {
-	r := make([]NavLocation, len(u16l))
-	for i, x := range u16l {
-		r[i] = binarySegm([]byte{byte(x >> 8 & 0xff), byte(x & 0xff)})
+func (u16l u16List) Range() iter.Seq2[int, NavLocation] {
+	return func(yield func(int, NavLocation) bool) {
+		for i := range u16l {
+			if !yield(i, u16l.Get(i)) {
+				return
+			}
+		}
 	}
-	return r
 }
 
 // ---------------------------------------------------------------------------

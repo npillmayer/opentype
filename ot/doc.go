@@ -87,7 +87,7 @@ glyphs themselves, include the so-called “layout-tables”.
 GSUB is an important table for text shaping, so package `ot` offers a special type.
 However, this type is not exposing GSUB in full depth! Thus we type:
 
-	feats := gsub.ScriptList.LookupTag(T("latn")).Navigate().Map().LookupTag(T("TRK")).Navigate().List()
+	feats := gsub.ScriptList.Map().AsTagRecordMap().LookupTag(T("latn")).Navigate().Map().AsTagRecordMap().LookupTag(T("TRK")).Navigate().List()
 	fmt.Println("%d features for Turkish", feats.Len())
 	// => yields 24
 

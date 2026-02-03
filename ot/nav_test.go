@@ -16,9 +16,13 @@ func TestNavLink(t *testing.T) {
 		t.Fatal("cannot locate table GSUB in font")
 	}
 	gsub := table.Self().AsGSub()
-	recname := gsub.ScriptList.Map().LookupTag(T("latn")).Navigate().Name()
+	m := gsub.ScriptList.Map()
+	if !m.IsTagRecordMap() {
+		t.Fatalf("script list is not a tag record map")
+	}
+	recname := m.AsTagRecordMap().LookupTag(T("latn")).Navigate().Name()
 	t.Logf("walked to %s", recname)
-	lang := gsub.ScriptList.Map().LookupTag(T("latn")).Navigate().Map().AsTagRecordMap().LookupTag(T("TRK"))
+	lang := m.AsTagRecordMap().LookupTag(T("latn")).Navigate().Map().AsTagRecordMap().LookupTag(T("TRK"))
 	langlist := lang.Navigate().List()
 	t.Logf("list is %s of length %v", lang.Name(), langlist.Len())
 	if lang.Name() != "LangSys" || langlist.Len() != 24 {
@@ -83,7 +87,7 @@ func TestTagRecordMapSubset(t *testing.T) {
 		setTagRecord(m, i, tags[i], offsets[i])
 	}
 
-	indices := u16List{2, 0}
+	indices := []int{2, 0}
 	subset := m.Subset(indices)
 
 	if subset.Len() != 2 {

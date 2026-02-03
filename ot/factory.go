@@ -30,7 +30,13 @@ type NavList interface {
 	Name() string        // returns the name of the underlying OpenType table
 	Len() int            // number of items in the list
 	Get(int) NavLocation // bytes of entry #n
-	All() []NavLocation  // all entries as (possibly variable sized) byte segments
+	Range() iter.Seq2[int, NavLocation]
+}
+
+// RootList is a NavList which can be subsetted by index, producing another RootList.
+type RootList interface {
+	NavList
+	Subset(indices []int) RootList
 }
 
 // NavMap wraps OpenType structures which are map-like. Lookup is always done on
@@ -41,7 +47,6 @@ type NavList interface {
 type NavMap interface {
 	Name() string
 	Lookup(uint32) NavLocation
-	LookupTag(Tag) NavLink
 	IsTagRecordMap() bool
 	AsTagRecordMap() TagRecordMap
 }
@@ -59,8 +64,13 @@ type TagRecordMap interface {
 	//Tags() []Tag                    // returns all the tags which the map uses as keys
 	Len() int                       // number of entries in the map
 	Get(int) (Tag, NavLink)         // get entry at position n
-	Subset(NavList) TagRecordMap    // subset with indices of a list
 	Range() iter.Seq2[Tag, NavLink] // range over sequence of tag-record pairs
+}
+
+// RootTagMap is a TagRecordMap which can be subsetted by index, producing another RootTagMap.
+type RootTagMap interface {
+	TagRecordMap
+	Subset(indices []int) RootTagMap
 }
 
 // NavigatorFactory creates a Navigator for a given OpenType object `obj` at location
@@ -266,15 +276,12 @@ func (f otFields) Get(i int) NavLocation {
 	return binarySegm{}
 }
 
-func (f otFields) All() []NavLocation {
-	r := make([]NavLocation, 0, len(f.pattern))
-	offset := 0
-	for _, p := range f.pattern {
-		if x, err := f.b.view(offset, int(p)); err == nil {
-			r = append(r, x)
-		} else {
-			return []NavLocation{binarySegm{}}
+func (f otFields) Range() iter.Seq2[int, NavLocation] {
+	return func(yield func(int, NavLocation) bool) {
+		for i := range f.Len() {
+			if !yield(i, f.Get(i)) {
+				return
+			}
 		}
 	}
-	return r
 }

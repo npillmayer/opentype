@@ -89,7 +89,7 @@ However, this type is not exposing GSUB in full depth.
 To find out if the current font contains features applicable for Latin script with
 Turkish language flavour, type:
 
-    langSys := gsub.ScriptList.LookupTag(T("latn")).Navigate().Map().LookupTag(T("TRK")).Navigate().List()
+    langSys := gsub.ScriptList.Map().AsTagRecordMap().LookupTag(T("latn")).Navigate().Map().AsTagRecordMap().LookupTag(T("TRK")).Navigate().List()
     fmt.Println("%d font-features for Turkish", langSys.Len())
     // => yields 24 with font 'Calibri'
 

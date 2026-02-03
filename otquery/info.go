@@ -61,7 +61,11 @@ func NameInfo(otf *ot.Font, lang ot.Tag) map[string]string {
 func findKey(table ot.Table, m map[string]string, fieldname string, keys [][]byte) {
 	for _, key := range keys {
 		key := ot.MakeTag(key)
-		val := table.Fields().Map().AsTagRecordMap().LookupTag(key).Navigate().Name()
+		tm := table.Fields().Map()
+		if !tm.IsTagRecordMap() {
+			return
+		}
+		val := tm.AsTagRecordMap().LookupTag(key).Navigate().Name()
 		if val != "" {
 			m[fieldname] = val
 			break

@@ -1,6 +1,7 @@
 package otlayout
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/npillmayer/opentype/ot"
@@ -56,11 +57,16 @@ func FontFeatures(otf *ot.Font, script, lang ot.Tag) ([]Feature, []Feature, erro
 	if script == 0 {
 		script = ot.DFLT
 	}
-	for i := 0; i < 2; i++ { // collect features from GSUB and GPOS
+	for i := range 2 { // collect features from GSUB and GPOS
 		t := lytTables[i]
-		scr := t.ScriptList.Map().LookupTag(script)
+		m := t.ScriptList.Map()
+		if !m.IsTagRecordMap() {
+			return nil, nil, errors.New("script list is not a tag record map")
+		}
+		trm := m.AsTagRecordMap()
+		scr := trm.LookupTag(script)
 		if scr.IsNull() && script != ot.DFLT {
-			scr = t.ScriptList.Map().LookupTag(ot.DFLT)
+			scr = trm.LookupTag(ot.DFLT)
 		}
 		if scr.IsNull() {
 			tracer().Infof("font %s has no feature-links from script %s", otf.F.Fontname, script)
@@ -73,8 +79,11 @@ func FontFeatures(otf *ot.Font, script, lang ot.Tag) ([]Feature, []Feature, erro
 		var dflt, lsys ot.Navigator
 		dflt = langs.Link().Navigate()
 		if lang != 0 {
-			if lptr := langs.Map().LookupTag(lang); !lptr.IsNull() {
-				lsys = lptr.Navigate()
+			langMap := langs.Map()
+			if langMap.IsTagRecordMap() {
+				if lptr := langMap.AsTagRecordMap().LookupTag(lang); !lptr.IsNull() {
+					lsys = lptr.Navigate()
+				}
 			}
 		}
 		if lsys == nil || lsys.IsVoid() {
@@ -85,7 +94,7 @@ func FontFeatures(otf *ot.Font, script, lang ot.Tag) ([]Feature, []Feature, erro
 				otf.F.Fontname, script)) // I am not quite sure if this is really illegal
 		}
 		tracer().Debugf("lsys = %v, |lsys| = %d", lsys.Name(), lsys.List().Len())
-		flocs := lsys.List().All()
+	flocs := ListAll(lsys.List())
 		feats[i] = make([]Feature, len(flocs))
 		for j, loc := range flocs { // iterate over all feature records and wrap them into Go types
 			inx := loc.U16(0) // inx is an index into a FeatureList

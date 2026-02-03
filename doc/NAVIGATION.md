@@ -40,6 +40,60 @@ conversion in `ot`.
 - FeatureList is only map-like: tag → Feature link. There is no “default link”
   or list facet to expose, so a `TagRecordMap` is sufficient and lighter.
 
+## Plan: RootTagMap subsetting (stored for later)
+
+1. **Interfaces**
+   - Remove `Subset(NavList)` from `TagRecordMap`.
+   - Add `RootTagMap` interface:
+     `type RootTagMap interface { TagRecordMap; Subset(indices []int) RootTagMap }`
+
+2. **Implementation**
+   - `tagRecordMap16` implements `Subset(indices []int) RootTagMap` with copy semantics
+     (allocate new buffer, copy selected records, no index slice retained).
+   - `mapWrapper` does **not** implement `RootTagMap`.
+
+3. **FeatureSubsetForLangSys**
+   - Change `FeatureSubsetForLangSys(langSys, featureList)` to:
+     - Extract `[]int` indices from `langSys` using `langSys.Range()` and read
+       U16 values from each `NavLocation`.
+     - Assert `featureList` implements `RootTagMap`.
+     - Call `RootTagMap.Subset(indices)`.
+
+4. **Call sites**
+   - Update any usages of `TagRecordMap.Subset(NavList)` (expected only
+     `FeatureSubsetForLangSys`).
+
+5. **Tests**
+   - Update TagRecordMap subset tests to use `RootTagMap.Subset([]int)`.
+   - Add/extend tests for `FeatureSubsetForLangSys` covering index extraction,
+     order/duplication, and repeated subsetting.
+
+## Updates applied after the plan
+
+### RootTagMap + FeatureSubsetForLangSys
+
+- `TagRecordMap.Subset(NavList)` has been removed.
+- `RootTagMap` was introduced with `Subset([]int) RootTagMap`.
+- `tagRecordMap16` implements `RootTagMap` using copy semantics (no index slice retained).
+- `FeatureSubsetForLangSys` now:
+  - extracts indices via `langSys.Range()` and `U16(0)`,
+  - asserts `featureList` implements `RootTagMap`,
+  - calls `RootTagMap.Subset(indices)`.
+
+### NavList.Range + ListAll
+
+- `NavList` gained `Range()` to iterate (`for i, loc := range l.Range()`).
+- `NavList.All()` was removed.
+- New helper: `otlayout.ListAll(l ot.NavList) []ot.NavLocation` (uses `Range()`).
+- `otlayout/feature.go` now uses `ListAll(lsys.List())`.
+
+### NavMap.LookupTag removal
+
+- `NavMap.LookupTag` removed from the interface.
+- All real call sites now cast via `IsTagRecordMap()/AsTagRecordMap()` before calling
+  `TagRecordMap.LookupTag`.
+- Examples/docs and otcli were updated to call `LookupTag` on `TagRecordMap` only.
+
 ## Pointers to the relevant code
 
 - `ot/bytes.go`: `NavLink` interface, `parseLink16`/`makeLink16`, `u16List`.

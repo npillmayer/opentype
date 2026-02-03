@@ -88,7 +88,15 @@ func FeatureSubsetForLangSys(langSys ot.NavList, featureList ot.TagRecordMap) (o
 	} else if featureList == nil || featureList.Len() == 0 {
 		return nil, ERROR_NO_TAG_RECORD_MAP
 	}
-	subset := featureList.Subset(langSys)
+	root, ok := featureList.(ot.RootTagMap)
+	if !ok {
+		return nil, ERROR_NO_TAG_RECORD_MAP
+	}
+	indices := make([]int, 0, langSys.Len())
+	for _, loc := range langSys.Range() {
+		indices = append(indices, int(loc.U16(0)))
+	}
+	subset := root.Subset(indices)
 	return subset, nil
 }
 

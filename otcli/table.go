@@ -168,7 +168,7 @@ func subsetOp(intp *Intp, op *Op) (err error, stop bool) {
 	return
 }
 
-func featuresOp(intp *Intp, op *Op) (err error, stop bool) {
+func featureListOp(intp *Intp, op *Op) (err error, stop bool) {
 	if err = intp.checkTable(); err != nil {
 		return
 	}
@@ -176,18 +176,34 @@ func featuresOp(intp *Intp, op *Op) (err error, stop bool) {
 	if features, err = otlayout.GetFeatureList(intp.table); err != nil {
 		return
 	}
+	n := intp.lastPathNode()
+	if n.kind != nodeTagMap || n.tm == nil || n.tm.Name() != features.Name() {
+		nn := pathNode{kind: nodeTagMap, tm: features, inx: -1}
+		intp.stack = append(intp.stack, nn)
+		n = intp.lastPathNode()
+	}
+	var i int
 	if op.noArg() {
 		pterm.Printf("%s table has %d entries\n", features.Name(), features.Len())
-	} else if i, err := strconv.Atoi(op.arg); err == nil {
+	} else if i, err = strconv.Atoi(op.arg); err == nil {
 		tag, _ := features.Get(i) //tag, lnk := f.Get(i)
 		pterm.Printf("%s list index %d holds feature record = %v\n", features.Name(), i, tag)
-	} else {
-		err = fmt.Errorf("List index not numeric: %v\n", op.arg)
+	} else { // treat FeatureList as a tag-map with arg = key
+		err = nil
+		l := features.LookupTag(ot.T(op.arg))
+		if l.IsNull() {
+			err = fmt.Errorf("FeatureList lookup [%s] returns null", ot.T(op.arg).String())
+			return
+		}
+		pterm.Printf("FeatureList[%s] = %v\n", op.arg, l.Name())
+		n.key = op.arg
+		n.link = l
+		intp.setLastPathNode(n)
 	}
 	return
 }
 
-func lookupsOp(intp *Intp, op *Op) (err error, stop bool) {
+func lookupListOp(intp *Intp, op *Op) (err error, stop bool) {
 	if err = intp.checkTable(); err != nil {
 		return
 	}
@@ -195,10 +211,18 @@ func lookupsOp(intp *Intp, op *Op) (err error, stop bool) {
 	if lyt, err = otlayout.GetLayoutTable(intp.table); err != nil {
 		return
 	}
+	n := intp.lastPathNode()
+	if n.kind != nodeList || n.list == nil || n.list.Name() != lyt.LookupList.Name() {
+		nn := pathNode{kind: nodeList, list: lyt.LookupList, inx: -1}
+		intp.stack = append(intp.stack, nn)
+		n = intp.lastPathNode()
+	}
 	if op.noArg() {
 		printLookupList(lyt)
 	} else if i, err := strconv.Atoi(op.arg); err == nil {
 		printLookup(lyt, i)
+		n.inx = i
+		intp.setLastPathNode(n)
 	} else {
 		tracer().Errorf("Lookup index not numeric: %v\n", op.arg)
 		err = errors.New("invalid lookup index")

@@ -199,26 +199,26 @@ const (
 	TABLE
 	LIST
 	MAP
-	SCRIPTS
-	FEATURES
-	LOOKUPS
+	SCRIPTLIST
+	FEATURELIST
+	LOOKUPLIST
 	SUBSET
 	PRINT
 )
 
 var opMap = map[string]int{
-	"quit":     QUIT,
-	"->":       NAVIGATE,
-	"pop":      POP,
-	"help":     HELP,
-	"table":    TABLE,
-	"list":     LIST,
-	"map":      MAP,
-	"scripts":  SCRIPTS,
-	"features": FEATURES,
-	"lookups":  LOOKUPS,
-	"subset":   SUBSET,
-	"print":    PRINT,
+	"quit":        QUIT,
+	"->":          NAVIGATE,
+	"pop":         POP,
+	"help":        HELP,
+	"table":       TABLE,
+	"list":        LIST,
+	"map":         MAP,
+	"scriptlist":  SCRIPTLIST,
+	"featurelist": FEATURELIST,
+	"lookuplist":  LOOKUPLIST,
+	"subset":      SUBSET,
+	"print":       PRINT,
 }
 
 var opNames = []string{
@@ -229,9 +229,9 @@ var opNames = []string{
 	"table",
 	"list",
 	"map",
-	"scripts",
-	"features",
-	"lookups",
+	"ScriptList",
+	"FeatureList",
+	"LookupList",
 	"subset",
 	"print",
 }
@@ -239,18 +239,18 @@ var opNames = []string{
 var command = Command{}
 
 var commandFn = map[int]func(*Intp, *Op) (error, bool){
-	QUIT:     quitOp,
-	NAVIGATE: navigateOp,
-	POP:      popOp,
-	HELP:     helpOp,
-	TABLE:    tableOp,
-	LIST:     listOp,
-	MAP:      mapOp,
-	SCRIPTS:  scriptsOp,
-	FEATURES: featuresOp,
-	LOOKUPS:  lookupsOp,
-	SUBSET:   subsetOp,
-	PRINT:    printOp,
+	QUIT:        quitOp,
+	NAVIGATE:    navigateOp,
+	POP:         popOp,
+	HELP:        helpOp,
+	TABLE:       tableOp,
+	LIST:        listOp,
+	MAP:         mapOp,
+	SCRIPTLIST:  scriptsOp,
+	FEATURELIST: featureListOp,
+	LOOKUPLIST:  lookupListOp,
+	SUBSET:      subsetOp,
+	PRINT:       printOp,
 }
 
 func resetCommand() {
@@ -380,7 +380,7 @@ func loadLocalFont(fontFileName string) (*ot.Font, error) {
 
 // ---Path stack management----------------------------------------------
 
-func (intp *Intp) lastPathNode() pathNode {
+func (intp Intp) lastPathNode() pathNode {
 	if len(intp.stack) == 0 {
 		return pathNode{}
 	}

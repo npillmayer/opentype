@@ -87,14 +87,13 @@ func mapOp(intp *Intp, op *Op) (err error, stop bool) {
 		return
 	}
 	if tag, ok := op.hasArg(); ok {
-		if trm != nil {
-			target = trm.LookupTag(ot.T(tag))
-			tracer().Infof("%s map keys = %v", trm.Name(), otlayout.KeyTags(trm))
-			pterm.Printf("%s table maps [tag %v] => %v\n", trm.Name(), ot.T(tag), target.Name())
-		} else {
-			target = m.LookupTag(ot.T(tag))
-			pterm.Printf("%s table maps [%v] => %v\n", m.Name(), ot.T(tag), target.Name())
+		if trm == nil {
+			err = errors.New("map is not a tag record map")
+			return
 		}
+		target = trm.LookupTag(ot.T(tag))
+		tracer().Infof("%s map keys = %v", trm.Name(), otlayout.KeyTags(trm))
+		pterm.Printf("%s table maps [tag %v] => %v\n", trm.Name(), ot.T(tag), target.Name())
 		n := intp.lastPathNode()
 		n.key, n.link = tag, target
 		intp.setLastPathNode(n)

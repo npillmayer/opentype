@@ -166,11 +166,12 @@ func subsetOp(intp *Intp, op *Op) (err error, stop bool) {
 			if lyt, err = otlayout.GetLayoutTable(intp.table); err != nil {
 				return
 			}
+			pterm.Printf("Subsetting %s\n", lyt.LookupList.Name())
 			subset, err := otlayout.LookupSubsetForFeature(l, lyt.LookupList)
 			if err != nil {
 				return err, false
 			}
-			pterm.Printf("Subset of %d lookups\n", subset.Len())
+			pterm.Printf("Subset(%s) of %d lookups\n", subset.Name(), subset.Len())
 			n := pathNode{kind: nodeList, list: subset, inx: -1}
 			intp.stack = append(intp.stack, n)
 		}

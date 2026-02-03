@@ -5,7 +5,7 @@ import (
 	"iter"
 )
 
-// Navigator is an interface type to wrap various kinds of OpenType structure.
+// Navigator is an interface type to wrap various kinds of OpenType structures.
 // On any given Navigator item, not all of the functions may result in sensible
 // values returned. For example, OpenType map-like structures will return a
 // map with a call to `Map`, but will return an invalid `Link` and an empty
@@ -59,9 +59,8 @@ type NavMap interface {
 // For some record maps the (tag) keys are not unique (e.g., the feature-list table),
 // so in this case the first matching entry will be returned.
 type TagRecordMap interface {
-	Name() string          // OpenType specification name of this map
-	LookupTag(Tag) NavLink // returns the link associated with a given tag
-	//Tags() []Tag                    // returns all the tags which the map uses as keys
+	Name() string                   // OpenType specification name of this map
+	LookupTag(Tag) NavLink          // returns the link associated with a given tag
 	Len() int                       // number of entries in the map
 	Get(int) (Tag, NavLink)         // get entry at position n
 	Range() iter.Seq2[Tag, NavLink] // range over sequence of tag-record pairs
@@ -72,6 +71,8 @@ type RootTagMap interface {
 	TagRecordMap
 	Subset(indices []int) RootTagMap
 }
+
+// ----------------------------------------------------------------------
 
 // NavigatorFactory creates a Navigator for a given OpenType object `obj` at location
 // `loc`.

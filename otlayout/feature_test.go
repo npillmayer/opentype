@@ -36,12 +36,15 @@ func TestDispatchGSubLookupSingleFmt1Routing(t *testing.T) {
 		pos:    0,
 	}
 
-	pos, ok, buf := dispatchGSubLookup(&ctx, &sub)
+	pos, ok, buf, edit := dispatchGSubLookup(&ctx, &sub)
 	if !ok {
 		t.Fatalf("expected lookup to apply")
 	}
 	if pos != 1 {
 		t.Fatalf("expected pos to advance to 1, got %d", pos)
+	}
+	if edit == nil || edit.From != 0 || edit.To != 1 || edit.Len != 1 {
+		t.Fatalf("unexpected edit span: %+v", edit)
 	}
 	out, ok := buf.(GlyphSlice)
 	if !ok {

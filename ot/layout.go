@@ -856,3 +856,10 @@ type sequenceRule struct {
 	inputSequence array
 	lookupRecords array
 }
+
+// SequenceLookupRecord identifies a nested lookup to apply at a position
+// within a matched input sequence.
+type SequenceLookupRecord struct {
+	SequenceIndex   uint16
+	LookupListIndex uint16
+}

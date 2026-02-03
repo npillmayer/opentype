@@ -241,8 +241,37 @@ Legend:
   for matching glyph sequences, class sequences, and coverage sequences.
 - Extension lookups require a uniform “unwrap and dispatch” path to avoid
   duplicating logic across GSUB/GPOS.
-- Consider adding a small abstraction for a glyph buffer that supports
-  replacement, insertion, and positioning adjustments to simplify GPOS code.
+- Glyph buffers should support replacement, insertion, and positioning adjustments
+  to simplify GPOS code.
+- An edit tracking mechanism is needed so contextual/chaining logic can keep
+  lookup-record positions stable across buffer mutations.
+
+### EditSpan tracking
+
+`EditSpan` describes a single buffer mutation so that contextual/chaining helpers
+can re-map lookup-record positions after a replacement or insertion.
+
+- Shape: `From` (start index), `To` (exclusive end index), `Len` (length of
+  replacement segment).
+- Semantics: the original range `[From:To)` is replaced with `Len` glyphs.
+- Used by: GSUB 1..4 handlers return an `EditSpan` to describe the mutation;
+  GSUB 5/6 helpers can then update lookup-record indices using this information.
+- Not used by: lookups that do not mutate glyph arrays (e.g. GPOS), and GSUB
+  lookups that fail to apply should return a nil edit span.
+
+Example (two lookup records):
+
+```go
+// Starting glyphs: [10 20 30 40]
+// Record A: sequenceIndex=1 (gid 20)
+// Record B: sequenceIndex=3 (gid 40)
+// Apply record A first: replace [20] -> [200 201]
+edit := EditSpan{From: 1, To: 2, Len: 2} // delta = +1
+
+// After edit, glyphs: [10 200 201 30 40]
+// Record B was originally index 3, but index shifts by +1 for positions >= To.
+// Updated sequenceIndex for B becomes 4 (points to gid 40).
+```
 
 ## Implementation Task Breakdown (by file)
 
@@ -262,10 +291,19 @@ This section maps the plan to concrete files and likely code touchpoints.
   - `matchInputCoverageSequence(...)`
   - `matchBacktrackLookaheadGlyphs(...)`
   - `applySequenceLookupRecords(...)`
+  - `applySequenceLookupRecords(...)` should accept edit tracking and update
+    record positions when earlier lookups change the buffer.
   - These helpers should be used by:
     - `gsubLookupType5Fmt1/2/3`
     - `gsubLookupType6Fmt1/2/3`
     - GPOS type 7/8 (shared with GSUB, but for positioning lookups)
+
+### New helper responsibilities
+
+- `applySequenceLookupRecords` applies nested lookups in record order and
+  re-maps each record position based on earlier edits (using `EditSpan`).
+- Matching helpers should operate on `GlyphBuffer` rather than raw slices so
+  buffer wrappers can be swapped in by clients.
 
 ### GSUB Extension and Reverse Chaining
 - `ot/layout.go` (if needed)

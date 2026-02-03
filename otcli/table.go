@@ -155,7 +155,16 @@ func subsetOp(intp *Intp, op *Op) (err error, stop bool) {
 			if features, err = otlayout.GetFeatureList(intp.table); err != nil {
 				return
 			}
-			subset := features.Subset(l)
+			root, ok := features.(ot.RootTagMap)
+			if !ok {
+				err = errors.New("feature list is not a root tag map")
+				return
+			}
+			indices := make([]int, 0, l.Len())
+			for _, loc := range l.Range() {
+				indices = append(indices, int(loc.U16(0)))
+			}
+			subset := root.Subset(indices)
 			pterm.Printf("Subset of %d features\n", subset.Len())
 			n := pathNode{kind: nodeTagMap, tm: subset, inx: -1}
 			intp.stack = append(intp.stack, n)

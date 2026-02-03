@@ -1183,8 +1183,9 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ta
 		return fmt.Errorf("lookup list count %d exceeds maximum %d", count, MaxLookupCount)
 	}
 
-	ll := LookupList{base: b, isGPos: isGPos}
-	ll.array, ll.err = parseArray16(b, 0, "Lookup", "Lookup-Subtables")
+	const layoutListName = "LookupList"
+	ll := LookupList{name: layoutListName, base: b, isGPos: isGPos}
+	ll.array, ll.err = parseArray16(b, 0, "Lookup", "LookupSubtables")
 	if ll.err != nil {
 		return ll.err
 	}

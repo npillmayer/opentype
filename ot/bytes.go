@@ -543,6 +543,9 @@ func parseArray16(b binarySegm, offset int, name, target string) (array, error) 
 			name, n, requiredSize, len(b))
 	}
 
+	fmt.Printf("array16 %s: count %d requires %d bytes, have %d\n",
+		name, n, requiredSize, len(b))
+
 	return array{
 		name:       name,
 		target:     target,

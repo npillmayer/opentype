@@ -259,6 +259,35 @@ Status quo:
 - `otlayout` carries the flag in `applyCtx`, but ignores it during matching.
 - No GDEF-based filtering is applied yet (mark classes / mark attachment sets).
 
+### GDEF requirement and parsing contract
+
+The parsing contract of package `ot` is that a successful parse yields a
+workable font for later phases (`otlayout`, `otquery`, `otshape`) with a
+consistent minimum of layout data. In the OpenType spec, GDEF is not universally
+required, but becomes mandatory when lookup flags or lookup data require GDEF
+subtables (glyph class definitions, mark attachment classes, mark filtering
+sets). This is complicated further by the JSTF table, which can include lookups
+that also depend on GDEF.
+
+Status quo:
+- `ot/parse.go` currently *always* requires `GDEF` alongside `GSUB` and `GPOS`
+  for the parse to succeed, regardless of lookup flags or JSTF usage.
+
+TODO (parsing phase, actionable):
+- Change parsing validation to require GDEF only when required by lookups:
+  - Inspect all GSUB/GPOS lookups for flags that require GDEF:
+    - `IgnoreBaseGlyphs`, `IgnoreLigatures`, `IgnoreMarks` -> require
+      `GDEF.GlyphClassDef`.
+    - `UseMarkFilteringSet` -> require `GDEF.MarkGlyphSetsDef`.
+    - `MarkAttachmentType` -> require `GDEF.MarkAttachClassDef`.
+  - If JSTF is present, scan JSTF-referenced lookups and apply the same
+    requirement checks (JSTF lookups should be treated like GSUB/GPOS lookups
+    for this purpose).
+  - Emit a critical error if a required GDEF subtable is missing when a lookup
+    requires it; otherwise allow GDEF to be absent.
+  - Keep the contract of a workable font on successful parse by ensuring any
+    required GDEF data is present before returning success.
+
 Later stages (planned):
 - Implement `skipGlyph` using GDEF glyph class definitions:
   - `IGNORE_BASE_GLYPHS`, `IGNORE_LIGATURES`, `IGNORE_MARKS`.

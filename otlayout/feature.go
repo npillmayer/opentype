@@ -491,7 +491,7 @@ func gsubLookupType4Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		// we will have to match following glyphs to the remaining componentGlyphs
 		match := true
 		cur := mpos
-		for i, g := range componentGlyphs {
+		for _, g := range componentGlyphs {
 			next, ok := nextMatchable(ctx, buf, cur+1)
 			if !ok || g != buf.At(next) {
 				match = false

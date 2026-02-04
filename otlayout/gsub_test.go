@@ -131,6 +131,7 @@ Calibri:
 func TestFeatureCCMPCalibri(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
 	defer teardown()
+
 	//
 	otf := parseFont(t, "Calibri")
 	t.Logf("Using font %s for test", otf.F.Fontname)

@@ -37,7 +37,9 @@ func parseGSubLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookup
 	// Most of the subtable formats use a coverage table in some form to decide on which glyphs to
 	// operate on. parseGSubLookupSubtable will parse this coverage table and put it into
 	// `sub.Coverage`, then branch down to the different lookup types.
-	if !(lookupType == 7 && format == 3) { // GSUB type Extension has no coverage table
+	if !(lookupType == 7 && format == 3) && !((lookupType == 5 || lookupType == 6) && format == 3) {
+		// GSUB type Extension has no coverage table.
+		// GSUB type 5/6 format 3 has coverage arrays, not a single coverage offset at byte 2.
 		covlink, err := parseLink16(b, 2, b, "Coverage")
 		if err == nil {
 			sub.Coverage = parseCoverage(covlink.Jump().Bytes())
@@ -169,12 +171,26 @@ func parseGSubLookupSubtableType6(b binarySegm, sub LookupSubtable) LookupSubtab
 		offset += 2 + len(seqctx.InputCoverage)*2
 		offset += 2 + len(seqctx.LookaheadCoverage)*2
 
-		if offset >= len(b) {
-			tracer().Errorf("GSUB type 6 format 3: offset %d exceeds buffer size %d", offset, len(b))
+		if offset+2 > len(b) {
+			tracer().Errorf("GSUB type 6 format 3: missing seqLookupCount at %d", offset)
 			return LookupSubtable{}
 		}
 
-		sub.Index = parseVarArray16(b, offset, 2, 2, "LookupSubtableGSub6-3")
+		seqLookupCount := int(b.U16(offset))
+		offset += 2
+		need := offset + seqLookupCount*4
+		if need > len(b) {
+			tracer().Errorf("GSUB type 6 format 3: lookup records extend beyond buffer")
+			return LookupSubtable{}
+		}
+		sub.LookupRecords = make([]SequenceLookupRecord, seqLookupCount)
+		for i := 0; i < seqLookupCount; i++ {
+			base := offset + i*4
+			sub.LookupRecords[i] = SequenceLookupRecord{
+				SequenceIndex:   b.U16(base),
+				LookupListIndex: b.U16(base + 2),
+			}
+		}
 	}
 	return sub
 }

@@ -80,29 +80,29 @@ parsing, data model access, and application in `otlayout/feature.go`. Statuses
 reflect what is visible in the current codebase.
 
 Legend:
-- Status: DONE / PARTIAL / TODO
+- Status: ✅DONE / PARTIAL / TODO
 - “Plan” focuses on application logic (parsing is already present for many types, but should be validated per lookup type as part of the tasks).
 
 ### GSUB lookup types (1..8)
 
 - GSUB-1 Single Substitution
   - Nature: Replace one glyph with one glyph.
-  - Status: DONE (Format 1 and Format 2 implemented in `gsubLookupType1Fmt1/2`).
+  - Status: ✅DONE (Format 1 and Format 2 implemented in `gsubLookupType1Fmt1/2`).
   - Plan: Add bounds checking against max glyph ID; add tests for both formats, including Coverage index ordering and delta application.
 
 - GSUB-2 Multiple Substitution
   - Nature: Replace one glyph with a sequence of glyphs.
-  - Status: DONE (Format 1 implemented in `gsubLookupType2Fmt1`).
+  - Status: ✅DONE (Format 1 implemented in `gsubLookupType2Fmt1`).
   - Plan: Validate Sequence table parsing, add tests for glyph sequence length and buffer expansion.
 
 - GSUB-3 Alternate Substitution
   - Nature: Replace one glyph with one of several alternates (selected by `alt`).
-  - Status: DONE (Format 1 implemented in `gsubLookupType3Fmt1`).
+  - Status: ✅DONE (Format 1 implemented in `gsubLookupType3Fmt1`).
   - Plan: Define behavior for out-of-range `alt` (current behavior uses last if alt<0, else ignore); add tests for alt selection and empty alternate sets.
 
 - GSUB-4 Ligature Substitution
   - Nature: Replace multiple glyphs with one glyph (ligatures).
-  - Status: DONE (Format 1 implemented in `gsubLookupType4Fmt1`).
+  - Status: ✅DONE (Format 1 implemented in `gsubLookupType4Fmt1`).
   - Plan: Add tests for multiple ligature records and component matching; ensure correct handling of overlapping ligature candidates and buffer bounds.
 
 - GSUB-5 Contextual Substitution
@@ -129,11 +129,10 @@ Legend:
 
 - GSUB-7 Extension Substitution
   - Nature: Indirection wrapper that points to another GSUB subtable type using 32-bit offsets.
-  - Status: TODO (not handled in `applyLookup`).
+  - Status: ✅DONE for parsing; apply-time handling is unnecessary because parsing unwraps the referenced subtable.
   - Plan:
-    1) Extend parsing to recognize extension subtables (if not already), capturing the “extensionLookupType” and the referenced subtable.
-    2) In `applyLookup`, detect type 7 and dispatch to the referenced subtable type/format (same code paths as types 1–6 or 8).
-    3) Add tests using a font with extension-based lookups.
+    1) Add tests using a font with extension-based lookups.
+    2) Keep the defensive no-op log if an extension subtable ever reaches dispatch (should not happen).
 
 - GSUB-8 Reverse Chaining Contextual Single
   - Nature: Contextual substitution applied right-to-left; uses coverage for backtrack/input/lookahead and replaces input glyphs.
@@ -211,11 +210,10 @@ Legend:
 
 - GPOS-9 Extension Positioning
   - Nature: Indirection wrapper for other GPOS lookup types (32-bit offsets).
-  - Status: TODO.
+  - Status: ✅DONE for parsing; apply-time handling is unnecessary because parsing unwraps the referenced subtable.
   - Plan:
-    1) Parse Extension positioning subtables.
-    2) Dispatch to referenced lookup type/format in `applyLookup`.
-    3) Add tests using a font with extension-based GPOS.
+    1) Add tests using a font with extension-based GPOS.
+    2) Keep the defensive no-op log if an extension subtable ever reaches dispatch (should not happen).
 
 ## Cross-Cutting Implementation Notes
 
@@ -225,7 +223,8 @@ Legend:
     `matchCoverageSequenceBackward`).
   - ✅ Glyph- and class-sequence helpers are implemented (`matchGlyphSequenceForward`, `matchClassSequenceForward`).
 - ✅ Extension lookups are unwrapped during parsing (GSUB 7 / GPOS 9), so dispatch sees the referenced
-  subtable type directly; otlayout logs if an extension subtable ever reaches dispatch.
+  subtable type directly. No special apply-time handling exists; if an extension subtable ever reaches
+  dispatch, otlayout logs and returns without applying it (defensive no-op).
 - ✅ Glyph buffers should support replacement, insertion, and positioning adjustments to simplify GPOS code.
 - ✅ An edit tracking mechanism is needed so contextual/chaining logic can keep lookup-record positions stable across buffer mutations.
 
@@ -323,14 +322,14 @@ This section maps the plan to concrete files and likely code touchpoints.
 ### New helper responsibilities
 
 - ✅ `applySequenceLookupRecords` applies nested lookups in record order and re-maps each record position based on earlier edits (using `EditSpan`).
-- Matching helpers should operate on `GlyphBuffer` rather than raw slices to keep mutation semantics centralized and consistent.
+- ✅ Matching helpers should operate on `GlyphBuffer` rather than raw slices to keep mutation semantics centralized and consistent.
 
 ### GSUB Extension and Reverse Chaining
-- `ot/layout.go` (if needed)
-  - Ensure extension subtable parsing captures:
+- `ot/layout.go`
+  - ✅ Ensure extension subtable parsing captures:
     - `extensionLookupType`
     - referenced subtable bytes
-  - If parsing already exists, add accessors on `LookupSubtable` to expose referenced subtable.
+  - ✅ If parsing already exists, add accessors on `LookupSubtable` to expose referenced subtable: **not needed**: resolved during parsing
 - `otlayout/feature.go`
   - `gsubLookupType7Ext(...)` (unwrap and dispatch)
   - `gsubLookupType8Reverse(...)` (right-to-left application)
@@ -368,16 +367,18 @@ This section maps the plan to concrete files and likely code touchpoints.
 GSUB:
 - 1..4: `otlayout/feature.go` (already implemented)
 - 5/6: `otlayout/feature.go` + new helpers
-- 7: `otlayout/feature.go` + `ot/layout.go` (extension parsing/access)
+- 7: `otlayout/feature.go` + `ot/layout.go` (extension parsing already implemented)
 - 8: `otlayout/feature.go` (reverse chaining logic)
 
 GPOS:
 - 1..6: `otlayout/feature.go` + `ot/layout.go` (anchors, value records)
 - 7/8: `otlayout/feature.go` + new helpers (shared with GSUB)
-- 9: `otlayout/feature.go` + `ot/layout.go` (extension parsing/access)
+- 9: `otlayout/feature.go` + `ot/layout.go` (extension parsing already implemented)
 
 ## Spec Reference URLs
 
 - Common layout table formats: https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#features-and-lookups
 - GSUB: https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#gsub-table-structures
 - GPOS: https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#gpos-table-structures
+- GDEF: https://learn.microsoft.com/en-us/typography/opentype/spec/gdef
+- JSTF: https://learn.microsoft.com/en-us/typography/opentype/spec/jstf

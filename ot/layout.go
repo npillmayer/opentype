@@ -828,6 +828,9 @@ type LookupSubtable struct {
 	Coverage   Coverage              // for which glyphs is this lookup applicable
 	Index      VarArray              // Index tables/arrays to lookup up substitutions/positions
 	Support    any                   // some lookup variants use additional data
+	// LookupRecords are used by contextual/chaining format-3 subtables that carry
+	// SequenceLookupRecords directly in the subtable payload.
+	LookupRecords []SequenceLookupRecord
 }
 
 // LookupType 5: Contextual Substitution Subtable

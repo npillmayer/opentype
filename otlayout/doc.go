@@ -27,5 +27,5 @@ func errFontFormat(message string) error {
 
 // tracer writes to trace with key 'font.opentype'
 func tracer() tracing.Trace {
-	return tracing.Select("font.opentype")
+	return tracing.Select("tyse.fonts")
 }

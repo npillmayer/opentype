@@ -136,7 +136,8 @@ func parseGPosLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookup
 	sub := LookupSubtable{LookupType: lookupType, Format: format}
 
 	// Most GPOS types have coverage at offset 2 (except Extension format 1)
-	if !(lookupType == 9 && format == 1) {
+	if !(lookupType == 9 && format == 1) && !((lookupType == 7 || lookupType == 8) && format == 3) {
+		// GPOS type 7/8 format 3 has coverage arrays, not a single coverage offset at byte 2.
 		covlink, err := parseLink16(b, 2, b, "Coverage")
 		if err == nil {
 			sub.Coverage = parseCoverage(covlink.Jump().Bytes())
@@ -404,12 +405,26 @@ func parseGPosLookupSubtableType8(b binarySegm, sub LookupSubtable) LookupSubtab
 		offset += 2 + len(seqctx.InputCoverage)*2
 		offset += 2 + len(seqctx.LookaheadCoverage)*2
 
-		if offset >= len(b) {
-			tracer().Errorf("GPOS type 8 format 3: offset %d exceeds buffer size %d", offset, len(b))
+		if offset+2 > len(b) {
+			tracer().Errorf("GPOS type 8 format 3: missing seqLookupCount at %d", offset)
 			return LookupSubtable{}
 		}
 
-		sub.Index = parseVarArray16(b, offset, 2, 2, "LookupSubtableGPos8-3")
+		seqLookupCount := int(b.U16(offset))
+		offset += 2
+		need := offset + seqLookupCount*4
+		if need > len(b) {
+			tracer().Errorf("GPOS type 8 format 3: lookup records extend beyond buffer")
+			return LookupSubtable{}
+		}
+		sub.LookupRecords = make([]SequenceLookupRecord, seqLookupCount)
+		for i := 0; i < seqLookupCount; i++ {
+			base := offset + i*4
+			sub.LookupRecords[i] = SequenceLookupRecord{
+				SequenceIndex:   b.U16(base),
+				LookupListIndex: b.U16(base + 2),
+			}
+		}
 	}
 	return sub
 }

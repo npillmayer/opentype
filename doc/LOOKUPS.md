@@ -307,8 +307,8 @@ This section maps the plan to concrete files and likely code touchpoints.
 
 - ✅ `applySequenceLookupRecords` applies nested lookups in record order and
   re-maps each record position based on earlier edits (using `EditSpan`).
-- Matching helpers should operate on `GlyphBuffer` rather than raw slices so
-  buffer wrappers can be swapped in by clients.
+- Matching helpers should operate on `GlyphBuffer` rather than raw slices to
+  keep mutation semantics centralized and consistent.
 
 ### GSUB Extension and Reverse Chaining
 - `ot/layout.go` (if needed)

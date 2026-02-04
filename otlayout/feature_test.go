@@ -32,7 +32,7 @@ func TestDispatchGSubLookupSingleFmt1Routing(t *testing.T) {
 	}
 	ctx := applyCtx{
 		lookup: &ot.Lookup{},
-		buf:    GlyphSlice{10},
+		buf:    GlyphBuffer{10},
 		pos:    0,
 	}
 
@@ -46,11 +46,7 @@ func TestDispatchGSubLookupSingleFmt1Routing(t *testing.T) {
 	if edit == nil || edit.From != 0 || edit.To != 1 || edit.Len != 1 {
 		t.Fatalf("unexpected edit span: %+v", edit)
 	}
-	out, ok := buf.(GlyphSlice)
-	if !ok {
-		t.Fatalf("expected GlyphSlice buffer, got %T", buf)
-	}
-	if out[0] != 12 {
-		t.Fatalf("expected glyph 12, got %d", out[0])
+	if buf[0] != 12 {
+		t.Fatalf("expected glyph 12, got %d", buf[0])
 	}
 }

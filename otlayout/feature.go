@@ -167,7 +167,7 @@ func (f feature) LookupIndex(i int) int {
 // GPOS) for the feature. Having the table missing may result in a crash. This should never happen, as
 // extracting the feature will have required the layout table in the first place. Presence of the
 // layout table is not checked again.
-func ApplyFeature(otf *ot.Font, feat Feature, buf []ot.GlyphIndex, pos, alt int) (int, bool, []ot.GlyphIndex) {
+func ApplyFeature(otf *ot.Font, feat Feature, buf GlyphBuffer, pos, alt int) (int, bool, GlyphBuffer) {
 	if feat == nil { // this is legal for unused mandatory feature slots
 		return pos, false, buf
 	} else if buf == nil || pos < 0 || pos >= len(buf) {
@@ -181,15 +181,12 @@ func ApplyFeature(otf *ot.Font, feat Feature, buf []ot.GlyphIndex, pos, alt int)
 		lytTable = &otf.Table(ot.T("GPOS")).Self().AsGPos().LayoutTable
 	}
 	var applied, ok bool
-	var gbuf GlyphBuffer = GlyphSlice(buf)
+	var gbuf GlyphBuffer = GlyphBuffer(buf)
 	for i := 0; i < feat.LookupCount(); i++ { // lookups have to be applied in sequence
 		inx := feat.LookupIndex(i)
 		lookup := lytTable.LookupList.Navigate(inx)
 		pos, ok, gbuf, _ = applyLookup(&lookup, feat, gbuf, pos, alt)
 		applied = applied || ok
-	}
-	if out, ok := gbuf.(GlyphSlice); ok {
-		return pos, applied, []ot.GlyphIndex(out)
 	}
 	return pos, applied, buf
 }

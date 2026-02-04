@@ -236,7 +236,7 @@ Legend:
 ## Cross-Cutting Implementation Notes
 
 - Lookup flags (ignore base/ligatures/marks, mark filtering set, attachment type)
-  should be enforced during matching for both GSUB and GPOS.
+  should be enforced during matching for both GSUB and GPOS. See “Lookup flags”.
 - Contextual and chaining lookups (GSUB 5/6, GPOS 7/8) should reuse shared helpers
   for matching glyph sequences, class sequences, and coverage sequences.
 - Extension lookups require a uniform “unwrap and dispatch” path to avoid
@@ -245,6 +245,26 @@ Legend:
   to simplify GPOS code.
 - An edit tracking mechanism is needed so contextual/chaining logic can keep
   lookup-record positions stable across buffer mutations.
+
+### Lookup flags
+
+Lookup flags are parsed and stored on `ot.Lookup.Flag` and copied into `applyCtx.flag`
+in `otlayout/feature.go`. The matching/apply logic does not yet enforce these flags.
+Current matching helpers (`matchCoverageForward`, `matchCoverageSequenceForward`, etc.)
+already route through a `skipGlyph` hook, which currently returns false for all glyphs.
+This is the intended insertion point for the ignore/mark-filtering behavior.
+
+Status quo:
+- Flags are parsed and available on each lookup (`ot.Lookup.Flag`).
+- `otlayout` carries the flag in `applyCtx`, but ignores it during matching.
+- No GDEF-based filtering is applied yet (mark classes / mark attachment sets).
+
+Later stages (planned):
+- Implement `skipGlyph` using GDEF glyph class definitions:
+  - `IGNORE_BASE_GLYPHS`, `IGNORE_LIGATURES`, `IGNORE_MARKS`.
+- Support `LOOKUP_FLAG_MARK_ATTACHMENT_TYPE_MASK` using GDEF mark attachment classes.
+- Support `LOOKUP_FLAG_USE_MARK_FILTERING_SET` using GDEF mark glyph sets.
+- Ensure backtrack/lookahead matching uses the same skip logic.
 
 ### EditSpan tracking
 

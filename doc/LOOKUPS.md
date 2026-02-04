@@ -273,6 +273,11 @@ edit := EditSpan{From: 1, To: 2, Len: 2} // delta = +1
 // Updated sequenceIndex for B becomes 4 (points to gid 40).
 ```
 
+Coverage helpers:
+
+- Prefer `Coverage.Match(gid)` over accessing `Coverage.GlyphRange` directly.
+- Use `Coverage.Contains(gid)` when only membership matters.
+
 ## Implementation Task Breakdown (by file)
 
 This section maps the plan to concrete files and likely code touchpoints.
@@ -281,7 +286,7 @@ This section maps the plan to concrete files and likely code touchpoints.
 - `otlayout/feature.go`
   - Add GSUB type 7 (Extension) dispatch path in `applyLookup`.
   - Add GSUB type 8 (Reverse Chaining) dispatch path in `applyLookup`.
-  - Add GPOS dispatch paths (types 1..9) to `applyLookup` or split into
+  - ✅ Add GPOS dispatch paths (types 1..9) to `applyLookup` or split into
     `applyLookupGSUB` / `applyLookupGPOS` for clarity.
 
 ### GSUB contextual/chaining helpers
@@ -290,8 +295,8 @@ This section maps the plan to concrete files and likely code touchpoints.
   - `matchInputClassSequence(...)`
   - `matchInputCoverageSequence(...)`
   - `matchBacktrackLookaheadGlyphs(...)`
-  - `applySequenceLookupRecords(...)`
-  - `applySequenceLookupRecords(...)` should accept edit tracking and update
+  - ✅ `applySequenceLookupRecords(...)`
+  - ✅ `applySequenceLookupRecords(...)` should accept edit tracking and update
     record positions when earlier lookups change the buffer.
   - These helpers should be used by:
     - `gsubLookupType5Fmt1/2/3`
@@ -300,7 +305,7 @@ This section maps the plan to concrete files and likely code touchpoints.
 
 ### New helper responsibilities
 
-- `applySequenceLookupRecords` applies nested lookups in record order and
+- ✅ `applySequenceLookupRecords` applies nested lookups in record order and
   re-maps each record position based on earlier edits (using `EditSpan`).
 - Matching helpers should operate on `GlyphBuffer` rather than raw slices so
   buffer wrappers can be swapped in by clients.
@@ -315,6 +320,9 @@ This section maps the plan to concrete files and likely code touchpoints.
 - `otlayout/feature.go`
   - `gsubLookupType7Ext(...)` (unwrap and dispatch)
   - `gsubLookupType8Reverse(...)` (right-to-left application)
+ - `ot/parse_gsub.go`
+   - ✅ Parse GSUB type 8 (reverse chaining) into support data
+   - ✅ Extract backtrack/lookahead coverage arrays and substitute glyph IDs
 
 ### GPOS application
 - `otlayout/feature.go`
@@ -328,11 +336,11 @@ This section maps the plan to concrete files and likely code touchpoints.
 
 ### Shared data models and parsing
 - `ot/layout.go`
-  - Confirm Coverage and ClassDef accessors provide:
-    - `GlyphRange.Match(gid)` (already used by GSUB)
-    - Any class lookup helpers required for GPOS/GSUB context logic
+  - ✅ Confirm Coverage and ClassDef accessors provide:
+    - ✅ `GlyphRange.Match(gid)` (already used by GSUB)
+    - ✅ Any class lookup helpers required for GPOS/GSUB context logic
 - `ot/parse.go`
-  - Ensure all GSUB/GPOS subtable formats are parsed into `LookupSubtable`
+  - ✅ Ensure all GSUB/GPOS subtable formats are parsed into `LookupSubtable`
     structures (or equivalent), including extension subtables.
 
 ### Tests

@@ -339,7 +339,7 @@ func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, Glyph
 func gsubLookupType1Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	_, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos)) // format 1 does not use the Coverage index
+	_, ok := lksub.Coverage.Match(buf.At(pos)) // format 1 does not use the Coverage index
 	tracer().Debugf("coverage of glyph ID %d is %d", buf.At(pos), ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -361,7 +361,7 @@ func gsubLookupType1Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 func gsubLookupType1Fmt2(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	inx, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos))
+	inx, ok := lksub.Coverage.Match(buf.At(pos))
 	tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(pos), inx, ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -389,7 +389,7 @@ func gsubLookupType1Fmt2(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 func gsubLookupType2Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	inx, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos))
+	inx, ok := lksub.Coverage.Match(buf.At(pos))
 	tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(pos), inx, ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -419,7 +419,7 @@ func gsubLookupType2Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 func gsubLookupType3Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos, alt int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	inx, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos))
+	inx, ok := lksub.Coverage.Match(buf.At(pos))
 	tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(pos), inx, ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -452,7 +452,7 @@ func gsubLookupType3Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 func gsubLookupType4Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	inx, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos))
+	inx, ok := lksub.Coverage.Match(buf.At(pos))
 	tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(pos), inx, ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -517,7 +517,7 @@ func gsubLookupType4Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 func gsubLookupType5Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	inx, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos))
+	inx, ok := lksub.Coverage.Match(buf.At(pos))
 	tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(pos), inx, ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -557,7 +557,7 @@ func gsubLookupType5Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 func gsubLookupType5Fmt2(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	inx, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos))
+	inx, ok := lksub.Coverage.Match(buf.At(pos))
 	tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(pos), inx, ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -621,7 +621,7 @@ func gsubLookupType5Fmt2(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 func gsubLookupType5Fmt3(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	inx, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos))
+	inx, ok := lksub.Coverage.Match(buf.At(pos))
 	tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(pos), inx, ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -633,7 +633,7 @@ func gsubLookupType5Fmt3(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 func gsubLookupType6Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	inx, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos))
+	inx, ok := lksub.Coverage.Match(buf.At(pos))
 	tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(pos), inx, ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -645,7 +645,7 @@ func gsubLookupType6Fmt1(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 func gsubLookupType6Fmt2(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	inx, ok := lksub.Coverage.GlyphRange.Match(buf.At(pos))
+	inx, ok := lksub.Coverage.Match(buf.At(pos))
 	tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(pos), inx, ok)
 	if !ok {
 		return pos, false, buf, nil
@@ -673,7 +673,7 @@ func gsubLookupType6Fmt3(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 		if pos+i >= buf.Len() {
 			return pos, false, buf, nil
 		}
-		inx, ok := cov.GlyphRange.Match(buf.At(pos + i))
+		inx, ok := cov.Match(buf.At(pos + i))
 		tracer().Debugf("input coverage of glyph ID %d is %d/%v", buf.At(pos+i), inx, ok)
 		if !ok {
 			return pos, false, buf, nil
@@ -683,7 +683,7 @@ func gsubLookupType6Fmt3(l *ot.Lookup, lksub *ot.LookupSubtable, buf GlyphBuffer
 		if pos-i-1 < 0 {
 			return pos, false, buf, nil
 		}
-		inx, ok := cov.GlyphRange.Match(buf.At(pos - i - 1))
+		inx, ok := cov.Match(buf.At(pos - i - 1))
 		tracer().Debugf("backtrack coverage of glyph ID %d is %d/%v", buf.At(pos-i-1), inx, ok)
 		if !ok {
 			return pos, false, buf, nil

@@ -288,6 +288,20 @@ type Coverage struct {
 	GlyphRange GlyphRange
 }
 
+// Match returns the Coverage Index for a glyph, and true if present.
+func (c Coverage) Match(g GlyphIndex) (int, bool) {
+	if c.GlyphRange == nil {
+		return 0, false
+	}
+	return c.GlyphRange.Match(g)
+}
+
+// Contains reports whether a glyph is present in the coverage.
+func (c Coverage) Contains(g GlyphIndex) bool {
+	_, ok := c.Match(g)
+	return ok
+}
+
 type coverageHeader struct {
 	CoverageFormat uint16
 	Count          uint16
@@ -410,6 +424,11 @@ func (cdef *ClassDefinitions) makeArray(b binarySegm, numEntries int, format uin
 // Lookup returns the class defined for a glyph, or 0 (= default class).
 func (cdef *ClassDefinitions) Lookup(glyph GlyphIndex) int {
 	return cdef.records.Lookup(glyph)
+}
+
+// Class returns the class defined for a glyph, or 0 (= default class).
+func (cdef *ClassDefinitions) Class(glyph GlyphIndex) int {
+	return cdef.Lookup(glyph)
 }
 
 // --- LangSys table ---------------------------------------------------------
@@ -829,6 +848,15 @@ type SequenceContext struct {
 	InputCoverage     []Coverage         // for format 3
 	LookaheadCoverage []Coverage         // for format 3
 	ClassDefs         []ClassDefinitions // for format 2
+}
+
+// ReverseChainingSubst is support data for GSUB Lookup Type 8 (reverse chaining).
+// It provides backtrack/lookahead coverage sets and the replacement glyphs
+// corresponding to the input coverage indices.
+type ReverseChainingSubst struct {
+	BacktrackCoverage  []Coverage
+	LookaheadCoverage  []Coverage
+	SubstituteGlyphIDs []GlyphIndex
 }
 
 // sequenceContext is a type for identifying the input sequence context for

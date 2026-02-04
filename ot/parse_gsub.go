@@ -54,6 +54,8 @@ func parseGSubLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookup
 		return parseGSubLookupSubtableType6(b, sub)
 	case 7:
 		return parseGSubLookupSubtableType7WithDepth(b, sub, depth)
+	case 8:
+		return parseGSubLookupSubtableType8(b, sub)
 	}
 	tracer().Errorf("unknown GSUB lookup type: %d", lookupType)
 	return LookupSubtable{}
@@ -203,4 +205,51 @@ func parseGSubLookupSubtableType7WithDepth(b binarySegm, sub LookupSubtable, dep
 
 	// Recurse with incremented depth
 	return parseGSubLookupSubtableWithDepth(loc.Bytes(), actualType, depth+1)
+}
+
+// LookupType 8: Reverse Chaining Single Substitution
+// https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#lookuptype-8-reverse-chaining-single-substitution-subtable
+func parseGSubLookupSubtableType8(b binarySegm, sub LookupSubtable) LookupSubtable {
+	if len(b) < 6 {
+		tracer().Errorf("GSUB type 8 buffer too small: %d bytes", len(b))
+		return LookupSubtable{}
+	}
+	if sub.Format != 1 {
+		tracer().Errorf("GSUB type 8 unknown format %d", sub.Format)
+		return LookupSubtable{}
+	}
+
+	offset := 4 // skip format and coverage offset
+	backtrack, err1 := parseChainedSeqContextCoverages(b, offset, nil)
+	offset += 2 + len(backtrack)*2
+	lookahead, err2 := parseChainedSeqContextCoverages(b, offset, err1)
+	offset += 2 + len(lookahead)*2
+
+	if err2 != nil {
+		tracer().Errorf("GSUB type 8: corrupt backtrack/lookahead coverage")
+		return LookupSubtable{}
+	}
+	if offset+2 > len(b) {
+		tracer().Errorf("GSUB type 8: missing substitute glyph count at %d", offset)
+		return LookupSubtable{}
+	}
+
+	glyphCount := int(b.U16(offset))
+	offset += 2
+	if offset+glyphCount*2 > len(b) {
+		tracer().Errorf("GSUB type 8: substitute glyph array exceeds buffer size")
+		return LookupSubtable{}
+	}
+
+	subst := make([]GlyphIndex, glyphCount)
+	for i := 0; i < glyphCount; i++ {
+		subst[i] = GlyphIndex(b.U16(offset + i*2))
+	}
+
+	sub.Support = &ReverseChainingSubst{
+		BacktrackCoverage:  backtrack,
+		LookaheadCoverage:  lookahead,
+		SubstituteGlyphIDs: subst,
+	}
+	return sub
 }

@@ -224,7 +224,8 @@ Legend:
   - ✅ Coverage-based helpers are implemented (`matchCoverageForward`, `matchCoverageSequenceForward`,
     `matchCoverageSequenceBackward`).
   - ✅ Glyph- and class-sequence helpers are implemented (`matchGlyphSequenceForward`, `matchClassSequenceForward`).
-- Extension lookups require a uniform “unwrap and dispatch” path to avoid duplicating logic across GSUB/GPOS.
+- ✅ Extension lookups are unwrapped during parsing (GSUB 7 / GPOS 9), so dispatch sees the referenced
+  subtable type directly; otlayout logs if an extension subtable ever reaches dispatch.
 - ✅ Glyph buffers should support replacement, insertion, and positioning adjustments to simplify GPOS code.
 - ✅ An edit tracking mechanism is needed so contextual/chaining logic can keep lookup-record positions stable across buffer mutations.
 

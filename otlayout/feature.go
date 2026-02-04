@@ -299,8 +299,11 @@ func dispatchGSubLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, Glyph
 		case 3:
 			return gsubLookupType6Fmt3(ctx, sub, ctx.buf, ctx.pos)
 		}
-	case ot.GSubLookupTypeExtensionSubs, ot.GSubLookupTypeReverseChaining:
-		// Extension and reverse chaining are not implemented in otlayout yet.
+	case ot.GSubLookupTypeExtensionSubs:
+		tracer().Errorf("GSUB extension subtable reached dispatch; extension should be unwrapped during parsing")
+		return ctx.pos, false, ctx.buf, nil
+	case ot.GSubLookupTypeReverseChaining:
+		// Reverse chaining is not implemented in otlayout yet.
 	}
 	tracer().Errorf("unknown GSUB lookup type %d/%d", sub.LookupType, sub.Format)
 	return ctx.pos, false, ctx.buf, nil
@@ -315,9 +318,10 @@ func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, Glyph
 		ot.GPosLookupTypeMarkToLigature,
 		ot.GPosLookupTypeMarkToMark,
 		ot.GPosLookupTypeContextPos,
-		ot.GPosLookupTypeChainedContextPos,
-		ot.GPosLookupTypeExtensionPos:
+		ot.GPosLookupTypeChainedContextPos:
 		tracer().Errorf("GPOS lookup type %d/%d not implemented", sub.LookupType, sub.Format)
+	case ot.GPosLookupTypeExtensionPos:
+		tracer().Errorf("GPOS extension subtable reached dispatch; extension should be unwrapped during parsing")
 	default:
 		tracer().Errorf("unknown GPOS lookup type %d/%d", sub.LookupType, sub.Format)
 	}

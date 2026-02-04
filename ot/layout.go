@@ -21,7 +21,36 @@ type LayoutTable struct {
 	//FeatureList NavList
 	FeatureList TagRecordMap
 	LookupList  LookupList
+	Requirements LayoutRequirements
 	header      *LayoutHeader
+}
+
+// LayoutRequirements collects GDEF subtable requirements implied by lookup flags.
+// Requirements are aggregated during the parse of GSUB/GPOS lookup lists.
+type LayoutRequirements struct {
+	NeedGlyphClassDef      bool
+	NeedMarkAttachClassDef bool
+	NeedMarkGlyphSets      bool
+}
+
+// AddFromLookupFlag updates requirements based on a lookup's flag bits.
+func (r *LayoutRequirements) AddFromLookupFlag(flag LayoutTableLookupFlag) {
+	if flag&(LOOKUP_FLAG_IGNORE_BASE_GLYPHS|LOOKUP_FLAG_IGNORE_LIGATURES|LOOKUP_FLAG_IGNORE_MARKS) != 0 {
+		r.NeedGlyphClassDef = true
+	}
+	if flag&LOOKUP_FLAG_USE_MARK_FILTERING_SET != 0 {
+		r.NeedMarkGlyphSets = true
+	}
+	if flag&LOOKUP_FLAG_MARK_ATTACHMENT_TYPE_MASK != 0 {
+		r.NeedMarkAttachClassDef = true
+	}
+}
+
+// Merge combines requirements from another layout table.
+func (r *LayoutRequirements) Merge(other LayoutRequirements) {
+	r.NeedGlyphClassDef = r.NeedGlyphClassDef || other.NeedGlyphClassDef
+	r.NeedMarkAttachClassDef = r.NeedMarkAttachClassDef || other.NeedMarkAttachClassDef
+	r.NeedMarkGlyphSets = r.NeedMarkGlyphSets || other.NeedMarkGlyphSets
 }
 
 // Header returns the layout table header for this GSUB table.

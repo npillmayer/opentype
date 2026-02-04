@@ -25,6 +25,7 @@ type Font struct {
 		GDef *GDefTable // OpenType layout GDEF
 		Base *BaseTable // OpenType layout BASE
 		// TODO JSTF
+		Requirements LayoutRequirements
 	}
 }
 

@@ -208,7 +208,7 @@ var RequiredTables = []string{
 
 // These are the OpenType tables for advanced layout.
 var LayoutTables = []string{
-	"GSUB", "GPOS", "GDEF",
+	"GSUB", "GPOS",
 	//"GSUB", "GPOS", "GDEF", "BASE", "JSTF",
 }
 
@@ -250,15 +250,50 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 	// store shortcuts to layout tables
 	otf.Layout.GSub = otf.tables[T("GSUB")].Self().AsGSub()
 	otf.Layout.GPos = otf.tables[T("GPOS")].Self().AsGPos()
-	otf.Layout.GDef = otf.tables[T("GDEF")].Self().AsGDef()
+	if gdefTable := otf.tables[T("GDEF")]; gdefTable != nil {
+		otf.Layout.GDef = gdefTable.Self().AsGDef()
+	}
 	//otf.Layout.Base = otf.tables[T("BASE")].Self().AsBase()
 	//otf.Layout.Jstf = otf.tables[T("JSTF")].Self().AsJstf()
 
-	// GDEF must have valid version and at least one definition table
-	major, minor := otf.Layout.GDef.Header().Version()
-	if major != 1 || minor > 3 {
-		ec.addError(T("GDEF"), "Version", fmt.Sprintf("unsupported GDEF version %d.%d", major, minor), SeverityCritical, 0)
-		return errFontFormat("unsupported GDEF version")
+	// Collect layout requirements from parsed GSUB/GPOS lookup flags.
+	otf.Layout.Requirements = LayoutRequirements{}
+	if otf.Layout.GSub != nil {
+		otf.Layout.Requirements.Merge(otf.Layout.GSub.Requirements)
+	}
+	if otf.Layout.GPos != nil {
+		otf.Layout.Requirements.Merge(otf.Layout.GPos.Requirements)
+	}
+
+	// If GDEF is present, validate its version.
+	if otf.Layout.GDef != nil {
+		major, minor := otf.Layout.GDef.Header().Version()
+		if major != 1 || minor > 3 {
+			ec.addError(T("GDEF"), "Version", fmt.Sprintf("unsupported GDEF version %d.%d", major, minor), SeverityCritical, 0)
+			return errFontFormat("unsupported GDEF version")
+		}
+	}
+
+	// Enforce GDEF presence only when required by lookup flags.
+	// TODO: apply the same requirement checks for JSTF lookups when JSTF parsing is enabled.
+	req := otf.Layout.Requirements
+	if req.NeedGlyphClassDef || req.NeedMarkAttachClassDef || req.NeedMarkGlyphSets {
+		if otf.Layout.GDef == nil {
+			ec.addError(T("GDEF"), "Missing", "missing required GDEF table", SeverityCritical, 0)
+			return errFontFormat("missing required GDEF table")
+		}
+		if req.NeedGlyphClassDef && otf.Layout.GDef.Header().offsetFor(GDefGlyphClassDefSection) == 0 {
+			ec.addError(T("GDEF"), "GlyphClassDef", "missing required GDEF GlyphClassDef", SeverityCritical, 0)
+			return errFontFormat("missing required GDEF GlyphClassDef")
+		}
+		if req.NeedMarkAttachClassDef && otf.Layout.GDef.Header().offsetFor(GDefMarkAttachClassSection) == 0 {
+			ec.addError(T("GDEF"), "MarkAttachClassDef", "missing required GDEF MarkAttachClassDef", SeverityCritical, 0)
+			return errFontFormat("missing required GDEF MarkAttachClassDef")
+		}
+		if req.NeedMarkGlyphSets && otf.Layout.GDef.Header().offsetFor(GDefMarkGlyphSetsDefSection) == 0 {
+			ec.addError(T("GDEF"), "MarkGlyphSetsDef", "missing required GDEF MarkGlyphSetsDef", SeverityCritical, 0)
+			return errFontFormat("missing required GDEF MarkGlyphSetsDef")
+		}
 	}
 	// GSUB/GPOS must have ScriptList, FeatureList, and LookupList
 	gsub := otf.Layout.GSub
@@ -1190,6 +1225,21 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ta
 		return ll.err
 	}
 	lytt.LookupList = ll
+
+	// Collect GDEF requirements from lookup flags during the first parse pass.
+	for i := 0; i < ll.array.Len(); i++ {
+		off := int(ll.array.Get(i).U16(0))
+		if off == 0 {
+			continue
+		}
+		if off+4 > len(b) {
+			ec.addError(tableTag, "LookupList", fmt.Sprintf("lookup offset %d out of bounds (size %d)", off, len(b)), SeverityCritical, 0)
+			return errFontFormat("lookup offset out of bounds")
+		}
+		flag := LayoutTableLookupFlag(b.U16(off + 2))
+		lytt.Requirements.AddFromLookupFlag(flag)
+	}
+
 	return nil
 }
 

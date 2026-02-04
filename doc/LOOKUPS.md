@@ -270,23 +270,16 @@ sets). This is complicated further by the JSTF table, which can include lookups
 that also depend on GDEF.
 
 Status quo:
-- `ot/parse.go` currently *always* requires `GDEF` alongside `GSUB` and `GPOS`
-  for the parse to succeed, regardless of lookup flags or JSTF usage.
+- Parsing collects GDEF requirements during the first and only pass of GSUB/GPOS
+  lookup list parsing and stores them in `Layout.Requirements`.
+- `extractLayoutInfo` now requires GDEF only when needed by lookup flags; if
+  required subtables are missing, it raises a critical error.
+- If GDEF is present, its version is still validated; GDEF is no longer required
+  unconditionally.
 
 TODO (parsing phase, actionable):
-- Change parsing validation to require GDEF only when required by lookups:
-  - Inspect all GSUB/GPOS lookups for flags that require GDEF:
-    - `IgnoreBaseGlyphs`, `IgnoreLigatures`, `IgnoreMarks` -> require
-      `GDEF.GlyphClassDef`.
-    - `UseMarkFilteringSet` -> require `GDEF.MarkGlyphSetsDef`.
-    - `MarkAttachmentType` -> require `GDEF.MarkAttachClassDef`.
-  - If JSTF is present, scan JSTF-referenced lookups and apply the same
-    requirement checks (JSTF lookups should be treated like GSUB/GPOS lookups
-    for this purpose).
-  - Emit a critical error if a required GDEF subtable is missing when a lookup
-    requires it; otherwise allow GDEF to be absent.
-  - Keep the contract of a workable font on successful parse by ensuring any
-    required GDEF data is present before returning success.
+- Extend the requirement collection and cross-checking to JSTF lookups once JSTF
+  parsing is implemented (treat JSTF lookups like GSUB/GPOS for these checks).
 
 Later stages (planned):
 - Implement `skipGlyph` using GDEF glyph class definitions:

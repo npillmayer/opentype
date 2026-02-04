@@ -785,6 +785,11 @@ func (l Lookup) Name() string {
 	return "Lookup"
 }
 
+// MarkFilteringSet returns the mark filtering set index for this lookup, if present.
+func (l Lookup) MarkFilteringSet() uint16 {
+	return l.markFilteringSet
+}
+
 // LookupTag is not defined for Lookup and will return a void link.
 func (l Lookup) LookupTag(tag Tag) NavLink {
 	return nullLink("cannot lookup tag in Lookup")

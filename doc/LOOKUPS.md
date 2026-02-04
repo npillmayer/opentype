@@ -81,82 +81,66 @@ reflect what is visible in the current codebase.
 
 Legend:
 - Status: DONE / PARTIAL / TODO
-- “Plan” focuses on application logic (parsing is already present for many types,
-  but should be validated per lookup type as part of the tasks).
+- “Plan” focuses on application logic (parsing is already present for many types, but should be validated per lookup type as part of the tasks).
 
 ### GSUB lookup types (1..8)
 
 - GSUB-1 Single Substitution
   - Nature: Replace one glyph with one glyph.
   - Status: DONE (Format 1 and Format 2 implemented in `gsubLookupType1Fmt1/2`).
-  - Plan: Add bounds checking against max glyph ID; add tests for both formats,
-    including Coverage index ordering and delta application.
+  - Plan: Add bounds checking against max glyph ID; add tests for both formats, including Coverage index ordering and delta application.
 
 - GSUB-2 Multiple Substitution
   - Nature: Replace one glyph with a sequence of glyphs.
   - Status: DONE (Format 1 implemented in `gsubLookupType2Fmt1`).
-  - Plan: Validate Sequence table parsing, add tests for glyph sequence length
-    and buffer expansion.
+  - Plan: Validate Sequence table parsing, add tests for glyph sequence length and buffer expansion.
 
 - GSUB-3 Alternate Substitution
   - Nature: Replace one glyph with one of several alternates (selected by `alt`).
   - Status: DONE (Format 1 implemented in `gsubLookupType3Fmt1`).
-  - Plan: Define behavior for out-of-range `alt` (current behavior uses last if
-    alt<0, else ignore); add tests for alt selection and empty alternate sets.
+  - Plan: Define behavior for out-of-range `alt` (current behavior uses last if alt<0, else ignore); add tests for alt selection and empty alternate sets.
 
 - GSUB-4 Ligature Substitution
   - Nature: Replace multiple glyphs with one glyph (ligatures).
   - Status: DONE (Format 1 implemented in `gsubLookupType4Fmt1`).
-  - Plan: Add tests for multiple ligature records and component matching; ensure
-    correct handling of overlapping ligature candidates and buffer bounds.
+  - Plan: Add tests for multiple ligature records and component matching; ensure correct handling of overlapping ligature candidates and buffer bounds.
 
 - GSUB-5 Contextual Substitution
   - Nature: Substitute based on context (glyph sequences) using SequenceRule sets.
   - Status: PARTIAL (format skeletons exist; TODO/panic in 5/1, 5/2, 5/3).
   - Plan:
-    1) Implement format 1 (glyph-based): parse SequenceRuleSet and SequenceRule,
-       match input sequence, then apply SequenceLookupRecords.
-    2) Implement format 2 (class-based): use ClassDef to map glyphs to classes,
-       match class sequences, then apply SequenceLookupRecords.
-    3) Implement format 3 (coverage-based): check per-position Coverage tables,
-       then apply SequenceLookupRecords.
-    4) Add reusable helpers: matchInputSequence, matchClassSequence,
-       applySequenceLookupRecords (reuses lookup application with position
-       offsets).
+    1) Implement format 1 (glyph-based): parse SequenceRuleSet and SequenceRule, match input sequence, then apply SequenceLookupRecords.
+    2) Implement format 2 (class-based): use ClassDef to map glyphs to classes, match class sequences, then apply SequenceLookupRecords.
+    3) Implement format 3 (coverage-based): check per-position Coverage tables, then apply SequenceLookupRecords.
+    4) Add reusable helpers: matchInputSequence (glyph IDs), matchClassSequence (class IDs).
+       Coverage-based helpers already exist; class/glyph helpers are not implemented yet.
     5) Add tests for each format with minimal fonts exercising each rule kind.
 
 - GSUB-6 Chaining Contextual Substitution
   - Nature: Like GSUB-5 but with backtrack and lookahead sequences.
   - Status: PARTIAL (skeletons exist; TODO/panic in 6/1, 6/2, 6/3).
   - Plan:
-    1) Implement format 1 (glyph-based): match backtrack, input, lookahead
-       sequences, then apply SequenceLookupRecords.
-    2) Implement format 2 (class-based): map glyphs via ClassDef and match
-       backtrack/input/lookahead class sequences.
-    3) Implement format 3 (coverage-based): check coverage arrays for backtrack,
-       input, lookahead positions.
+    1) Implement format 1 (glyph-based): match backtrack, input, lookahead sequences, then apply SequenceLookupRecords.
+    2) Implement format 2 (class-based): map glyphs via ClassDef and match backtrack/input/lookahead class sequences.
+    3) Implement format 3 (coverage-based): check coverage arrays for backtrack, input, lookahead positions.
     4) Reuse helpers from GSUB-5 with added backtrack/lookahead matching.
+       Only coverage-sequence helpers exist today; class/glyph helpers are pending.
     5) Add tests for each format; ensure buffer boundaries are respected.
 
 - GSUB-7 Extension Substitution
-  - Nature: Indirection wrapper that points to another GSUB subtable type
-    using 32-bit offsets.
+  - Nature: Indirection wrapper that points to another GSUB subtable type using 32-bit offsets.
   - Status: TODO (not handled in `applyLookup`).
   - Plan:
-    1) Extend parsing to recognize extension subtables (if not already),
-       capturing the “extensionLookupType” and the referenced subtable.
-    2) In `applyLookup`, detect type 7 and dispatch to the referenced subtable
-       type/format (same code paths as types 1–6 or 8).
+    1) Extend parsing to recognize extension subtables (if not already), capturing the “extensionLookupType” and the referenced subtable.
+    2) In `applyLookup`, detect type 7 and dispatch to the referenced subtable type/format (same code paths as types 1–6 or 8).
     3) Add tests using a font with extension-based lookups.
 
 - GSUB-8 Reverse Chaining Contextual Single
-  - Nature: Contextual substitution applied right-to-left; uses coverage for
-    backtrack/input/lookahead and replaces input glyphs.
+  - Nature: Contextual substitution applied right-to-left; uses coverage for backtrack/input/lookahead and replaces input glyphs.
   - Status: TODO (not handled in `applyLookup`).
   - Plan:
     1) Parse ReverseChainSingleSubst format (coverage arrays + substitute glyphs).
-    2) In `applyLookup`, process from end to start; match backtrack/lookahead
-       coverage; substitute glyphs at input positions.
+    2) In `applyLookup`, process from end to start; match backtrack/lookahead coverage; substitute glyphs at input positions.
     3) Add tests with Arabic-like contexts and verify right-to-left behavior.
 
 ### GPOS lookup types (1..9)
@@ -235,16 +219,14 @@ Legend:
 
 ## Cross-Cutting Implementation Notes
 
-- Lookup flags (ignore base/ligatures/marks, mark filtering set, attachment type)
-  should be enforced during matching for both GSUB and GPOS. See “Lookup flags”.
-- Contextual and chaining lookups (GSUB 5/6, GPOS 7/8) should reuse shared helpers
-  for matching glyph sequences, class sequences, and coverage sequences.
-- Extension lookups require a uniform “unwrap and dispatch” path to avoid
-  duplicating logic across GSUB/GPOS.
-- Glyph buffers should support replacement, insertion, and positioning adjustments
-  to simplify GPOS code.
-- An edit tracking mechanism is needed so contextual/chaining logic can keep
-  lookup-record positions stable across buffer mutations.
+- ✅ Lookup flags (ignore base/ligatures/marks, mark filtering set, attachment type) are now enforced during matching for both GSUB and GPOS via `skipGlyph`. See “Lookup flags”.
+- Contextual and chaining lookups (GSUB 5/6, GPOS 7/8) should reuse shared helpers for matching glyph sequences, class sequences, and coverage sequences.
+  - ✅ Coverage-based helpers are implemented (`matchCoverageForward`, `matchCoverageSequenceForward`,
+    `matchCoverageSequenceBackward`).
+  - ✅ Glyph- and class-sequence helpers are implemented (`matchGlyphSequenceForward`, `matchClassSequenceForward`).
+- Extension lookups require a uniform “unwrap and dispatch” path to avoid duplicating logic across GSUB/GPOS.
+- ✅ Glyph buffers should support replacement, insertion, and positioning adjustments to simplify GPOS code.
+- ✅ An edit tracking mechanism is needed so contextual/chaining logic can keep lookup-record positions stable across buffer mutations.
 
 ### Lookup flags
 
@@ -270,28 +252,22 @@ sets). This is complicated further by the JSTF table, which can include lookups
 that also depend on GDEF.
 
 Status quo:
-- Parsing collects GDEF requirements during the first and only pass of GSUB/GPOS
-  lookup list parsing and stores them in `Layout.Requirements`.
-- `extractLayoutInfo` now requires GDEF only when needed by lookup flags; if
-  required subtables are missing, it raises a critical error.
-- If GDEF is present, its version is still validated; GDEF is no longer required
-  unconditionally.
+- Parsing collects GDEF requirements during the first and only pass of GSUB/GPOS lookup list parsing and stores them in `Layout.Requirements`.
+- `extractLayoutInfo` now requires GDEF only when needed by lookup flags; if required subtables are missing, it raises a critical error.
+- If GDEF is present, its version is still validated; GDEF is no longer required unconditionally.
 
 TODO (parsing phase, actionable):
-- Extend the requirement collection and cross-checking to JSTF lookups once JSTF
-  parsing is implemented (treat JSTF lookups like GSUB/GPOS for these checks).
+- Extend the requirement collection and cross-checking to JSTF lookups once JSTF parsing is implemented (treat JSTF lookups like GSUB/GPOS for these checks).
 
 Later stages (planned):
-- Implement `skipGlyph` using GDEF glyph class definitions:
-  - `IGNORE_BASE_GLYPHS`, `IGNORE_LIGATURES`, `IGNORE_MARKS`.
+- Implement `skipGlyph` using GDEF glyph class definitions: - `IGNORE_BASE_GLYPHS`, `IGNORE_LIGATURES`, `IGNORE_MARKS`.
 - Support `LOOKUP_FLAG_MARK_ATTACHMENT_TYPE_MASK` using GDEF mark attachment classes.
 - Support `LOOKUP_FLAG_USE_MARK_FILTERING_SET` using GDEF mark glyph sets.
 - Ensure backtrack/lookahead matching uses the same skip logic.
 
 ### EditSpan tracking
 
-`EditSpan` describes a single buffer mutation so that contextual/chaining helpers
-can re-map lookup-record positions after a replacement or insertion.
+`EditSpan` describes a single buffer mutation so that contextual/chaining helpers can re-map lookup-record positions after a replacement or insertion.
 
 - Shape: `From` (start index), `To` (exclusive end index), `Len` (length of
   replacement segment).
@@ -328,8 +304,7 @@ This section maps the plan to concrete files and likely code touchpoints.
 - `otlayout/feature.go`
   - Add GSUB type 7 (Extension) dispatch path in `applyLookup`.
   - Add GSUB type 8 (Reverse Chaining) dispatch path in `applyLookup`.
-  - ✅ Add GPOS dispatch paths (types 1..9) to `applyLookup` or split into
-    `applyLookupGSUB` / `applyLookupGPOS` for clarity.
+  - ✅ Add GPOS dispatch paths (types 1..9) to `applyLookup` or split into `applyLookupGSUB` / `applyLookupGPOS` for clarity.
 
 ### GSUB contextual/chaining helpers
 - `otlayout/feature.go` (new helper section)
@@ -338,8 +313,7 @@ This section maps the plan to concrete files and likely code touchpoints.
   - `matchInputCoverageSequence(...)`
   - `matchBacktrackLookaheadGlyphs(...)`
   - ✅ `applySequenceLookupRecords(...)`
-  - ✅ `applySequenceLookupRecords(...)` should accept edit tracking and update
-    record positions when earlier lookups change the buffer.
+  - ✅ `applySequenceLookupRecords(...)` should accept edit tracking and update record positions when earlier lookups change the buffer.
   - These helpers should be used by:
     - `gsubLookupType5Fmt1/2/3`
     - `gsubLookupType6Fmt1/2/3`
@@ -347,18 +321,15 @@ This section maps the plan to concrete files and likely code touchpoints.
 
 ### New helper responsibilities
 
-- ✅ `applySequenceLookupRecords` applies nested lookups in record order and
-  re-maps each record position based on earlier edits (using `EditSpan`).
-- Matching helpers should operate on `GlyphBuffer` rather than raw slices to
-  keep mutation semantics centralized and consistent.
+- ✅ `applySequenceLookupRecords` applies nested lookups in record order and re-maps each record position based on earlier edits (using `EditSpan`).
+- Matching helpers should operate on `GlyphBuffer` rather than raw slices to keep mutation semantics centralized and consistent.
 
 ### GSUB Extension and Reverse Chaining
 - `ot/layout.go` (if needed)
   - Ensure extension subtable parsing captures:
     - `extensionLookupType`
     - referenced subtable bytes
-  - If parsing already exists, add accessors on `LookupSubtable` to expose
-    referenced subtable.
+  - If parsing already exists, add accessors on `LookupSubtable` to expose referenced subtable.
 - `otlayout/feature.go`
   - `gsubLookupType7Ext(...)` (unwrap and dispatch)
   - `gsubLookupType8Reverse(...)` (right-to-left application)
@@ -382,13 +353,11 @@ This section maps the plan to concrete files and likely code touchpoints.
     - ✅ `GlyphRange.Match(gid)` (already used by GSUB)
     - ✅ Any class lookup helpers required for GPOS/GSUB context logic
 - `ot/parse.go`
-  - ✅ Ensure all GSUB/GPOS subtable formats are parsed into `LookupSubtable`
-    structures (or equivalent), including extension subtables.
+  - ✅ Ensure all GSUB/GPOS subtable formats are parsed into `LookupSubtable` structures (or equivalent), including extension subtables.
 
 ### Tests
 - `otlayout/gsub_test.go`
-  - Add unit tests for GSUB types 5/6/7/8 using small fonts that exercise
-    contextual, chaining, and extension behavior.
+  - Add unit tests for GSUB types 5/6/7/8 using small fonts that exercise contextual, chaining, and extension behavior.
 - `otlayout/gpos_test.go` (new)
   - Create tests for GPOS types 1..6 (basic) and 7/8/9 (contextual/extension).
   - Prefer minimal test fonts for deterministic results.
@@ -408,9 +377,6 @@ GPOS:
 
 ## Spec Reference URLs
 
-- Common layout table formats:
-  https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#features-and-lookups
-- GSUB:
-  https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#gsub-table-structures
-- GPOS:
-  https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#gpos-table-structures
+- Common layout table formats: https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#features-and-lookups
+- GSUB: https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#gsub-table-structures
+- GPOS: https://learn.microsoft.com/en-us/typography/opentype/spec/gpos#gpos-table-structures

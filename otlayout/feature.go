@@ -182,10 +182,11 @@ func ApplyFeature(otf *ot.Font, feat Feature, buf GlyphBuffer, pos, alt int) (in
 	}
 	var applied, ok bool
 	var gbuf GlyphBuffer = GlyphBuffer(buf)
+	gdef := otf.Layout.GDef
 	for i := 0; i < feat.LookupCount(); i++ { // lookups have to be applied in sequence
 		inx := feat.LookupIndex(i)
 		lookup := lytTable.LookupList.Navigate(inx)
-		pos, ok, gbuf, _ = applyLookup(&lookup, feat, gbuf, pos, alt)
+		pos, ok, gbuf, _ = applyLookup(&lookup, feat, gbuf, pos, alt, gdef)
 		applied = applied || ok
 	}
 	return pos, applied, buf
@@ -200,6 +201,7 @@ type applyCtx struct {
 	alt    int                      // alternate index (1..n) for substitution selection
 	isGPos bool                     // true if lookup is GPOS (non-substituting)
 	flag   ot.LayoutTableLookupFlag // lookup flags for ignore/mark filtering
+	gdef   *ot.GDefTable            // GDEF table for glyph classification, if present
 }
 
 // EditSpan describes a buffer mutation so contextual/chaining lookups can
@@ -214,7 +216,7 @@ type EditSpan struct {
 // appropriately, respecting different subtable semantics and formats.
 // Therefore this function more or less is a large switch to delegate to functions
 // implementing a specific subtable logic.
-func applyLookup(lookup *ot.Lookup, feat Feature, buf GlyphBuffer, pos, alt int) (int, bool, GlyphBuffer, *EditSpan) {
+func applyLookup(lookup *ot.Lookup, feat Feature, buf GlyphBuffer, pos, alt int, gdef *ot.GDefTable) (int, bool, GlyphBuffer, *EditSpan) {
 	if lookup == nil {
 		return pos, false, buf, nil
 	}
@@ -226,6 +228,7 @@ func applyLookup(lookup *ot.Lookup, feat Feature, buf GlyphBuffer, pos, alt int)
 		alt:    alt,
 		isGPos: ot.IsGPosLookupType(lookup.Type),
 		flag:   lookup.Flag,
+		gdef:   gdef,
 	}
 	return dispatchLookup(&ctx)
 }
@@ -704,8 +707,35 @@ func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 // --- Helpers ---------------------------------------------------------------
 
 func skipGlyph(ctx *applyCtx, g ot.GlyphIndex) bool {
-	_ = ctx
-	_ = g
+	if ctx == nil || ctx.gdef == nil {
+		return false
+	}
+	if ctx.lookup == nil {
+		return false
+	}
+	class := glyphClass(ctx.gdef, g)
+	if ctx.flag&ot.LOOKUP_FLAG_IGNORE_BASE_GLYPHS != 0 && class == ot.BaseGlyph {
+		return true
+	}
+	if ctx.flag&ot.LOOKUP_FLAG_IGNORE_LIGATURES != 0 && class == ot.LigatureGlyph {
+		return true
+	}
+	if ctx.flag&ot.LOOKUP_FLAG_IGNORE_MARKS != 0 && class == ot.MarkGlyph {
+		return true
+	}
+	if class == ot.MarkGlyph {
+		if ctx.flag&ot.LOOKUP_FLAG_USE_MARK_FILTERING_SET != 0 {
+			setIndex := ctx.lookup.MarkFilteringSet()
+			if !inMarkFilteringSet(ctx.gdef, setIndex, g) {
+				return true
+			}
+		}
+		if matype := markAttachmentType(ctx.flag); matype != 0 {
+			if markAttachClass(ctx.gdef, g) != matype {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -787,8 +817,102 @@ func buildInputMap(matchPositions []int) []int {
 	return out
 }
 
+func glyphClass(gdef *ot.GDefTable, gid ot.GlyphIndex) ot.GlyphClassDefEnum {
+	if gdef == nil {
+		return 0
+	}
+	return ot.GlyphClassDefEnum(gdef.GlyphClassDef.Lookup(gid))
+}
+
+func markAttachClass(gdef *ot.GDefTable, gid ot.GlyphIndex) uint16 {
+	if gdef == nil {
+		return 0
+	}
+	return uint16(gdef.MarkAttachmentClassDef.Lookup(gid))
+}
+
+func inMarkFilteringSet(gdef *ot.GDefTable, setIndex uint16, gid ot.GlyphIndex) bool {
+	if gdef == nil {
+		return false
+	}
+	if int(setIndex) >= len(gdef.MarkGlyphSets) {
+		return false
+	}
+	set := gdef.MarkGlyphSets[setIndex]
+	if set == nil {
+		return false
+	}
+	_, ok := set.Match(gid)
+	return ok
+}
+
+func markAttachmentType(flag ot.LayoutTableLookupFlag) uint16 {
+	return uint16((flag & ot.LOOKUP_FLAG_MARK_ATTACHMENT_TYPE_MASK) >> 8)
+}
+
 type lookupNavigator interface {
 	Navigate(int) ot.Lookup
+}
+
+func matchGlyphSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, glyphs []ot.GlyphIndex) ([]int, bool) {
+	if len(glyphs) == 0 {
+		return nil, false
+	}
+	out := make([]int, len(glyphs))
+	cur := pos
+	for i, gid := range glyphs {
+		mpos, ok := nextMatchable(ctx, buf, cur)
+		if !ok {
+			return nil, false
+		}
+		if buf.At(mpos) != gid {
+			return nil, false
+		}
+		out[i] = mpos
+		cur = mpos + 1
+	}
+	return out, true
+}
+
+func matchClassSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, classDef ot.ClassDefinitions, classes []uint16) ([]int, bool) {
+	if len(classes) == 0 {
+		return nil, false
+	}
+	out := make([]int, len(classes))
+	cur := pos
+	for i, clz := range classes {
+		mpos, ok := nextMatchable(ctx, buf, cur)
+		if !ok {
+			return nil, false
+		}
+		if uint16(classDef.Lookup(buf.At(mpos))) != clz {
+			return nil, false
+		}
+		out[i] = mpos
+		cur = mpos + 1
+	}
+	return out, true
+}
+
+type matchSeqFn func(ctx *applyCtx, buf GlyphBuffer, pos int) ([]int, bool)
+
+func matchChainedForward(ctx *applyCtx, buf GlyphBuffer, pos int, backtrack, input, lookahead matchSeqFn) ([]int, bool) {
+	inputPos, ok := input(ctx, buf, pos)
+	if !ok || len(inputPos) == 0 {
+		return nil, false
+	}
+	if backtrack != nil {
+		if _, ok := backtrack(ctx, buf, inputPos[0]); !ok {
+			return nil, false
+		}
+	}
+	if lookahead != nil {
+		last := inputPos[len(inputPos)-1]
+		if _, ok := lookahead(ctx, buf, last); !ok {
+			return nil, false
+		}
+	}
+	return inputPos, true
 }
 
 func applySequenceLookupRecords(
@@ -798,6 +922,7 @@ func applySequenceLookupRecords(
 	lookupList lookupNavigator,
 	feat Feature,
 	alt int,
+	gdef *ot.GDefTable,
 ) (GlyphBuffer, bool) {
 	mapIdx := buildInputMap(matchPositions)
 	if lookupList == nil || len(mapIdx) == 0 {
@@ -815,7 +940,7 @@ func applySequenceLookupRecords(
 			continue
 		}
 		lookup := lookupList.Navigate(int(rec.LookupListIndex))
-		_, ok, out, edit := applyLookup(&lookup, feat, buf, targetPos, alt)
+		_, ok, out, edit := applyLookup(&lookup, feat, buf, targetPos, alt, gdef)
 		if !ok {
 			continue
 		}

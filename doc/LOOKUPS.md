@@ -107,14 +107,12 @@ Legend:
 
 - GSUB-5 Contextual Substitution
   - Nature: Substitute based on context (glyph sequences) using SequenceRule sets.
-  - Status: PARTIAL (format skeletons exist; TODO/panic in 5/1, 5/2, 5/3).
+  - Status: Mostly ✅DONE (formats 1–3 implemented; needs more tests).
   - Plan:
-    1) Implement format 1 (glyph-based): parse SequenceRuleSet and SequenceRule, match input sequence, then apply SequenceLookupRecords.
-    2) Implement format 2 (class-based): use ClassDef to map glyphs to classes, match class sequences, then apply SequenceLookupRecords.
-    3) Implement format 3 (coverage-based): check per-position Coverage tables, then apply SequenceLookupRecords.
-    4) Add reusable helpers: matchInputSequence (glyph IDs), matchClassSequence (class IDs).
-       Coverage-based helpers already exist; class/glyph helpers are not implemented yet.
-    5) Add tests for each format with minimal fonts exercising each rule kind.
+    1) Done functional tests for format 1 (contextual substitution with lookup records).
+    2) Add functional tests for format 2 (class-based sequences).
+    3) Add functional tests for format 3 (coverage-based sequences).
+    4) Expand mini-font coverage to include multiple rules per rule set and varied match lengths.
 
 - GSUB-6 Chaining Contextual Substitution
   - Nature: Like GSUB-5 but with backtrack and lookahead sequences.
@@ -356,10 +354,17 @@ This section maps the plan to concrete files and likely code touchpoints.
   - ✅ Ensure all GSUB/GPOS subtable formats are parsed into `LookupSubtable` structures (or equivalent), including extension subtables.
 
 ### Tests
+- Structural parsing tests live in `ot/` and compare parsed GSUB structures
+  against expected models extracted from TTX (via `internal/ttxtest`).
+- Functional tests live in `otlayout/` and apply specific lookups to input
+  glyph buffers, checking the output glyph sequence.
+- `otlayout/feature_functional_test.go`
+  - GSUB-3 (Alternate Substitution) functional test harness and cases.
 - `otlayout/gsub_test.go`
-  - Add unit tests for GSUB types 5/6/7/8 using small fonts that exercise contextual, chaining, and extension behavior.
-- `otlayout/gpos_test.go` (new)
-  - Create tests for GPOS types 1..6 (basic) and 7/8/9 (contextual/extension).
+  - Legacy tests around feature discovery and application on real fonts.
+- Planned:
+  - Add functional tests for GSUB types 1/2/4/5/6/7/8 using mini-fonts.
+  - Add `otlayout/gpos_test.go` for GPOS types 1..6 and 7/8/9.
   - Prefer minimal test fonts for deterministic results.
 
 ## Quick Table: Type → Primary Code Targets

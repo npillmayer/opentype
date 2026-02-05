@@ -63,3 +63,33 @@ func TestVarArrayGetDeepOneLevel(t *testing.T) {
 		t.Fatalf("unexpected entry values: false=%d true=%d", locFalse.U16(0), locTrue.U16(0))
 	}
 }
+
+func TestVarArrayGetDeepTwoLevelsIndex(t *testing.T) {
+	b := binarySegm{
+		0x00, 0x02, // count=2
+		0x00, 0x08, // off0 -> level1 A
+		0x00, 0x12, // off1 -> level1 B
+		0x00, 0x00, // padding
+		0x00, 0x02, // level1 A count=2
+		0x00, 0x1A, // A0 -> entry
+		0x00, 0x1C, // A1 -> entry
+		0x00, 0x00, // padding
+		0x00, 0x00, // padding
+		0x00, 0x02, // level1 B count=2
+		0x00, 0x1E, // B0 -> entry
+		0x00, 0x20, // B1 -> entry
+		0x00, 0x00, // padding
+		0x00, 0xAA, // entry A0
+		0x00, 0xBB, // entry A1
+		0x00, 0xCC, // entry B0
+		0x00, 0xDD, // entry B1
+	}
+	va := parseVarArray16(b, 0, 2, 2, "test")
+	loc, err := va.Get(1, true)
+	if err != nil {
+		t.Fatalf("Get(deep=true): %v", err)
+	}
+	if loc.U16(0) != 0x00DD {
+		t.Fatalf("unexpected entry value: %d", loc.U16(0))
+	}
+}

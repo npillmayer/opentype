@@ -97,7 +97,11 @@ func parseGSubLookupSubtableType1(b binarySegm, sub LookupSubtable) LookupSubtab
 // number of ligature substitutions.
 // https://docs.microsoft.com/en-us/typography/opentype/spec/gsub#lookuptype-4-ligature-substitution-subtable
 func parseGSubLookupSubtableType2or3or4(b binarySegm, sub LookupSubtable) LookupSubtable {
-	sub.Index = parseVarArray16(b, 4, 2, 2, "LookupSubtableGSub2/3/4")
+	indirections := 2
+	if sub.LookupType == GSubLookupTypeMultiple || sub.LookupType == GSubLookupTypeAlternate {
+		indirections = 1
+	}
+	sub.Index = parseVarArray16(b, 4, 2, indirections, "LookupSubtableGSub2/3/4")
 	return sub
 }
 

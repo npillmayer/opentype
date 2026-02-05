@@ -355,10 +355,22 @@ func gsubLookupType1Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		return pos, false, buf, nil
 	}
 	// support is deltaGlyphID: add to original glyph ID to get substitute glyph ID
-	delta := lksub.Support.(ot.GlyphIndex)
-	tracer().Debugf("OT lookup GSUB 1/1: subst %d for %d", buf.At(mpos)+delta, buf.At(mpos))
+	var delta int
+	switch v := lksub.Support.(type) {
+	case int16:
+		delta = int(v)
+	case ot.GlyphIndex:
+		delta = int(v)
+	case int:
+		delta = v
+	default:
+		tracer().Errorf("GSUB 1/1: unexpected delta type %T", lksub.Support)
+		return pos, false, buf, nil
+	}
+	newGlyph := int(buf.At(mpos)) + delta
+	tracer().Debugf("OT lookup GSUB 1/1: subst %d for %d", newGlyph, buf.At(mpos))
 	// TODO: check bounds against max glyph ID
-	buf.Set(mpos, buf.At(mpos)+delta)
+	buf.Set(mpos, ot.GlyphIndex(newGlyph))
 	return mpos + 1, true, buf, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
 }
 
@@ -694,16 +706,34 @@ func gsubLookupType5Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 
 func gsubLookupType5Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	//
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
-	if ok {
-		tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(mpos), inx, ok)
+	if lksub.Support == nil {
+		tracer().Errorf("expected SequenceContext in field 'Support', is nil")
+		return pos, false, buf, nil
 	}
+	seqctx, ok := lksub.Support.(*ot.SequenceContext)
+	if !ok {
+		tracer().Errorf("expected SequenceContext in field 'Support', type error")
+		return pos, false, buf, nil
+	}
+	if len(seqctx.InputCoverage) == 0 {
+		tracer().Errorf("SequenceContext has no InputCoverage for GSUB 5|3")
+		return pos, false, buf, nil
+	}
+	inputPos, ok := matchCoverageSequenceForward(ctx, buf, pos, seqctx.InputCoverage)
 	if !ok {
 		return pos, false, buf, nil
 	}
-	panic("TODO 5/3")
-	// return pos, false, buf
+	if len(lksub.LookupRecords) == 0 {
+		return pos, false, buf, nil
+	}
+	if ctx.lookupList == nil {
+		return pos, false, buf, nil
+	}
+	out, applied := applySequenceLookupRecords(buf, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+	if applied {
+		return pos, true, out, nil
+	}
+	return pos, false, buf, nil
 }
 
 func gsubLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
@@ -1086,7 +1116,26 @@ func lookupGlyphs(index ot.VarArray, ginx int, deep bool) []ot.GlyphIndex {
 	if err != nil {
 		return []ot.GlyphIndex{}
 	}
-	return outglyphs.Glyphs()
+	if outglyphs.Size() < 2 {
+		return []ot.GlyphIndex{}
+	}
+	cnt := int(outglyphs.U16(0))
+	if cnt == 0 {
+		return []ot.GlyphIndex{}
+	}
+	b := outglyphs.Bytes()
+	if len(b) < 2 {
+		return []ot.GlyphIndex{}
+	}
+	if len(b) < 2+cnt*2 {
+		cnt = (len(b) - 2) / 2
+	}
+	glyphs := make([]ot.GlyphIndex, 0, cnt)
+	for i := 0; i < cnt; i++ {
+		off := 2 + i*2
+		glyphs = append(glyphs, ot.GlyphIndex(b[off])<<8|ot.GlyphIndex(b[off+1]))
+	}
+	return glyphs
 }
 
 // get GSUB and GPOS from a font safely

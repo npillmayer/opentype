@@ -84,6 +84,79 @@ Test flow:
 - Select a lookup (by index) and apply it to a glyph buffer.
 - Compare glyph sequence output to expected results.
 
+### Functional Tests Plan (GSUB functional tests)
+
+Purpose: validate lookup application by running one or more GSUB lookups on an
+input glyph sequence and comparing output glyphs to expected results.
+
+Scope (initial):
+
+- Start with GSUB-3 (Alternate Substitution) using the existing mini-font.
+- Use a single lookup by index; do not rely on feature/script ordering.
+
+Test harness (package `otlayout`):
+
+- Test file (e.g. `otlayout/feature_functional_test.go`).
+- Helper: `applyGSUBLookup(font *ot.Font, lookupIndex int, input []ot.GlyphIndex) ([]ot.GlyphIndex, error)`
+  - Loads GSUB lookup by index and applies it to a `GlyphBuffer`.
+  - Returns output glyph IDs for comparison.
+- Test case struct:
+  - name
+  - lookupIndex
+  - input glyph IDs
+  - expected glyph IDs
+- Optional helper to map glyph names to IDs for readability, but hardcoding IDs
+  is acceptable for now.
+
+Constraints (explicit):
+
+- No sequencing of multiple lookups yet.
+- No sidecar files for now; embed vectors in test code.
+
+Incremental path:
+
+1) Implement minimal harness and GSUB-3 test cases (apply/not apply).
+2) Reuse harness for GSUB-1/2/4 once stable.
+
+### Functional Tests: How They Work
+
+These tests are black-box checks that run one or more lookups on an input glyph
+sequence and verify the resulting glyph IDs. They live in `otlayout/` and focus
+on behavior (substitution/positioning), not structure.
+
+Core mechanics:
+
+- Load a mini-font from `testdata/fonttools-tests/` and parse it with `ot.Parse`
+  using `IsTestfont` to allow GSUB-only fonts.
+- Select a lookup by index from `otf.Layout.GSub.LookupList`.
+- Seed a `GlyphBuffer` with the input glyph IDs (the tests currently hardcode
+  IDs from the mini-fonts).
+- Apply the lookup with the same dispatch path used in production
+  (`applyLookup`), passing a minimal Feature wrapper and the current layout
+  tables (GSUB + optional GDEF).
+- Compare the resulting glyph sequence to the expected output slice.
+
+Current harness:
+
+- `otlayout/feature_functional_test.go` provides:
+  - `loadTestFont(...)` for loading a mini-font.
+  - `applyGSUBLookup(...)` for applying a single lookup by index to a buffer.
+  - A minimal `Feature` implementation for tagging the lookup application.
+
+Current coverage:
+
+- GSUB-3 (Alternate Substitution) functional test with multiple `alt` selections
+  and a non-covered glyph case.
+- GSUB-5 (Contextual Substitution) format 1 functional test using
+  `gsub_context1_lookupflag_f1` (lookup index 4), verifying match, mismatch,
+  and offset application through nested lookup application.
+
+Next expansions:
+
+- GSUB-1/2/4 functional tests using the same harness.
+- Add optional glyph-name helpers (if needed) for readability.
+- Once feature sequencing exists, add multi-lookup tests.
+
 ### TTX Parsing Scope (initial)
 
 Start with GSUB-3 (Alternate Substitution) format 1 only. Extend incrementally.

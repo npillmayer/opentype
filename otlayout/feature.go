@@ -181,13 +181,12 @@ func ApplyFeature(otf *ot.Font, feat Feature, buf GlyphBuffer, pos, alt int) (in
 		lytTable = &otf.Table(ot.T("GPOS")).Self().AsGPos().LayoutTable
 	}
 	var applied, ok bool
-	var gbuf GlyphBuffer = GlyphBuffer(buf)
 	gdef := otf.Layout.GDef
 	for i := 0; i < feat.LookupCount(); i++ { // lookups have to be applied in sequence
 		inx := feat.LookupIndex(i)
 		tracer().Debugf("feature %s lookup #%d => index %d", feat.Tag(), i, inx)
 		lookup := lytTable.LookupList.Navigate(inx)
-		pos, ok, gbuf, _ = applyLookup(&lookup, feat, gbuf, pos, alt, gdef, lytTable.LookupList)
+		pos, ok, buf, _ = applyLookup(&lookup, feat, buf, pos, alt, gdef, lytTable.LookupList)
 		applied = applied || ok
 	}
 	return pos, applied, buf
@@ -195,15 +194,15 @@ func ApplyFeature(otf *ot.Font, feat Feature, buf GlyphBuffer, pos, alt int) (in
 
 // applyCtx bundles immutable lookup state for dispatch and helpers.
 type applyCtx struct {
-	feat   Feature                  // active feature for alternate selection and tracing
-	lookup *ot.Lookup               // lookup currently being applied
-	lookupList lookupNavigator      // lookup list for nested lookups
-	buf    GlyphBuffer              // mutable glyph buffer (GSUB), read-only for matching
-	pos    int                      // current glyph position in buffer
-	alt    int                      // alternate index (1..n) for substitution selection
-	isGPos bool                     // true if lookup is GPOS (non-substituting)
-	flag   ot.LayoutTableLookupFlag // lookup flags for ignore/mark filtering
-	gdef   *ot.GDefTable            // GDEF table for glyph classification, if present
+	feat       Feature                  // active feature for alternate selection and tracing
+	lookup     *ot.Lookup               // lookup currently being applied
+	lookupList lookupNavigator          // lookup list for nested lookups
+	buf        GlyphBuffer              // mutable glyph buffer (GSUB), read-only for matching
+	pos        int                      // current glyph position in buffer
+	alt        int                      // alternate index (1..n) for substitution selection
+	isGPos     bool                     // true if lookup is GPOS (non-substituting)
+	flag       ot.LayoutTableLookupFlag // lookup flags for ignore/mark filtering
+	gdef       *ot.GDefTable            // GDEF table for glyph classification, if present
 }
 
 // EditSpan describes a buffer mutation so contextual/chaining lookups can

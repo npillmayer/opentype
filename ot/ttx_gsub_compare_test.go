@@ -859,73 +859,73 @@ func coverageGlyphs(c Coverage) ([]GlyphIndex, error) {
 	switch r := c.GlyphRange.(type) {
 	case *glyphRangeArray:
 		out := make([]GlyphIndex, 0, r.count)
-		if r.is32 {
-			for i := 0; i < r.count; i++ {
-				v, err := r.data.u32(i * 4)
-				if err != nil {
-					return nil, err
-				}
-				out = append(out, GlyphIndex(v))
+		// if r.is32 {
+		// 	for i := 0; i < r.count; i++ {
+		// 		v, err := r.data.u32(i * 4)
+		// 		if err != nil {
+		// 			return nil, err
+		// 		}
+		// 		out = append(out, GlyphIndex(v))
+		// 	}
+		// } else {
+		for i := range r.count {
+			v, err := r.data.u16(i * 2)
+			if err != nil {
+				return nil, err
 			}
-		} else {
-			for i := 0; i < r.count; i++ {
-				v, err := r.data.u16(i * 2)
-				if err != nil {
-					return nil, err
-				}
-				out = append(out, GlyphIndex(v))
-			}
+			out = append(out, GlyphIndex(v))
 		}
+		// }
 		return out, nil
 	case *glyphRangeRecords:
 		if r.count == 0 {
 			return nil, nil
 		}
 		recordSize := 6
-		if r.is32 {
-			recordSize = 12
-		}
+		// if r.is32 {
+		// 	recordSize = 12
+		// }
 		maxIndex := 0
-		for i := 0; i < r.count; i++ {
+		for i := range r.count {
 			base := i * recordSize
-			if r.is32 {
-				start, _ := r.data.u32(base)
-				end, _ := r.data.u32(base + 4)
-				startIndex, _ := r.data.u32(base + 8)
-				last := int(startIndex) + int(end-start)
-				if last > maxIndex {
-					maxIndex = last
-				}
-			} else {
-				start, _ := r.data.u16(base)
-				end, _ := r.data.u16(base + 2)
-				startIndex, _ := r.data.u16(base + 4)
-				last := int(startIndex) + int(end-start)
-				if last > maxIndex {
-					maxIndex = last
-				}
+			// if r.is32 {
+			// 	start, _ := r.data.u32(base)
+			// 	end, _ := r.data.u32(base + 4)
+			// 	startIndex, _ := r.data.u32(base + 8)
+			// 	last := int(startIndex) + int(end-start)
+			// 	if last > maxIndex {
+			// 		maxIndex = last
+			// 	}
+			// } else {
+			start, _ := r.data.u16(base)
+			end, _ := r.data.u16(base + 2)
+			startIndex, _ := r.data.u16(base + 4)
+			last := int(startIndex) + int(end-start)
+			if last > maxIndex {
+				maxIndex = last
 			}
+			// }
 		}
 		out := make([]GlyphIndex, maxIndex+1)
-		for i := 0; i < r.count; i++ {
+		for i := range r.count {
 			base := i * recordSize
-			if r.is32 {
-				start, _ := r.data.u32(base)
-				end, _ := r.data.u32(base + 4)
-				startIndex, _ := r.data.u32(base + 8)
-				for g := start; g <= end; g++ {
-					idx := int(startIndex) + int(g-start)
-					out[idx] = GlyphIndex(g)
-				}
-			} else {
-				start, _ := r.data.u16(base)
-				end, _ := r.data.u16(base + 2)
-				startIndex, _ := r.data.u16(base + 4)
-				for g := start; g <= end; g++ {
-					idx := int(startIndex) + int(g-start)
-					out[idx] = GlyphIndex(g)
-				}
+			// if r.is32 {
+			// 	start, _ := r.data.u32(base)
+			// 	end, _ := r.data.u32(base + 4)
+			// 	startIndex, _ := r.data.u32(base + 8)
+			// 	for g := start; g <= end; g++ {
+			// 		idx := int(startIndex) + int(g-start)
+			// 		out[idx] = GlyphIndex(g)
+			// 	}
+			// } else {
+			start, _ := r.data.u16(base)
+			end, _ := r.data.u16(base + 2)
+			startIndex, _ := r.data.u16(base + 4)
+			for g := start; g <= end; g++ {
+				idx := int(startIndex) + int(g-start)
+				out[idx] = GlyphIndex(g)
 			}
+			// }
 		}
 		return out, nil
 	default:

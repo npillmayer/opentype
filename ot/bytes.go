@@ -163,8 +163,8 @@ type GlyphRange interface {
 }
 
 type glyphRangeArray struct {
-	is32     bool // keys are 32 bit
-	count    int  // number of glyph keys
+	//is32     bool // keys are 32 bit
+	count    int // number of glyph keys
 	data     binarySegm
 	byteSize int
 }
@@ -176,25 +176,25 @@ func (r *glyphRangeArray) Match(g GlyphIndex) (int, bool) {
 	if r.count <= 0 {
 		return 0, false
 	}
-	if r.is32 {
-		for i := 0; i < r.count; i++ {
-			k, err := r.data.u32(i * 4)
-			if err != nil {
-				return 0, false
-			} else if GlyphIndex(k) == g {
-				return i, true
-			}
-		}
-	} else {
-		for i := 0; i < r.count; i++ {
-			k, err := r.data.u16(i * 2)
-			if err != nil {
-				return 0, false
-			} else if GlyphIndex(k) == g {
-				return i, true
-			}
+	// if r.is32 {
+	// 	for i := 0; i < r.count; i++ {
+	// 		k, err := r.data.u32(i * 4)
+	// 		if err != nil {
+	// 			return 0, false
+	// 		} else if GlyphIndex(k) == g {
+	// 			return i, true
+	// 		}
+	// 	}
+	// } else {
+	for i := 0; i < r.count; i++ {
+		k, err := r.data.u16(i * 2)
+		if err != nil {
+			return 0, false
+		} else if GlyphIndex(k) == g {
+			return i, true
 		}
 	}
+	//}
 	return 0, false
 }
 
@@ -207,9 +207,13 @@ func (r *glyphRangeArray) ByteSize() int {
 	return r.byteSize
 }
 
+// Type    | Name               |Description
+// --------+--------------------+--------------------------------------------
+// uint16  | startGlyphID       | First glyph ID in the range.
+// uint16  | endGlyphID         | Last glyph ID in the range.
+// uint16  | startCoverageIndex | Coverage Index of first glyph ID in range.
 type glyphRangeRecords struct {
-	is32     bool // keys are 32 bit
-	count    int  // number of range records
+	count    int // number of range records
 	data     binarySegm
 	byteSize int
 }
@@ -223,37 +227,20 @@ func (r *glyphRangeRecords) Match(g GlyphIndex) (int, bool) {
 		return 0, false
 	}
 	record := rangeRecord{}
-	if r.is32 {
-		for i := 0; i < r.count; i++ {
-			k, err := r.data.u32(i * (4 + 4 + 2))
-			if err != nil {
-				return 0, false
-			}
-			record.from = GlyphIndex(k)
-			k, _ = r.data.u32(i*(2+2+2) + 4)
-			record.to = GlyphIndex(k)
-			v, _ := r.data.u16(i*(2+2+2) + 6)
-			record.index = v
-			if record.from <= g && g <= record.to {
-				return int(record.index + uint16(g-record.from)), true
-			}
+	tracer().Debugf("range of %d records", r.count)
+	for i := range r.count {
+		k, err := r.data.u16(i * (2 + 2 + 2))
+		if err != nil {
+			return 0, false
 		}
-	} else {
-		tracer().Debugf("range of %d records", r.count)
-		for i := 0; i < r.count; i++ {
-			k, err := r.data.u16(i * (2 + 2 + 2))
-			if err != nil {
-				return 0, false
-			}
-			record.from = GlyphIndex(k)
-			k, _ = r.data.u16(i*(2+2+2) + 2)
-			record.to = GlyphIndex(k)
-			k, _ = r.data.u16(i*(2+2+2) + 4)
-			record.index = k
-			tracer().Debugf("from %d to %d => %d...", record.from, record.to, record.index)
-			if record.from <= g && g <= record.to {
-				return int(record.index + uint16(g-record.from)), true
-			}
+		record.from = GlyphIndex(k)
+		k, _ = r.data.u16(i*(2+2+2) + 2)
+		record.to = GlyphIndex(k)
+		k, _ = r.data.u16(i*(2+2+2) + 4)
+		record.index = k
+		tracer().Debugf("from %d to %d => %d...", record.from, record.to, record.index)
+		if record.from <= g && g <= record.to {
+			return int(record.index + uint16(g-record.from)), true
 		}
 	}
 	return 0, false

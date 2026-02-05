@@ -340,14 +340,13 @@ func buildGlyphRangeFromCoverage(chead coverageHeader, b binarySegm) GlyphRange 
 	tracer().Debugf("coverage format = %d, count = %d", chead.CoverageFormat, chead.Count)
 	if chead.CoverageFormat == 1 {
 		return &glyphRangeArray{
-			is32:     false,                  // entries are uint16
+			//is32:     false,                  // entries are uint16
 			count:    int(chead.Count),       // number of entries
 			data:     b[4:],                  // header of format 1 coverage table is 4 bytes long
 			byteSize: int(4 + chead.Count*2), // header is 4, entries are 2 bytes
 		}
 	}
 	return &glyphRangeRecords{
-		is32:     false,                  // entries are uint16
 		count:    int(chead.Count),       // number of records
 		data:     b[4:],                  // header of format 2 coverage table is 4 bytes long
 		byteSize: int(4 + chead.Count*6), // header is 4, entries are 6 bytes

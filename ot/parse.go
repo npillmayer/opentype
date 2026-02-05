@@ -235,6 +235,10 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 			}
 		}
 	}
+	if otf.tables[T("cmap")] == nil { // cmap is always required, even in test-fonts
+		ec.addError(T("cmap"), "Missing", "missing required table", SeverityCritical, 0)
+		return errFontFormat("missing required table cmap")
+	}
 	otf.CMap = otf.tables[T("cmap")].Self().AsCMap()
 
 	// Set NumGlyphs in CMap and GlyphIndexMap for glyph index validation

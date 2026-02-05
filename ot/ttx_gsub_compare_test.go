@@ -177,6 +177,72 @@ func TestTTXGSUBStructural_ContextSubstFmt1_IgnoreMarks(t *testing.T) {
 	}
 }
 
+func TestTTXGSUBStructural_ContextSubstFmt1_NextGlyph(t *testing.T) {
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
+	defer teardown()
+
+	otfPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_context1_next_glyph_f1.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_context1_next_glyph_f1.ttx.GSUB")
+
+	data, err := os.ReadFile(otfPath)
+	if err != nil {
+		t.Fatalf("read font: %v", err)
+	}
+	otf, err := Parse(data, IsTestfont)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	table := otf.Table(T("GSUB"))
+	if table == nil {
+		t.Fatalf("font missing GSUB table")
+	}
+	gsub := table.Self().AsGSub()
+	if gsub == nil {
+		t.Fatalf("cannot convert GSUB table")
+	}
+	exp, err := ttxtest.ParseTTXGSUB(ttxPath)
+	if err != nil {
+		t.Fatalf("ParseTTXGSUB: %v", err)
+	}
+
+	if err := compareExpectedGSUBLookups(gsub, exp, []int{4}); err != nil {
+		t.Fatalf("GSUB compare failed: %v", err)
+	}
+}
+
+func TestTTXGSUBStructural_ContextSubstFmt2_ClassDef2Font4(t *testing.T) {
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
+	defer teardown()
+
+	otfPath := filepath.Join("..", "testdata", "fonttools-tests", "classdef2_font4.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "classdef2_font4.ttx.GSUB")
+
+	data, err := os.ReadFile(otfPath)
+	if err != nil {
+		t.Fatalf("read font: %v", err)
+	}
+	otf, err := Parse(data, IsTestfont)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	table := otf.Table(T("GSUB"))
+	if table == nil {
+		t.Fatalf("font missing GSUB table")
+	}
+	gsub := table.Self().AsGSub()
+	if gsub == nil {
+		t.Fatalf("cannot convert GSUB table")
+	}
+	exp, err := ttxtest.ParseTTXGSUB(ttxPath)
+	if err != nil {
+		t.Fatalf("ParseTTXGSUB: %v", err)
+	}
+
+	if err := compareExpectedGSUBLookups(gsub, exp, []int{3}); err != nil {
+		t.Fatalf("GSUB compare failed: %v", err)
+	}
+}
+
 func compareExpectedGSUBLookups(gsub *GSubTable, exp *ttxtest.ExpectedGSUB, indices []int) error {
 	if gsub == nil {
 		return fmt.Errorf("nil GSUB")
@@ -230,7 +296,7 @@ func compareExpectedGSUBLookups(gsub *GSubTable, exp *ttxtest.ExpectedGSUB, indi
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GSubLookupTypeContext:
-				if err := compareContextSubstFmt1(sub, est); err != nil {
+				if err := compareContextSubst(sub, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			}
@@ -288,7 +354,7 @@ func compareExpectedGSUB(gsub *GSubTable, exp *ttxtest.ExpectedGSUB) error {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GSubLookupTypeContext:
-				if err := compareContextSubstFmt1(sub, est); err != nil {
+				if err := compareContextSubst(sub, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			}
@@ -431,6 +497,17 @@ func compareLigatureSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) err
 	return nil
 }
 
+func compareContextSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error {
+	switch sub.Format {
+	case 1:
+		return compareContextSubstFmt1(sub, est)
+	case 2:
+		return compareContextSubstFmt2(sub, est)
+	default:
+		return fmt.Errorf("unsupported context subst format %d", sub.Format)
+	}
+}
+
 func compareContextSubstFmt1(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error {
 	if est.ContextSubst == nil {
 		return fmt.Errorf("expected context subst missing")
@@ -470,6 +547,64 @@ func compareContextSubstFmt1(sub *LookupSubtable, est ttxtest.ExpectedSubtable) 
 		for r := range expRules {
 			if err := compareSequenceRule(rules[r], expRules[r]); err != nil {
 				return fmt.Errorf("rule set %d rule %d: %w", i, r, err)
+			}
+		}
+	}
+	return nil
+}
+
+func compareContextSubstFmt2(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error {
+	if est.ContextSubst == nil {
+		return fmt.Errorf("expected context subst missing")
+	}
+	if sub.Format != 2 {
+		return fmt.Errorf("unsupported context subst format %d", sub.Format)
+	}
+	coverage, err := coverageGlyphs(sub.Coverage)
+	if err != nil {
+		return fmt.Errorf("coverage parse: %w", err)
+	}
+	if len(coverage) != len(est.Coverage) {
+		return fmt.Errorf("coverage length mismatch: got %d, want %d", len(coverage), len(est.Coverage))
+	}
+	for i, name := range est.Coverage {
+		gid, err := glyphNameToID(name)
+		if err != nil {
+			return fmt.Errorf("coverage glyph %q: %w", name, err)
+		}
+		if coverage[i] != gid {
+			return fmt.Errorf("coverage[%d] mismatch: got %d, want %d", i, coverage[i], gid)
+		}
+	}
+
+	if len(est.ContextSubst.ClassDefs) > 0 {
+		seqctx, ok := sub.Support.(*SequenceContext)
+		if !ok || seqctx == nil || len(seqctx.ClassDefs) == 0 {
+			return fmt.Errorf("missing class definitions in subtable support")
+		}
+		for name, class := range est.ContextSubst.ClassDefs {
+			gid, err := glyphNameToID(name)
+			if err != nil {
+				return fmt.Errorf("classdef glyph %q: %w", name, err)
+			}
+			if got := int(seqctx.ClassDefs[0].Lookup(gid)); got != class {
+				return fmt.Errorf("classdef %q mismatch: got %d, want %d", name, got, class)
+			}
+		}
+	}
+
+	for i := range est.ContextSubst.ClassRuleSets {
+		expRules := est.ContextSubst.ClassRuleSets[i].Rules
+		rules, err := parseClassSequenceRules(sub, i)
+		if err != nil {
+			return fmt.Errorf("class rule set %d: %w", i, err)
+		}
+		if len(rules) != len(expRules) {
+			return fmt.Errorf("class rule set %d count mismatch: got %d, want %d", i, len(rules), len(expRules))
+		}
+		for r := range expRules {
+			if err := compareClassSequenceRule(rules[r], expRules[r]); err != nil {
+				return fmt.Errorf("class rule set %d rule %d: %w", i, r, err)
 			}
 		}
 	}
@@ -527,6 +662,84 @@ func compareSequenceRule(actual parsedSequenceRule, exp ttxtest.ExpectedSequence
 		}
 		if actual.Input[i] != gid {
 			return fmt.Errorf("input[%d] mismatch: got %d, want %d", i, actual.Input[i], gid)
+		}
+	}
+	if len(actual.Records) != len(exp.LookupRecords) {
+		return fmt.Errorf("lookup record count mismatch: got %d, want %d", len(actual.Records), len(exp.LookupRecords))
+	}
+	for i, rec := range exp.LookupRecords {
+		if actual.Records[i].SequenceIndex != uint16(rec.SequenceIndex) {
+			return fmt.Errorf("lookup record[%d] sequence index mismatch: got %d, want %d",
+				i, actual.Records[i].SequenceIndex, rec.SequenceIndex)
+		}
+		if actual.Records[i].LookupListIndex != uint16(rec.LookupListIndex) {
+			return fmt.Errorf("lookup record[%d] list index mismatch: got %d, want %d",
+				i, actual.Records[i].LookupListIndex, rec.LookupListIndex)
+		}
+	}
+	return nil
+}
+
+type parsedClassSequenceRule struct {
+	Classes []uint16
+	Records []SequenceLookupRecord
+}
+
+func parseClassSequenceRules(sub *LookupSubtable, setIndex int) ([]parsedClassSequenceRule, error) {
+	if sub.Index.Size() == 0 {
+		return nil, nil
+	}
+	ruleSetLoc, err := sub.Index.Get(setIndex, false)
+	if err != nil {
+		return nil, err
+	}
+	if ruleSetLoc.Size() < 2 {
+		return nil, nil
+	}
+	ruleSet := ParseVarArray(ruleSetLoc, 0, 2, "ClassSequenceRuleSet")
+	out := make([]parsedClassSequenceRule, 0, ruleSet.Size())
+	for i := 0; i < ruleSet.Size(); i++ {
+		ruleLoc, err := ruleSet.Get(i, false)
+		if err != nil || ruleLoc.Size() < 4 {
+			continue
+		}
+		glyphCount := int(ruleLoc.U16(0))
+		seqLookupCount := int(ruleLoc.U16(2))
+		if glyphCount < 1 {
+			continue
+		}
+		classCount := glyphCount - 1
+		classBytes := classCount * 2
+		recBytes := seqLookupCount * 4
+		minSize := 4 + classBytes + recBytes
+		if ruleLoc.Size() < minSize {
+			continue
+		}
+		classes := make([]uint16, classCount)
+		for j := 0; j < classCount; j++ {
+			classes[j] = ruleLoc.U16(4 + j*2)
+		}
+		records := make([]SequenceLookupRecord, seqLookupCount)
+		recStart := 4 + classBytes
+		for r := 0; r < seqLookupCount; r++ {
+			off := recStart + r*4
+			records[r] = SequenceLookupRecord{
+				SequenceIndex:   ruleLoc.U16(off),
+				LookupListIndex: ruleLoc.U16(off + 2),
+			}
+		}
+		out = append(out, parsedClassSequenceRule{Classes: classes, Records: records})
+	}
+	return out, nil
+}
+
+func compareClassSequenceRule(actual parsedClassSequenceRule, exp ttxtest.ExpectedClassSequenceRule) error {
+	if len(actual.Classes) != len(exp.Classes) {
+		return fmt.Errorf("class count mismatch: got %d, want %d", len(actual.Classes), len(exp.Classes))
+	}
+	for i, cls := range exp.Classes {
+		if actual.Classes[i] != uint16(cls) {
+			return fmt.Errorf("class[%d] mismatch: got %d, want %d", i, actual.Classes[i], cls)
 		}
 	}
 	if len(actual.Records) != len(exp.LookupRecords) {
@@ -721,8 +934,18 @@ func coverageGlyphs(c Coverage) ([]GlyphIndex, error) {
 }
 
 func glyphNameToID(name string) (GlyphIndex, error) {
+	if name == ".notdef" {
+		return 0, nil
+	}
 	if strings.HasPrefix(name, "g") && len(name) > 1 {
 		n, err := strconv.Atoi(name[1:])
+		if err != nil {
+			return 0, err
+		}
+		return GlyphIndex(n), nil
+	}
+	if strings.HasPrefix(name, "glyph") && len(name) > 5 {
+		n, err := strconv.Atoi(name[5:])
 		if err != nil {
 			return 0, err
 		}

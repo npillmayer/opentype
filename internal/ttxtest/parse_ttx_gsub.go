@@ -223,40 +223,74 @@ func normalizeContextSubst(lookupType int, st ttxContextSubst) (ExpectedSubtable
 		}
 		format = n
 	}
-	if format != 1 {
+	coverage := st.Coverage.Glyphs()
+	switch format {
+	case 1:
+		maxSet := -1
+		for _, rs := range st.SubRuleSet {
+			if rs.Index > maxSet {
+				maxSet = rs.Index
+			}
+		}
+		ruleSets := make([]ExpectedSubRuleSet, maxSet+1)
+		for _, rs := range st.SubRuleSet {
+			rules := make([]ExpectedSequenceRule, 0, len(rs.SubRule))
+			for _, r := range rs.SubRule {
+				rule := ExpectedSequenceRule{
+					Input:         inputsByIndex(r.Input),
+					LookupRecords: lookupRecordsByIndex(r.SubstLookupRecord),
+				}
+				rules = append(rules, rule)
+			}
+			if rs.Index >= 0 && rs.Index < len(ruleSets) {
+				ruleSets[rs.Index] = ExpectedSubRuleSet{Rules: rules}
+			}
+		}
+
+		return ExpectedSubtable{
+			Type:     5,
+			Format:   1,
+			Coverage: coverage,
+			ContextSubst: &ExpectedContextSubst{
+				RuleSets: ruleSets,
+			},
+		}, nil
+	case 2:
+		maxSet := -1
+		for _, rs := range st.SubClassSet {
+			if rs.Index > maxSet {
+				maxSet = rs.Index
+			}
+		}
+		classRuleSets := make([]ExpectedClassRuleSet, maxSet+1)
+		for _, rs := range st.SubClassSet {
+			if rs.EmptyAttr == "1" {
+				continue
+			}
+			rules := make([]ExpectedClassSequenceRule, 0, len(rs.SubClassRule))
+			for _, r := range rs.SubClassRule {
+				rule := ExpectedClassSequenceRule{
+					Classes:       classValuesByIndex(r.Class),
+					LookupRecords: lookupRecordsByIndex(r.SubstLookupRecord),
+				}
+				rules = append(rules, rule)
+			}
+			if rs.Index >= 0 && rs.Index < len(classRuleSets) {
+				classRuleSets[rs.Index] = ExpectedClassRuleSet{Rules: rules}
+			}
+		}
+		return ExpectedSubtable{
+			Type:     5,
+			Format:   2,
+			Coverage: coverage,
+			ContextSubst: &ExpectedContextSubst{
+				ClassRuleSets: classRuleSets,
+				ClassDefs:     classDefsByGlyph(st.ClassDef),
+			},
+		}, nil
+	default:
 		return ExpectedSubtable{}, fmt.Errorf("ttx: unsupported ContextSubst format %d", format)
 	}
-
-	coverage := st.Coverage.Glyphs()
-	maxSet := -1
-	for _, rs := range st.SubRuleSet {
-		if rs.Index > maxSet {
-			maxSet = rs.Index
-		}
-	}
-	ruleSets := make([]ExpectedSubRuleSet, maxSet+1)
-	for _, rs := range st.SubRuleSet {
-		rules := make([]ExpectedSequenceRule, 0, len(rs.SubRule))
-		for _, r := range rs.SubRule {
-			rule := ExpectedSequenceRule{
-				Input:         inputsByIndex(r.Input),
-				LookupRecords: lookupRecordsByIndex(r.SubstLookupRecord),
-			}
-			rules = append(rules, rule)
-		}
-		if rs.Index >= 0 && rs.Index < len(ruleSets) {
-			ruleSets[rs.Index] = ExpectedSubRuleSet{Rules: rules}
-		}
-	}
-
-	return ExpectedSubtable{
-		Type:     5,
-		Format:   1,
-		Coverage: coverage,
-		ContextSubst: &ExpectedContextSubst{
-			RuleSets: ruleSets,
-		},
-	}, nil
 }
 
 func splitGlyphList(s string) []string {
@@ -275,8 +309,18 @@ func splitGlyphList(s string) []string {
 }
 
 func glyphNameToIDTTX(name string) (int, error) {
+	if name == ".notdef" {
+		return 0, nil
+	}
 	if strings.HasPrefix(name, "g") && len(name) > 1 {
 		n, err := strconv.Atoi(name[1:])
+		if err != nil {
+			return 0, err
+		}
+		return n, nil
+	}
+	if strings.HasPrefix(name, "glyph") && len(name) > 5 {
+		n, err := strconv.Atoi(name[5:])
 		if err != nil {
 			return 0, err
 		}
@@ -373,9 +417,11 @@ type ttxLigature struct {
 }
 
 type ttxContextSubst struct {
-	FormatAttr string          `xml:"Format,attr"`
-	Coverage   ttxCoverage     `xml:"Coverage"`
-	SubRuleSet []ttxSubRuleSet `xml:"SubRuleSet"`
+	FormatAttr  string           `xml:"Format,attr"`
+	Coverage    ttxCoverage      `xml:"Coverage"`
+	ClassDef    ttxClassDef      `xml:"ClassDef"`
+	SubRuleSet  []ttxSubRuleSet  `xml:"SubRuleSet"`
+	SubClassSet []ttxSubClassSet `xml:"SubClassSet"`
 }
 
 type ttxSubRuleSet struct {
@@ -387,6 +433,23 @@ type ttxSubRule struct {
 	Index             int                    `xml:"index,attr"`
 	Input             []ttxInput             `xml:"Input"`
 	SubstLookupRecord []ttxSubstLookupRecord `xml:"SubstLookupRecord"`
+}
+
+type ttxSubClassSet struct {
+	Index        int               `xml:"index,attr"`
+	EmptyAttr    string            `xml:"empty,attr"`
+	SubClassRule []ttxSubClassRule `xml:"SubClassRule"`
+}
+
+type ttxSubClassRule struct {
+	Index             int                    `xml:"index,attr"`
+	Class             []ttxClassValue        `xml:"Class"`
+	SubstLookupRecord []ttxSubstLookupRecord `xml:"SubstLookupRecord"`
+}
+
+type ttxClassValue struct {
+	Index int `xml:"index,attr"`
+	Value int `xml:"value,attr"`
 }
 
 type ttxInput struct {
@@ -420,6 +483,29 @@ func (v ttxValue) Int() (int, error) {
 	return n, err
 }
 
+type ttxClassDef struct {
+	Entries []ttxClassDefEntry `xml:"ClassDef"`
+}
+
+type ttxClassDefEntry struct {
+	Glyph string `xml:"glyph,attr"`
+	Class int    `xml:"class,attr"`
+}
+
+func classDefsByGlyph(cd ttxClassDef) map[string]int {
+	if len(cd.Entries) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(cd.Entries))
+	for _, e := range cd.Entries {
+		if e.Glyph == "" {
+			continue
+		}
+		out[e.Glyph] = e.Class
+	}
+	return out
+}
+
 func inputsByIndex(in []ttxInput) []string {
 	if len(in) == 0 {
 		return nil
@@ -431,6 +517,25 @@ func inputsByIndex(in []ttxInput) []string {
 		}
 	}
 	out := make([]string, max+1)
+	for _, item := range in {
+		if item.Index >= 0 && item.Index < len(out) {
+			out[item.Index] = item.Value
+		}
+	}
+	return out
+}
+
+func classValuesByIndex(in []ttxClassValue) []int {
+	if len(in) == 0 {
+		return nil
+	}
+	max := -1
+	for _, item := range in {
+		if item.Index > max {
+			max = item.Index
+		}
+	}
+	out := make([]int, max+1)
 	for _, item := range in {
 		if item.Index >= 0 && item.Index < len(out) {
 			out[item.Index] = item.Value

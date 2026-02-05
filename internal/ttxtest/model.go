@@ -42,7 +42,9 @@ type ExpectedLigature struct {
 
 // ExpectedContextSubst describes GSUB-5 format 1 (simple glyph contexts).
 type ExpectedContextSubst struct {
-	RuleSets []ExpectedSubRuleSet
+	RuleSets      []ExpectedSubRuleSet
+	ClassRuleSets []ExpectedClassRuleSet
+	ClassDefs     map[string]int
 }
 
 // ExpectedSubRuleSet holds the sequence rules for a coverage entry.
@@ -60,4 +62,15 @@ type ExpectedSequenceRule struct {
 type ExpectedSequenceLookupRecord struct {
 	SequenceIndex   int
 	LookupListIndex int
+}
+
+// ExpectedClassRuleSet holds class-based rules for format 2.
+type ExpectedClassRuleSet struct {
+	Rules []ExpectedClassSequenceRule
+}
+
+// ExpectedClassSequenceRule defines remaining input classes and lookup records.
+type ExpectedClassSequenceRule struct {
+	Classes       []int
+	LookupRecords []ExpectedSequenceLookupRecord
 }

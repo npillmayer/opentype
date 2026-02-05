@@ -62,6 +62,12 @@ validity for present tables.
   (explicit mapping) using parsed lookup subtable data.
 - Added a focused structural test for lookup index 2 (LigatureSubst with
   `LookupFlag=ignoreMarks`) in the same font.
+- Added a focused structural test for GSUB-5 format 1 (ContextSubst) with
+  `LookupFlag=ignoreMarks` using `gsub_context1_lookupflag_f1` (lookup index 4).
+- Added a focused structural test for GSUB-5 format 1 (ContextSubst) using
+  `gsub_context1_next_glyph_f1` (lookup index 4).
+- Added a focused structural test for GSUB-5 format 2 (ContextSubst) using
+  `classdef2_font4` (lookup index 3).
 
 ### Functional Tests (package `otlayout`)
 
@@ -81,6 +87,10 @@ Test flow:
 ### TTX Parsing Scope (initial)
 
 Start with GSUB-3 (Alternate Substitution) format 1 only. Extend incrementally.
+Current scope includes GSUB-1, GSUB-3, GSUB-4, and GSUB-5 (formats 1 and 2) for
+structural comparisons. ContextSubst format 1 includes coverage, rule sets,
+input glyph sequences, and sequence lookup records. ContextSubst format 2
+includes coverage, class definitions, subclass rule sets, and lookup records.
 
 ### Open Questions
 

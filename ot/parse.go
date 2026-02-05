@@ -1621,3 +1621,155 @@ func (lksub LookupSubtable) SequenceRule(b binarySegm) sequenceRule {
 	}
 	return seqrule
 }
+
+// ChainedSequenceRule parses a GSUB-6 format-1 ChainSubRule table.
+func (lksub LookupSubtable) ChainedSequenceRule(loc NavLocation) chainedSequenceRule {
+	rule := chainedSequenceRule{}
+	b := binarySegm(loc.Bytes())
+	if b.Size() < 2 {
+		return rule
+	}
+	backtrackCount := int(b.U16(0))
+	backtrackBytes := backtrackCount * 2
+	if 2+backtrackBytes > b.Size() {
+		tracer().Errorf("ChainedSequenceRule backtrack sequence bounds check failed")
+		return chainedSequenceRule{}
+	}
+	rule.backtrackSequence = array{
+		recordSize: 2,
+		length:     backtrackCount,
+		loc:        b[2 : 2+backtrackBytes],
+	}
+	offset := 2 + backtrackBytes
+	if offset+2 > b.Size() {
+		tracer().Errorf("ChainedSequenceRule missing input glyph count")
+		return chainedSequenceRule{}
+	}
+	inputCount := int(b.U16(offset))
+	offset += 2
+	inputSeqCount := inputCount - 1
+	if inputSeqCount < 0 {
+		inputSeqCount = 0
+	}
+	inputBytes := inputSeqCount * 2
+	if offset+inputBytes > b.Size() {
+		tracer().Errorf("ChainedSequenceRule input sequence bounds check failed")
+		return chainedSequenceRule{}
+	}
+	rule.inputSequence = array{
+		recordSize: 2,
+		length:     inputSeqCount,
+		loc:        b[offset : offset+inputBytes],
+	}
+	offset += inputBytes
+	if offset+2 > b.Size() {
+		tracer().Errorf("ChainedSequenceRule missing lookahead glyph count")
+		return chainedSequenceRule{}
+	}
+	lookaheadCount := int(b.U16(offset))
+	offset += 2
+	lookaheadBytes := lookaheadCount * 2
+	if offset+lookaheadBytes > b.Size() {
+		tracer().Errorf("ChainedSequenceRule lookahead sequence bounds check failed")
+		return chainedSequenceRule{}
+	}
+	rule.lookaheadSequence = array{
+		recordSize: 2,
+		length:     lookaheadCount,
+		loc:        b[offset : offset+lookaheadBytes],
+	}
+	offset += lookaheadBytes
+	if offset+2 > b.Size() {
+		tracer().Errorf("ChainedSequenceRule missing sequence lookup count")
+		return chainedSequenceRule{}
+	}
+	seqLookupCount := int(b.U16(offset))
+	offset += 2
+	lookupBytes := seqLookupCount * 4
+	if offset+lookupBytes > b.Size() {
+		tracer().Errorf("ChainedSequenceRule lookup records bounds check failed")
+		return chainedSequenceRule{}
+	}
+	rule.lookupRecords = array{
+		recordSize: 4,
+		length:     seqLookupCount,
+		loc:        b[offset : offset+lookupBytes],
+	}
+	return rule
+}
+
+// ChainedClassSequenceRule parses a GSUB-6 format-2 ChainSubClassRule table.
+func (lksub LookupSubtable) ChainedClassSequenceRule(loc NavLocation) chainedClassSequenceRule {
+	rule := chainedClassSequenceRule{}
+	b := binarySegm(loc.Bytes())
+	if b.Size() < 2 {
+		return rule
+	}
+	backtrackCount := int(b.U16(0))
+	backtrackBytes := backtrackCount * 2
+	if 2+backtrackBytes > b.Size() {
+		tracer().Errorf("ChainedClassSequenceRule backtrack classes bounds check failed")
+		return chainedClassSequenceRule{}
+	}
+	rule.backtrackClasses = array{
+		recordSize: 2,
+		length:     backtrackCount,
+		loc:        b[2 : 2+backtrackBytes],
+	}
+	offset := 2 + backtrackBytes
+	if offset+2 > b.Size() {
+		tracer().Errorf("ChainedClassSequenceRule missing input glyph count")
+		return chainedClassSequenceRule{}
+	}
+	inputCount := int(b.U16(offset))
+	offset += 2
+	inputSeqCount := inputCount - 1
+	if inputSeqCount < 0 {
+		inputSeqCount = 0
+	}
+	inputBytes := inputSeqCount * 2
+	if offset+inputBytes > b.Size() {
+		tracer().Errorf("ChainedClassSequenceRule input classes bounds check failed")
+		return chainedClassSequenceRule{}
+	}
+	rule.inputClasses = array{
+		recordSize: 2,
+		length:     inputSeqCount,
+		loc:        b[offset : offset+inputBytes],
+	}
+	offset += inputBytes
+	if offset+2 > b.Size() {
+		tracer().Errorf("ChainedClassSequenceRule missing lookahead glyph count")
+		return chainedClassSequenceRule{}
+	}
+	lookaheadCount := int(b.U16(offset))
+	offset += 2
+	lookaheadBytes := lookaheadCount * 2
+	if offset+lookaheadBytes > b.Size() {
+		tracer().Errorf("ChainedClassSequenceRule lookahead classes bounds check failed")
+		return chainedClassSequenceRule{}
+	}
+	rule.lookaheadClasses = array{
+		recordSize: 2,
+		length:     lookaheadCount,
+		loc:        b[offset : offset+lookaheadBytes],
+	}
+	offset += lookaheadBytes
+	if offset+2 > b.Size() {
+		tracer().Errorf("ChainedClassSequenceRule missing sequence lookup count")
+		return chainedClassSequenceRule{}
+	}
+	seqLookupCount := int(b.U16(offset))
+	offset += 2
+	lookupBytes := seqLookupCount * 4
+	if offset+lookupBytes > b.Size() {
+		tracer().Errorf("ChainedClassSequenceRule lookup records bounds check failed")
+		return chainedClassSequenceRule{}
+	}
+	rule.lookupRecords = array{
+		recordSize: 4,
+		length:     seqLookupCount,
+		loc:        b[offset : offset+lookupBytes],
+	}
+	return rule
+}

@@ -307,7 +307,10 @@ func dispatchGSubLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, Glyph
 		tracer().Errorf("GSUB extension subtable reached dispatch; extension should be unwrapped during parsing")
 		return ctx.pos, false, ctx.buf, nil
 	case ot.GSubLookupTypeReverseChaining:
-		// Reverse chaining is not implemented in otlayout yet.
+		switch sub.Format {
+		case 1:
+			return gsubLookupType8Fmt1(ctx, sub, ctx.buf, ctx.pos)
+		}
 	}
 	tracer().Errorf("unknown GSUB lookup type %d/%d", sub.LookupType, sub.Format)
 	return ctx.pos, false, ctx.buf, nil
@@ -746,8 +749,48 @@ func gsubLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	panic("TODO 6/1")
-	// return pos, false, buf
+	rules, err := parseChainedSequenceRules(lksub, inx)
+	if err != nil || len(rules) == 0 {
+		return pos, false, buf, nil
+	}
+	tracer().Debugf("GSUB 6|1 rule set for coverage %d: %d rules", inx, len(rules))
+	for _, rule := range rules {
+		tracer().Debugf("GSUB 6|1 rule: backtrack=%d input=%d lookahead=%d records=%d",
+			len(rule.Backtrack), len(rule.Input), len(rule.Lookahead), len(rule.Records))
+		inputPos, ok := matchGlyphSequenceForward(ctx, buf, mpos+1, rule.Input)
+		if !ok {
+			tracer().Debugf("GSUB 6|1 input sequence did not match at pos %d", mpos+1)
+			continue
+		}
+		matchPositions := make([]int, 0, 1+len(inputPos))
+		matchPositions = append(matchPositions, mpos)
+		matchPositions = append(matchPositions, inputPos...)
+		if len(rule.Backtrack) > 0 {
+			if _, ok := matchGlyphSequenceBackward(ctx, buf, mpos, rule.Backtrack); !ok {
+				tracer().Debugf("GSUB 6|1 backtrack did not match at pos %d", mpos)
+				continue
+			}
+		}
+		if len(rule.Lookahead) > 0 {
+			last := mpos
+			if len(inputPos) > 0 {
+				last = inputPos[len(inputPos)-1]
+			}
+			if _, ok := matchGlyphSequenceForward(ctx, buf, last+1, rule.Lookahead); !ok {
+				tracer().Debugf("GSUB 6|1 lookahead did not match at pos %d", last+1)
+				continue
+			}
+		}
+		if len(rule.Records) == 0 || ctx.lookupList == nil {
+			continue
+		}
+		tracer().Debugf("GSUB 6|1 matched at positions %v", matchPositions)
+		out, applied := applySequenceLookupRecords(buf, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		if applied {
+			return pos, true, out, nil
+		}
+	}
+	return pos, false, buf, nil
 }
 
 func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
@@ -760,8 +803,53 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	panic("TODO 6/2")
-	// return pos, false, buf
+	seqctx, ok := lksub.Support.(*ot.SequenceContext)
+	if !ok || seqctx == nil || len(seqctx.ClassDefs) < 3 {
+		tracer().Debugf("GSUB 6|2 missing class definitions")
+		return pos, false, buf, nil
+	}
+	rules, err := parseChainedClassSequenceRules(lksub, inx)
+	if err != nil || len(rules) == 0 {
+		return pos, false, buf, nil
+	}
+	tracer().Debugf("GSUB 6|2 rule set for coverage %d: %d rules", inx, len(rules))
+	for _, rule := range rules {
+		tracer().Debugf("GSUB 6|2 rule: backtrack=%d input=%d lookahead=%d records=%d",
+			len(rule.Backtrack), len(rule.Input), len(rule.Lookahead), len(rule.Records))
+		inputPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, seqctx.ClassDefs[1], rule.Input)
+		if !ok {
+			tracer().Debugf("GSUB 6|2 input classes did not match at pos %d", mpos+1)
+			continue
+		}
+		matchPositions := make([]int, 0, 1+len(inputPos))
+		matchPositions = append(matchPositions, mpos)
+		matchPositions = append(matchPositions, inputPos...)
+		if len(rule.Backtrack) > 0 {
+			if _, ok := matchClassSequenceBackward(ctx, buf, mpos, seqctx.ClassDefs[0], rule.Backtrack); !ok {
+				tracer().Debugf("GSUB 6|2 backtrack did not match at pos %d", mpos)
+				continue
+			}
+		}
+		if len(rule.Lookahead) > 0 {
+			last := mpos
+			if len(inputPos) > 0 {
+				last = inputPos[len(inputPos)-1]
+			}
+			if _, ok := matchClassSequenceForward(ctx, buf, last+1, seqctx.ClassDefs[2], rule.Lookahead); !ok {
+				tracer().Debugf("GSUB 6|2 lookahead did not match at pos %d", last+1)
+				continue
+			}
+		}
+		if len(rule.Records) == 0 || ctx.lookupList == nil {
+			continue
+		}
+		tracer().Debugf("GSUB 6|2 matched at positions %v", matchPositions)
+		out, applied := applySequenceLookupRecords(buf, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		if applied {
+			return pos, true, out, nil
+		}
+	}
+	return pos, false, buf, nil
 }
 
 // Chained Sequence Context Format 3: coverage-based glyph contexts
@@ -829,6 +917,60 @@ func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	tracer().Debugf("GSUB 6|3 applied = %v", applied)
 	if applied {
 		return pos, true, out, nil
+	}
+	return pos, false, buf, nil
+}
+
+// GSUB LookupType 8: Reverse Chaining Single Substitution Subtable
+func gsubLookupType8Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+	int, bool, GlyphBuffer, *EditSpan) {
+	//
+	rc, ok := lksub.Support.(*ot.ReverseChainingSubst)
+	if !ok || rc == nil {
+		tracer().Debugf("GSUB 8|1 missing ReverseChainingSubst support")
+		return pos, false, buf, nil
+	}
+	tracer().Debugf("GSUB 8|1 pos=%d backtrack=%d lookahead=%d subst=%d",
+		pos, len(rc.BacktrackCoverage), len(rc.LookaheadCoverage), len(rc.SubstituteGlyphIDs))
+	minPos := pos
+	if minPos < 0 {
+		minPos = 0
+	}
+	for i := buf.Len() - 1; i >= minPos; {
+		mpos, ok := prevMatchable(ctx, buf, i)
+		if !ok || mpos < minPos {
+			break
+		}
+		tracer().Debugf("GSUB 8|1 candidate pos=%d glyph=%d", mpos, buf.At(mpos))
+		inx, ok := lksub.Coverage.Match(buf.At(mpos))
+		if !ok {
+			tracer().Debugf("GSUB 8|1 coverage did not match at pos %d", mpos)
+			i = mpos - 1
+			continue
+		}
+		if len(rc.BacktrackCoverage) > 0 {
+			if _, ok := matchCoverageSequenceBackward(ctx, buf, mpos, rc.BacktrackCoverage); !ok {
+				tracer().Debugf("GSUB 8|1 backtrack did not match at pos %d", mpos)
+				i = mpos - 1
+				continue
+			}
+		}
+		if len(rc.LookaheadCoverage) > 0 {
+			if _, ok := matchCoverageSequenceForward(ctx, buf, mpos+1, rc.LookaheadCoverage); !ok {
+				tracer().Debugf("GSUB 8|1 lookahead did not match at pos %d", mpos)
+				i = mpos - 1
+				continue
+			}
+		}
+		if inx < 0 || inx >= len(rc.SubstituteGlyphIDs) {
+			tracer().Debugf("GSUB 8|1 substitute index %d out of range", inx)
+			i = mpos - 1
+			continue
+		}
+		subst := rc.SubstituteGlyphIDs[inx]
+		tracer().Debugf("GSUB 8|1 subst %d for %d at pos %d", subst, buf.At(mpos), mpos)
+		buf.Set(mpos, subst)
+		return mpos + 1, true, buf, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
 	}
 	return pos, false, buf, nil
 }
@@ -1003,6 +1145,26 @@ func matchGlyphSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, glyphs [
 	return out, true
 }
 
+func matchGlyphSequenceBackward(ctx *applyCtx, buf GlyphBuffer, pos int, glyphs []ot.GlyphIndex) ([]int, bool) {
+	if len(glyphs) == 0 {
+		return nil, false
+	}
+	out := make([]int, len(glyphs))
+	cur := pos - 1
+	for i, gid := range glyphs {
+		mpos, ok := prevMatchable(ctx, buf, cur)
+		if !ok {
+			return nil, false
+		}
+		if buf.At(mpos) != gid {
+			return nil, false
+		}
+		out[i] = mpos
+		cur = mpos - 1
+	}
+	return out, true
+}
+
 func matchClassSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, classDef ot.ClassDefinitions, classes []uint16) ([]int, bool) {
 	if len(classes) == 0 {
 		return nil, false
@@ -1019,6 +1181,26 @@ func matchClassSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, classDef
 		}
 		out[i] = mpos
 		cur = mpos + 1
+	}
+	return out, true
+}
+
+func matchClassSequenceBackward(ctx *applyCtx, buf GlyphBuffer, pos int, classDef ot.ClassDefinitions, classes []uint16) ([]int, bool) {
+	if len(classes) == 0 {
+		return nil, false
+	}
+	out := make([]int, len(classes))
+	cur := pos - 1
+	for i, clz := range classes {
+		mpos, ok := prevMatchable(ctx, buf, cur)
+		if !ok {
+			return nil, false
+		}
+		if uint16(classDef.Lookup(buf.At(mpos))) != clz {
+			return nil, false
+		}
+		out[i] = mpos
+		cur = mpos - 1
 	}
 	return out, true
 }
@@ -1042,6 +1224,80 @@ func matchChainedForward(ctx *applyCtx, buf GlyphBuffer, pos int, backtrack, inp
 		}
 	}
 	return inputPos, true
+}
+
+// Chained-context rule parsing helpers. These are used by GSUB-6 (chained substitution)
+// and will also be useful for GPOS-8 (chained positioning).
+type parsedChainedRule struct {
+	Backtrack []ot.GlyphIndex
+	Input     []ot.GlyphIndex
+	Lookahead []ot.GlyphIndex
+	Records   []ot.SequenceLookupRecord
+}
+
+func parseChainedSequenceRules(lksub *ot.LookupSubtable, coverageIndex int) ([]parsedChainedRule, error) {
+	if lksub.Index.Size() == 0 {
+		return nil, nil
+	}
+	ruleSetLoc, err := lksub.Index.Get(coverageIndex, false)
+	if err != nil {
+		return nil, err
+	}
+	if ruleSetLoc.Size() < 2 {
+		return nil, nil
+	}
+	ruleSet := ot.ParseVarArray(ruleSetLoc, 0, 2, "ChainSubRuleSet")
+	out := make([]parsedChainedRule, 0, ruleSet.Size())
+	for i := 0; i < ruleSet.Size(); i++ {
+		ruleLoc, err := ruleSet.Get(i, false)
+		if err != nil || ruleLoc.Size() < 2 {
+			continue
+		}
+		rule := lksub.ChainedSequenceRule(ruleLoc)
+		out = append(out, parsedChainedRule{
+			Backtrack: rule.BacktrackGlyphs(),
+			Input:     rule.InputGlyphs(),
+			Lookahead: rule.LookaheadGlyphs(),
+			Records:   rule.LookupRecords(),
+		})
+	}
+	return out, nil
+}
+
+type parsedChainedClassRule struct {
+	Backtrack []uint16
+	Input     []uint16
+	Lookahead []uint16
+	Records   []ot.SequenceLookupRecord
+}
+
+func parseChainedClassSequenceRules(lksub *ot.LookupSubtable, coverageIndex int) ([]parsedChainedClassRule, error) {
+	if lksub.Index.Size() == 0 {
+		return nil, nil
+	}
+	ruleSetLoc, err := lksub.Index.Get(coverageIndex, false)
+	if err != nil {
+		return nil, err
+	}
+	if ruleSetLoc.Size() < 2 {
+		return nil, nil
+	}
+	ruleSet := ot.ParseVarArray(ruleSetLoc, 0, 2, "ChainSubClassSet")
+	out := make([]parsedChainedClassRule, 0, ruleSet.Size())
+	for i := 0; i < ruleSet.Size(); i++ {
+		ruleLoc, err := ruleSet.Get(i, false)
+		if err != nil || ruleLoc.Size() < 2 {
+			continue
+		}
+		rule := lksub.ChainedClassSequenceRule(ruleLoc)
+		out = append(out, parsedChainedClassRule{
+			Backtrack: rule.BacktrackClasses(),
+			Input:     rule.InputClasses(),
+			Lookahead: rule.LookaheadClasses(),
+			Records:   rule.LookupRecords(),
+		})
+	}
+	return out, nil
 }
 
 func applySequenceLookupRecords(

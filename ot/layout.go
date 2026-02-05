@@ -921,6 +921,102 @@ type sequenceRule struct {
 	lookupRecords array
 }
 
+// chainedSequenceRule is a type for GSUB-6 format-1 chained sequence rules.
+// It stores backtrack/input/lookahead sequences as glyph IDs, plus lookup records.
+type chainedSequenceRule struct {
+	backtrackSequence array
+	inputSequence     array
+	lookaheadSequence array
+	lookupRecords     array
+}
+
+// BacktrackGlyphs returns the backtrack glyph IDs in table order.
+func (r chainedSequenceRule) BacktrackGlyphs() []GlyphIndex {
+	out := make([]GlyphIndex, 0, r.backtrackSequence.Len())
+	for _, loc := range r.backtrackSequence.Range() {
+		out = append(out, GlyphIndex(loc.U16(0)))
+	}
+	return out
+}
+
+// InputGlyphs returns the input glyph IDs for positions 1..n-1.
+func (r chainedSequenceRule) InputGlyphs() []GlyphIndex {
+	out := make([]GlyphIndex, 0, r.inputSequence.Len())
+	for _, loc := range r.inputSequence.Range() {
+		out = append(out, GlyphIndex(loc.U16(0)))
+	}
+	return out
+}
+
+// LookaheadGlyphs returns the lookahead glyph IDs in table order.
+func (r chainedSequenceRule) LookaheadGlyphs() []GlyphIndex {
+	out := make([]GlyphIndex, 0, r.lookaheadSequence.Len())
+	for _, loc := range r.lookaheadSequence.Range() {
+		out = append(out, GlyphIndex(loc.U16(0)))
+	}
+	return out
+}
+
+// LookupRecords returns the sequence lookup records for this rule.
+func (r chainedSequenceRule) LookupRecords() []SequenceLookupRecord {
+	out := make([]SequenceLookupRecord, 0, r.lookupRecords.Len())
+	for _, loc := range r.lookupRecords.Range() {
+		out = append(out, SequenceLookupRecord{
+			SequenceIndex:   loc.U16(0),
+			LookupListIndex: loc.U16(2),
+		})
+	}
+	return out
+}
+
+// chainedClassSequenceRule is a type for GSUB-6 format-2 chained class sequence rules.
+// It stores backtrack/input/lookahead sequences as class IDs, plus lookup records.
+type chainedClassSequenceRule struct {
+	backtrackClasses array
+	inputClasses     array
+	lookaheadClasses array
+	lookupRecords    array
+}
+
+// BacktrackClasses returns the backtrack class IDs in table order.
+func (r chainedClassSequenceRule) BacktrackClasses() []uint16 {
+	out := make([]uint16, 0, r.backtrackClasses.Len())
+	for _, loc := range r.backtrackClasses.Range() {
+		out = append(out, loc.U16(0))
+	}
+	return out
+}
+
+// InputClasses returns the input class IDs for positions 1..n-1.
+func (r chainedClassSequenceRule) InputClasses() []uint16 {
+	out := make([]uint16, 0, r.inputClasses.Len())
+	for _, loc := range r.inputClasses.Range() {
+		out = append(out, loc.U16(0))
+	}
+	return out
+}
+
+// LookaheadClasses returns the lookahead class IDs in table order.
+func (r chainedClassSequenceRule) LookaheadClasses() []uint16 {
+	out := make([]uint16, 0, r.lookaheadClasses.Len())
+	for _, loc := range r.lookaheadClasses.Range() {
+		out = append(out, loc.U16(0))
+	}
+	return out
+}
+
+// LookupRecords returns the sequence lookup records for this rule.
+func (r chainedClassSequenceRule) LookupRecords() []SequenceLookupRecord {
+	out := make([]SequenceLookupRecord, 0, r.lookupRecords.Len())
+	for _, loc := range r.lookupRecords.Range() {
+		out = append(out, SequenceLookupRecord{
+			SequenceIndex:   loc.U16(0),
+			LookupListIndex: loc.U16(2),
+		})
+	}
+	return out
+}
+
 // SequenceLookupRecord identifies a nested lookup to apply at a position
 // within a matched input sequence.
 type SequenceLookupRecord struct {

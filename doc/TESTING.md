@@ -150,6 +150,10 @@ Current coverage:
 - GSUB-5 (Contextual Substitution) format 1 functional test using
   `gsub_context1_lookupflag_f1` (lookup index 4), verifying match, mismatch,
   and offset application through nested lookup application.
+- GSUB-6 (Chaining Contextual Substitution) has no functional tests yet; wait for
+  a suitable mini-font.
+- GSUB-8 (Reverse Chaining Contextual Single) has no functional tests yet; wait for
+  a suitable mini-font.
 
 Next expansions:
 
@@ -164,6 +168,7 @@ Current scope includes GSUB-1, GSUB-3, GSUB-4, and GSUB-5 (formats 1 and 2) for
 structural comparisons. ContextSubst format 1 includes coverage, rule sets,
 input glyph sequences, and sequence lookup records. ContextSubst format 2
 includes coverage, class definitions, subclass rule sets, and lookup records.
+No structural coverage yet for GSUB-6/7/8; those require suitable mini-fonts.
 
 ### Open Questions
 
@@ -181,12 +186,12 @@ includes coverage, class definitions, subclass rule sets, and lookup records.
   lookups present in the font).
 - Glyph name to glyph ID mapping for TTX-derived data.
 
-## Current State (Milestone 1)
+## Current State 
 
-- Added `internal/ttxtest` with a GSUB-only TTX parser (GSUB-3, format 1).
-- Added a structural comparison test in `ot/`:
-  - Loads `testdata/fonttools-tests/gsub3_1_simple_f1.otf`
-  - Parses expected structure from `gsub3_1_simple_f1.ttx.GSUB`
+- Added `internal/ttxtest` with a GSUB-only TTX parser
+- Added structural comparison tests in `ot/`:
+  - Loads `testdata/fonttools-tests/( font ).otf`
+  - Parses expected structure from `( font ).ttx.GSUB`
   - Compares lookup type, format, coverage, and alternate sets
 - Parsing options can now relax completeness/consistency checks, allowing GSUB-only
   mini-fonts to be parsed for structural tests.

@@ -116,14 +116,10 @@ Legend:
 
 - GSUB-6 Chaining Contextual Substitution
   - Nature: Like GSUB-5 but with backtrack and lookahead sequences.
-  - Status: PARTIAL (skeletons exist; TODO/panic in 6/1, 6/2, 6/3).
+  - Status: ✅DONE (formats 1–3 implemented in `gsubLookupType6Fmt1/2/3`; needs tests).
   - Plan:
-    1) Implement format 1 (glyph-based): match backtrack, input, lookahead sequences, then apply SequenceLookupRecords.
-    2) Implement format 2 (class-based): map glyphs via ClassDef and match backtrack/input/lookahead class sequences.
-    3) Implement format 3 (coverage-based): check coverage arrays for backtrack, input, lookahead positions.
-    4) Reuse helpers from GSUB-5 with added backtrack/lookahead matching.
-       Only coverage-sequence helpers exist today; class/glyph helpers are pending.
-    5) Add tests for each format; ensure buffer boundaries are respected.
+    1) Add tests for each format when a suitable mini-font is available.
+    2) Ensure buffer boundaries are respected under lookup-flag skipping.
 
 - GSUB-7 Extension Substitution
   - Nature: Indirection wrapper that points to another GSUB subtable type using 32-bit offsets.
@@ -134,11 +130,10 @@ Legend:
 
 - GSUB-8 Reverse Chaining Contextual Single
   - Nature: Contextual substitution applied right-to-left; uses coverage for backtrack/input/lookahead and replaces input glyphs.
-  - Status: TODO (not handled in `applyLookup`).
+  - Status: ✅DONE (format 1 implemented in `gsubLookupType8Fmt1`; needs tests).
   - Plan:
-    1) Parse ReverseChainSingleSubst format (coverage arrays + substitute glyphs).
-    2) In `applyLookup`, process from end to start; match backtrack/lookahead coverage; substitute glyphs at input positions.
-    3) Add tests with Arabic-like contexts and verify right-to-left behavior.
+    1) Add tests with Arabic-like contexts and verify right-to-left behavior.
+    2) Ensure lookup-flag skipping behaves correctly under reverse matching.
 
 ### GPOS lookup types (1..9)
 

@@ -2,6 +2,7 @@ package otlayout
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/npillmayer/opentype/ot"
 )
@@ -127,4 +128,19 @@ func KeyTags(m ot.TagRecordMap) []ot.Tag {
 		keyTags = append(keyTags, tag)
 	}
 	return keyTags
+}
+
+// get GSUB and GPOS from a font safely
+func getLayoutTables(otf *ot.Font) ([]*ot.LayoutTable, error) {
+	var table ot.Table
+	var lytt = make([]*ot.LayoutTable, 2)
+	if table = otf.Table(ot.T("GSUB")); table == nil {
+		return nil, errFontFormat(fmt.Sprintf("font %s has no GSUB table", otf.F.Fontname))
+	}
+	lytt[0] = &table.Self().AsGSub().LayoutTable
+	if table = otf.Table(ot.T("GPOS")); table == nil {
+		return nil, errFontFormat(fmt.Sprintf("font %s has no GPOS table", otf.F.Fontname))
+	}
+	lytt[1] = &table.Self().AsGPos().LayoutTable
+	return lytt, nil
 }

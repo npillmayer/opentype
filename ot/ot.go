@@ -19,6 +19,7 @@ type Font struct {
 	CMap          *CMapTable    // CMAP table is mandatory
 	parseErrors   []FontError   // Errors accumulated during parsing
 	parseWarnings []FontWarning // Warnings accumulated during parsing
+	parseOptions  []ParseOption // Options to guide the parsing process
 	Layout        struct {      // OpenType core layout tables
 		GSub *GSubTable // OpenType layout GSUB
 		GPos *GPosTable // OpenType layout GPOS
@@ -28,6 +29,15 @@ type Font struct {
 		Requirements LayoutRequirements
 	}
 }
+
+// ParseOptions guides and influences the parsing of the font.
+type ParseOption int
+
+const (
+	IsTestfont        ParseOption = iota // relaxes a number of cross-checks that are normally enforced
+	relaxConsistency                     // relax conistency between tables (e.g, GSUB + GDEF)
+	relaxCompleteness                    // aceept missing tables
+)
 
 // FontHeader is a directory of the top-level tables in a font. If the font file
 // contains only one font, the table directory will begin at byte 0 of the file.

@@ -539,12 +539,12 @@ func parseArray16(b binarySegm, offset int, name, target string) (array, error) 
 	headerSize := offset + 2
 	requiredSize := headerSize + int(n)*2
 	if requiredSize > len(b) {
-		return array{}, fmt.Errorf("array16 %s: count %d requires %d bytes, have %d",
+		return array{}, fmt.Errorf("array16 %s: count %d requires %d bytes, only have %d",
 			name, n, requiredSize, len(b))
 	}
 
-	fmt.Printf("array16 %s: count %d requires %d bytes, have %d\n",
-		name, n, requiredSize, len(b))
+	// fmt.Printf("array16 %s: count %d requires %d bytes, have %d\n",
+	// 	name, n, requiredSize, len(b))
 
 	return array{
 		name:       name,
@@ -601,8 +601,12 @@ func (a array) Range() iter.Seq2[int, NavLocation] {
 // VarArray is a type for arrays of variable length records, which in turn may point to nested
 // arrays of (variable size) records.
 type VarArray interface {
-	Get(i int, deep bool) (NavLocation, error) // get record at index i; if deep: query nested arrays
-	Size() int                                 // get the number of entries
+	// Get returns the record at index i. If deep is true, Get follows all levels
+	// of indirection and assumes that each target level is an array of offsets
+	// (as in nested var-arrays). If deep is false, only the first indirection
+	// level is followed and the immediate target is returned.
+	Get(i int, deep bool) (NavLocation, error)
+	Size() int // get the number of entries
 }
 
 type varArray struct {
@@ -613,10 +617,21 @@ type varArray struct {
 }
 
 // ParseVarArray interprets a byte sequence as a `VarArray`.
+//
+// Layout convention:
+// The caller provides szOffset (where the count lives) and gap (bytes to skip
+// after szOffset before the pointer list starts). The gap includes the count
+// field itself. For the common layout of [count uint16][offsets...], use gap=2.
 func ParseVarArray(loc NavLocation, sizeOffset, arrayDataGap int, name string) VarArray {
 	return parseVarArray16(loc.Bytes(), sizeOffset, arrayDataGap, 1, name)
 }
 
+// parseVarArray16 parses a nested offset-array structure with 16-bit offsets.
+// The gap parameter includes the count field (uint16). For layout:
+//
+//	[count uint16][offsets...]
+//
+// set gap=2.
 func parseVarArray16(b binarySegm, szOffset, gap, indirections int, name string) varArray {
 	minSize := szOffset + gap + 2
 	if len(b) < minSize {
@@ -658,7 +673,8 @@ func (va varArray) Get(i int, deep bool) (b NavLocation, err error) {
 	base := va.base
 	for j := 0; j < indirect; j++ {
 		b = a.Get(i) // TODO will this create an infinite loop in case of error?
-		tracer().Debugf("varArray->Get(%d|%d), a = %v", i, a.length, binarySegm(a.loc.Bytes()[:20]).Glyphs())
+		aBytes := a.loc.Bytes()
+		tracer().Debugf("varArray->Get(%d|%d), a = %v", i, a.length, binarySegm(aBytes[:min(20, len(aBytes))]).Glyphs())
 		tracer().Debugf("b = %d, %d to go", b.U16(0), va.indirections-1-j)
 		if b.U16(0) == 0 {
 			tracer().Debugf("link to ptrs-data is NULL, empty array")
@@ -669,11 +685,21 @@ func (va varArray) Get(i int, deep bool) (b NavLocation, err error) {
 			b = link.Jump()
 			if j+1 < va.indirections {
 				a, err = parseArray16(b.Bytes(), 0, "var-array", "var-array-entry")
-				tracer().Debugf("new a has size %d, is %v", a.length, binarySegm(a.loc.Bytes()[:20]).Glyphs())
+				aBytes = a.loc.Bytes()
+				tracer().Debugf("new a has size %d, is %v", a.length, binarySegm(aBytes[:min(20, len(aBytes))]).Glyphs())
 			}
 		}
 	}
-	tracer().Debugf("varArray result = %v", asU16Slice(binarySegm(b.Bytes()[:min(20, 2*b.Size())])))
+	bBytes := b.Bytes()
+	n := min(20, len(bBytes))
+	if n%2 == 1 {
+		n--
+	}
+	if n > 0 {
+		tracer().Debugf("varArray result = %v", asU16Slice(binarySegm(bBytes[:n])))
+	} else {
+		tracer().Debugf("varArray result = %v", []uint16{})
+	}
 	return b, err
 }
 

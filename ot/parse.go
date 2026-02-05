@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 )
 
 // Code comment often will cite passage from the
@@ -100,7 +101,7 @@ func errFontFormat(message string) error {
 // Parse parses an OpenType font from a byte slice.
 // An ot.Font needs ongoing access to the fonts byte-data after the Parse function returns.
 // Its elements are assumed immutable while the ot.Font remains in use.
-func Parse(font []byte) (*Font, error) {
+func Parse(font []byte, options ...ParseOption) (*Font, error) {
 	// https://www.microsoft.com/typography/otspec/otff.htm: Offset Table is 12 bytes.
 	r := bytes.NewReader(font)
 	h := FontHeader{}
@@ -119,6 +120,7 @@ func Parse(font []byte) (*Font, error) {
 		return nil, errFontFormat(fmt.Sprintf("font type not supported: %x", h.FontType))
 	}
 	otf := &Font{Header: &h, tables: make(map[Tag]Table)}
+	configureWithOptions(otf, options)
 	src := binarySegm(font)
 	// "The Offset Table is followed immediately by the Table Record entries …
 	// sorted in ascending order by tag", 16 bytes each.
@@ -200,6 +202,16 @@ func Parse(font []byte) (*Font, error) {
 	return otf, nil
 }
 
+func configureWithOptions(otf *Font, options []ParseOption) {
+	for _, option := range options {
+		switch option {
+		case IsTestfont:
+			otf.parseOptions = append(otf.parseOptions, relaxCompleteness)
+			otf.parseOptions = append(otf.parseOptions, relaxConsistency)
+		}
+	}
+}
+
 // According to the OpenType spec, the following tables are
 // required for the font to function correctly.
 var RequiredTables = []string{
@@ -218,7 +230,9 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 		h := otf.tables[T(tag)]
 		if h == nil {
 			ec.addError(T(tag), "Missing", "missing required table", SeverityCritical, 0)
-			return errFontFormat("missing required table " + tag)
+			if !slices.Contains(otf.parseOptions, relaxCompleteness) {
+				return errFontFormat("missing required table " + tag)
+			}
 		}
 	}
 	otf.CMap = otf.tables[T("cmap")].Self().AsCMap()
@@ -244,12 +258,18 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 		h := otf.tables[T(tag)]
 		if h == nil {
 			ec.addError(T(tag), "Missing", "missing advanced layout table", SeverityCritical, 0)
-			return errFontFormat("missing advanced layout table " + tag)
+			if !slices.Contains(otf.parseOptions, relaxCompleteness) {
+				return errFontFormat("missing advanced layout table " + tag)
+			}
 		}
 	}
 	// store shortcuts to layout tables
-	otf.Layout.GSub = otf.tables[T("GSUB")].Self().AsGSub()
-	otf.Layout.GPos = otf.tables[T("GPOS")].Self().AsGPos()
+	if gsubTable := otf.tables[T("GSUB")]; gsubTable != nil {
+		otf.Layout.GSub = gsubTable.Self().AsGSub()
+	}
+	if gposTable := otf.tables[T("GPOS")]; gposTable != nil {
+		otf.Layout.GPos = gposTable.Self().AsGPos()
+	}
 	if gdefTable := otf.tables[T("GDEF")]; gdefTable != nil {
 		otf.Layout.GDef = gdefTable.Self().AsGDef()
 	}
@@ -277,7 +297,8 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 	// Enforce GDEF presence only when required by lookup flags.
 	// TODO: apply the same requirement checks for JSTF lookups when JSTF parsing is enabled.
 	req := otf.Layout.Requirements
-	if req.NeedGlyphClassDef || req.NeedMarkAttachClassDef || req.NeedMarkGlyphSets {
+	doCheck := !slices.Contains(otf.parseOptions, relaxConsistency)
+	if doCheck && (req.NeedGlyphClassDef || req.NeedMarkAttachClassDef || req.NeedMarkGlyphSets) {
 		if otf.Layout.GDef == nil {
 			ec.addError(T("GDEF"), "Missing", "missing required GDEF table", SeverityCritical, 0)
 			return errFontFormat("missing required GDEF table")
@@ -296,15 +317,24 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 		}
 	}
 	// GSUB/GPOS must have ScriptList, FeatureList, and LookupList
-	gsub := otf.Layout.GSub
-	if gsub.ScriptList.IsVoid() || gsub.FeatureList.Len() == 0 {
-		ec.addError(T("GSUB"), "Structure", "GSUB table missing required lists", SeverityCritical, 0)
-		return errFontFormat("GSUB table missing required lists")
+	if gsub := otf.Layout.GSub; gsub != nil {
+		if gsub.ScriptList.IsVoid() || gsub.FeatureList.Len() == 0 {
+			ec.addError(T("GSUB"), "Structure", "GSUB table missing required lists", SeverityCritical, 0)
+			return errFontFormat("GSUB table missing required lists")
+		}
+	}
+	if gpos := otf.Layout.GPos; gpos != nil {
+		if gpos.ScriptList.IsVoid() || gpos.FeatureList.Len() == 0 {
+			ec.addError(T("GPOS"), "Structure", "GPOS table missing required lists", SeverityCritical, 0)
+			return errFontFormat("GPOS table missing required lists")
+		}
 	}
 
 	// Perform cross-table consistency validation
 	if err := validateCrossTableConsistency(otf, ec); err != nil {
-		return err
+		if !slices.Contains(otf.parseOptions, relaxConsistency) {
+			return err
+		}
 	}
 
 	return nil
@@ -859,10 +889,12 @@ func parseGDefHeader(gdef *GDefTable, b binarySegm, err error, tag Tag, offset u
 	}
 
 	h := GDefHeader{}
-	r := bytes.NewReader(b)
-	if err = binary.Read(r, binary.BigEndian, &h.gDefHeaderV1_0); err != nil {
-		return err
-	}
+	h.Major, _ = b.u16(0)
+	h.Minor, _ = b.u16(2)
+	h.GlyphClassDefOffset, _ = b.u16(4)
+	h.AttachListOffset, _ = b.u16(6)
+	h.LigCaretListOffset, _ = b.u16(8)
+	h.MarkAttachClassDefOffset, _ = b.u16(10)
 	headerlen := 12
 
 	// Validate version
@@ -926,6 +958,9 @@ func parseGlyphClassDefinitions(gdef *GDefTable, b binarySegm, err error) error 
 		return err
 	}
 	offset := gdef.Header().offsetFor(GDefGlyphClassDefSection)
+	if offset == 0 {
+		return nil
+	}
 	if offset >= len(b) {
 		return io.ErrUnexpectedEOF
 	}
@@ -953,6 +988,9 @@ func parseAttachmentPointList(gdef *GDefTable, b binarySegm, err error, tag Tag,
 		return err
 	}
 	offset := gdef.Header().offsetFor(GDefAttachListSection)
+	if offset == 0 {
+		return nil
+	}
 	if offset >= len(b) {
 		return io.ErrUnexpectedEOF
 	}
@@ -1004,6 +1042,9 @@ func parseMarkAttachmentClassDef(gdef *GDefTable, b binarySegm, err error) error
 		return err
 	}
 	offset := gdef.Header().offsetFor(GDefMarkAttachClassSection)
+	if offset == 0 {
+		return nil
+	}
 	if offset >= len(b) {
 		return io.ErrUnexpectedEOF
 	}
@@ -1023,6 +1064,9 @@ func parseMarkGlyphSets(gdef *GDefTable, b binarySegm, err error, tag Tag, table
 		return err
 	}
 	offset := gdef.Header().offsetFor(GDefMarkGlyphSetsDefSection)
+	if offset == 0 {
+		return nil
+	}
 	if offset >= len(b) {
 		return io.ErrUnexpectedEOF
 	}
@@ -1280,31 +1324,36 @@ func parseClassDefinitions(b binarySegm) (ClassDefinitions, error) {
 	}
 
 	var n, g uint16
-	if cdef.format == 1 {
+	switch cdef.format {
+	case 1:
 		tracer().Debugf("parsing a ClassDef of format 1")
 		if len(b) < 6 {
 			return cdef, errFontFormat("ClassDef format 1 header incomplete")
 		}
-		n, _ = b.u16(4) // number of glyph IDs in table
-		g, _ = b.u16(2) // start glyph ID
+		n, _ = b.u16(4)      // number of glyph IDs in table
+		g, _ = b.u16(2)      // start glyph ID
+		const preludeLen = 6 // prelude length in ClassDef format 1
+		const entrySz = 2    // size of each entry in bytes
 
 		// Validate array bounds: each entry is 2 bytes (uint16 class value)
-		if len(b) < 6+int(n)*2 {
+		if len(b) < preludeLen+int(n)*entrySz {
 			return cdef, fmt.Errorf("ClassDef format 1 array extends beyond bounds: need %d bytes, have %d",
-				6+int(n)*2, len(b))
+				preludeLen+int(n)*entrySz, len(b))
 		}
-	} else if cdef.format == 2 {
+	case 2:
 		tracer().Debugf("parsing a ClassDef of format 2")
-		if len(b) < 4 {
+		const preludeLen = 4 // prelude length in ClassDef format 1
+		if len(b) < preludeLen {
 			return cdef, errFontFormat("ClassDef format 2 header incomplete")
 		}
-		n, _ = b.u16(2) // number of glyph ID ranges in table
-		// Validate array bounds: each range record is 6 bytes (start, end, class)
-		if len(b) < 4+int(n)*6 {
+		n, _ = b.u16(2)     // number of glyph ID ranges in table
+		const recordLen = 6 // size of each range record in bytes (start, end, class)
+		// Validate array bounds
+		if len(b) < preludeLen+int(n)*recordLen {
 			return cdef, fmt.Errorf("ClassDef format 2 array extends beyond bounds: need %d bytes, have %d",
-				4+int(n)*6, len(b))
+				preludeLen+int(n)*recordLen, len(b))
 		}
-	} else {
+	default:
 		return cdef, errFontFormat(fmt.Sprintf("unknown ClassDef format %d", cdef.format))
 	}
 	records := cdef.makeArray(b, int(n), cdef.format)

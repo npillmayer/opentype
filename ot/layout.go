@@ -19,10 +19,10 @@ import "iter"
 type LayoutTable struct {
 	ScriptList Navigator
 	//FeatureList NavList
-	FeatureList TagRecordMap
-	LookupList  LookupList
+	FeatureList  TagRecordMap
+	LookupList   LookupList
 	Requirements LayoutRequirements
-	header      *LayoutHeader
+	header       *LayoutHeader
 }
 
 // LayoutRequirements collects GDEF subtable requirements implied by lookup flags.
@@ -858,7 +858,6 @@ func gsubLookupType5Fmt1(l *Lookup, lksub *LookupSubtable, g GlyphIndex) NavLoca
 
 // lookupAndReturn is a small helper which looks up an index for a glyph (previously
 // returned from a coverage table), checks for errors, and returns the resulting bytes.
-// TODO check that this is inlined by the compiler.
 func lookupAndReturn(index VarArray, ginx int, deep bool) NavLocation {
 	outglyph, err := index.Get(ginx, deep)
 	if err != nil {

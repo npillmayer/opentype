@@ -1,0 +1,83 @@
+== Coverage ==
+GSUB 1: 137 fonts
+GSUB 2: 71 fonts
+GSUB 3: 6 fonts
+GSUB 4: 141 fonts
+GSUB 5: 41 fonts
+GSUB 6: 39 fonts
+GSUB 7: 2 fonts
+GSUB 8: 2 fonts
+GPOS 1: 142 fonts
+GPOS 2: 143 fonts
+GPOS 3: 4 fonts
+GPOS 4: 6 fonts
+GPOS 5: 2 fonts
+GPOS 6: 1 fonts
+GPOS 7: 32 fonts
+GPOS 8: 35 fonts
+GPOS 9: 4 fonts
+
+== Examples (up to 5 each) ==
+GSUB 1:
+   $HOME/prg/python/fonttools/Tests/subset/data/Lobster.subset.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+GSUB 2:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+GSUB 3:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gsub3_1_multiple_f1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gsub3_1_simple_f1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gsub3_1_lookupflag_f1.otf
+GSUB 4:
+   $HOME/prg/python/fonttools/Tests/subset/data/Lobster.subset.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gsub_chaining2_next_glyph_f1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gsub_context1_lookupflag_f1.otf
+GSUB 5:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gsub_context1_next_glyph_f1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gsub_context1_lookupflag_f2.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/classdef2_font4.otf
+GSUB 6:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+GSUB 7:
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gsub7_font2.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gsub7_font1.otf
+GSUB 8:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+GPOS 1:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+GPOS 2:
+   $HOME/prg/python/fonttools/Tests/subset/data/Lobster.subset.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/data/I.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos_chaining3_boundary_f2.otf
+GPOS 3:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos3_font3.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos3_font2.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos3_font1.otf
+GPOS 4:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos4_simple_1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos4_multiple_anchors_1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos4_lookupflag_f1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos4_lookupflag_f2.otf
+GPOS 5:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos5_font1.otf
+GPOS 6:
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos6_font1.otf
+GPOS 7:
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos_context3_simple_f1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos_context2_multiple_subrules_f1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos_context2_multiple_subrules_f2.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos_context2_classes_f1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos_context2_classes_f2.otf
+GPOS 8:
+   $HOME/prg/python/fonttools/Tests/ttLib/data/TestVGID-Regular.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos_chaining3_boundary_f2.otf
+GPOS 9:
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/aots/gpos9_font1.otf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/NotoSans-VF-cubic.subset.ttf
+   $HOME/prg/python/fonttools/Tests/ttLib/tables/data/Amstelvar-avar2.subset.ttf

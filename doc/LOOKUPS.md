@@ -139,67 +139,51 @@ Legend:
 
 - GPOS-1 Single Adjustment
   - Nature: Adjust positioning for single glyph via ValueRecord.
-  - Status: TODO (no GPOS application logic in `otlayout/feature.go`).
+  - Status: ✅DONE (apply logic in `otlayout/gpos.go`; ValueRecord parsing in `ot/parse_gpos.go`).
   - Plan:
-    1) Implement parsing of ValueRecords and anchor/device tables as needed.
-    2) Apply ValueRecord to glyph advances/placements in buffer model.
-    3) Add tests for simple X/Y placement and advance adjustments.
+    1) Add functional tests for simple X/Y placement and advance adjustments.
 
 - GPOS-2 Pair Adjustment
   - Nature: Adjust positions for glyph pairs (kerning).
-  - Status: TODO.
+  - Status: ✅DONE (formats 1/2 apply in `otlayout/gpos.go`; parsing in `ot/parse_gpos.go`).
   - Plan:
-    1) Implement format 1 (pair sets) and format 2 (class-based pairs).
-    2) Add pair matching logic based on coverage/class defs.
-    3) Apply ValueRecords to both glyphs; add tests for pair kern adjustments.
+    1) Add functional tests for pair kern adjustments (format 1/2).
 
 - GPOS-3 Cursive Attachment
   - Nature: Attach cursive glyphs by aligning entry/exit anchors.
-  - Status: TODO.
+  - Status: ✅DONE (format 1 apply in `otlayout/gpos.go`; parsing in `ot/parse_gpos.go`).
   - Plan:
-    1) Parse entry/exit anchors for each glyph in coverage.
-    2) Adjust positions for glyph sequences using anchor alignment.
-    3) Add tests for cursive scripts.
+    1) Add tests for cursive scripts when a mini-font is available.
 
 - GPOS-4 MarkToBase
   - Nature: Attach marks to base glyphs using anchor classes.
-  - Status: TODO.
+  - Status: ✅DONE (format 1 apply in `otlayout/gpos.go`; parsing in `ot/parse_gpos.go`).
   - Plan:
-    1) Parse MarkArray and BaseArray, class counts and anchors.
-    2) Match mark glyph to base glyph; compute offsets via anchors.
-    3) Add tests for combining marks.
+    1) Add functional tests for combining marks.
 
 - GPOS-5 MarkToLigature
   - Nature: Attach marks to a specific component of ligature glyphs.
-  - Status: TODO.
+  - Status: ✅DONE (format 1 apply in `otlayout/gpos.go`; parsing in `ot/parse_gpos.go`).
   - Plan:
-    1) Parse LigatureArray and component anchors.
-    2) Select component based on mark attachment type/context.
-    3) Add tests using fonts with ligature marks.
+    1) Add functional tests using fonts with ligature marks.
 
 - GPOS-6 MarkToMark
   - Nature: Attach one mark glyph to another mark glyph.
-  - Status: TODO.
+  - Status: ✅DONE (format 1 apply in `otlayout/gpos.go`; parsing in `ot/parse_gpos.go`).
   - Plan:
-    1) Parse MarkArray and Mark2Array; apply anchor-based alignment.
-    2) Ensure mark class matching and lookup flags are respected.
-    3) Add tests with stacked marks.
+    1) Add tests with stacked marks.
 
 - GPOS-7 Contextual Positioning
   - Nature: Position adjustments based on context (glyph sequences).
-  - Status: TODO.
+  - Status: ✅DONE (formats 1/2/3 apply in `otlayout/gpos.go`; parsing in `ot/parse_gpos.go`).
   - Plan:
-    1) Implement formats analogous to GSUB-5 (glyph/class/coverage based).
-    2) Apply SequenceLookupRecords with positioning lookups.
-    3) Add tests for contextual positioning rules.
+    1) Add tests for contextual positioning rules.
 
 - GPOS-8 Chained Contextual Positioning
   - Nature: Contextual positioning with backtrack/lookahead.
-  - Status: TODO.
+  - Status: ✅DONE (formats 1/2/3 apply in `otlayout/gpos.go`; parsing in `ot/parse_gpos.go`).
   - Plan:
-    1) Implement formats analogous to GSUB-6 (glyph/class/coverage based).
-    2) Apply SequenceLookupRecords with backtrack/lookahead matching.
-    3) Add tests for chained contexts.
+    1) Add tests for chained contexts.
 
 - GPOS-9 Extension Positioning
   - Nature: Indirection wrapper for other GPOS lookup types (32-bit offsets).

@@ -68,6 +68,14 @@ validity for present tables.
   `gsub_context1_next_glyph_f1` (lookup index 4).
 - Added a focused structural test for GSUB-5 format 2 (ContextSubst) using
   `classdef2_font4` (lookup index 3).
+- Added structural tests for GPOS:
+  - GPOS-1 (SinglePos format 1), GPOS-2 (PairPos format 1), and GPOS-8
+    (ChainContextPos format 3) using `gpos_chaining3_boundary_f2` (lookup indices
+    0, 1, 4).
+  - GPOS-4 (MarkToBase format 1) using `gpos4_simple_1` (lookup index 0).
+  - GPOS-5 (MarkToLigature format 1) using `gpos5_font1` (lookup index 0).
+  - `internal/ttxtest` now parses MarkToBase and MarkToLigature structures
+    (coverage, mark arrays, base/ligature anchors) for structural comparisons.
 
 ### Functional Tests (package `otlayout`)
 
@@ -169,6 +177,13 @@ structural comparisons. ContextSubst format 1 includes coverage, rule sets,
 input glyph sequences, and sequence lookup records. ContextSubst format 2
 includes coverage, class definitions, subclass rule sets, and lookup records.
 No structural coverage yet for GSUB-6/7/8; those require suitable mini-fonts.
+
+GPOS structural parsing currently covers:
+- GPOS-1 SinglePos format 1
+- GPOS-2 PairPos format 1
+- GPOS-4 MarkToBase format 1
+- GPOS-5 MarkToLigature format 1
+- GPOS-8 ChainContextPos format 3
 
 ### Open Questions
 

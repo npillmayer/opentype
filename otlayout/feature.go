@@ -387,6 +387,9 @@ func prevMatchable(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool) {
 	return 0, false
 }
 
+type singleMatchFn func(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool)
+type matchSeqFn func(ctx *applyCtx, buf GlyphBuffer, pos int) ([]int, bool)
+
 func matchCoverageForward(ctx *applyCtx, buf GlyphBuffer, pos int, cov ot.Coverage) (int, int, bool) {
 	for i := pos; i < buf.Len(); {
 		mpos, ok := nextMatchable(ctx, buf, i)
@@ -401,34 +404,79 @@ func matchCoverageForward(ctx *applyCtx, buf GlyphBuffer, pos int, cov ot.Covera
 	return 0, 0, false
 }
 
+type matchingCoveraveCtx struct {
+	covs    []ot.Coverage
+	pos     int
+	dir     int
+	offset  int
+	matcher singleMatchFn
+}
+
 func matchCoverageSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, covs []ot.Coverage) ([]int, bool) {
-	if len(covs) == 0 {
-		return nil, false
+	mctx := matchingCoveraveCtx{
+		covs:    covs,
+		pos:     pos,
+		dir:     1,
+		offset:  0,
+		matcher: nextMatchable,
 	}
-	out := make([]int, len(covs))
-	cur := pos
-	for i, cov := range covs {
-		mpos, ok := nextMatchable(ctx, buf, cur)
-		if !ok {
-			return nil, false
-		}
-		if _, ok := cov.Match(buf.At(mpos)); !ok {
-			return nil, false
-		}
-		out[i] = mpos
-		cur = mpos + 1
-	}
-	return out, true
+	return matchCoverageSequence(ctx, buf, mctx)
+	// return matchCoverageSequence(ctx, buf, mctx)
+	// if len(covs) == 0 {
+	// 	return nil, false
+	// }
+	// out := make([]int, len(covs))
+	// cur := pos
+	// for i, cov := range covs {
+	// 	mpos, ok := nextMatchable(ctx, buf, cur)
+	// 	if !ok {
+	// 		return nil, false
+	// 	}
+	// 	if _, ok := cov.Match(buf.At(mpos)); !ok {
+	// 		return nil, false
+	// 	}
+	// 	out[i] = mpos
+	// 	cur = mpos + 1
+	// }
+	// return out, true
 }
 
 func matchCoverageSequenceBackward(ctx *applyCtx, buf GlyphBuffer, pos int, covs []ot.Coverage) ([]int, bool) {
-	if len(covs) == 0 {
+	mctx := matchingCoveraveCtx{
+		covs:    covs,
+		pos:     pos,
+		dir:     -1,
+		offset:  -1,
+		matcher: prevMatchable,
+	}
+	return matchCoverageSequence(ctx, buf, mctx)
+	// if len(covs) == 0 {
+	// 	return nil, false
+	// }
+	// out := make([]int, len(covs))
+	// cur := pos - 1
+	// for i, cov := range covs {
+	// 	mpos, ok := prevMatchable(ctx, buf, cur)
+	// 	if !ok {
+	// 		return nil, false
+	// 	}
+	// 	if _, ok := cov.Match(buf.At(mpos)); !ok {
+	// 		return nil, false
+	// 	}
+	// 	out[i] = mpos
+	// 	cur = mpos - 1
+	// }
+	// return out, true
+}
+
+func matchCoverageSequence(ctx *applyCtx, buf GlyphBuffer, matchCtx matchingCoveraveCtx) ([]int, bool) {
+	if len(matchCtx.covs) == 0 {
 		return nil, false
 	}
-	out := make([]int, len(covs))
-	cur := pos - 1
-	for i, cov := range covs {
-		mpos, ok := prevMatchable(ctx, buf, cur)
+	out := make([]int, len(matchCtx.covs))
+	cur := matchCtx.pos + matchCtx.offset
+	for i, cov := range matchCtx.covs {
+		mpos, ok := matchCtx.matcher(ctx, buf, cur)
 		if !ok {
 			return nil, false
 		}
@@ -436,7 +484,7 @@ func matchCoverageSequenceBackward(ctx *applyCtx, buf GlyphBuffer, pos int, covs
 			return nil, false
 		}
 		out[i] = mpos
-		cur = mpos - 1
+		cur = mpos + matchCtx.dir
 	}
 	return out, true
 }
@@ -484,14 +532,78 @@ type lookupNavigator interface {
 	Navigate(int) ot.Lookup
 }
 
+type matchingGlyphCtx struct {
+	glyphs  []ot.GlyphIndex
+	pos     int
+	dir     int
+	offset  int
+	matcher singleMatchFn
+}
+
 func matchGlyphSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, glyphs []ot.GlyphIndex) ([]int, bool) {
-	if len(glyphs) == 0 {
+	mctx := matchingGlyphCtx{
+		glyphs:  glyphs,
+		pos:     pos,
+		dir:     1,
+		offset:  0,
+		matcher: nextMatchable,
+	}
+	return matchGlyphSequence(ctx, buf, mctx)
+	// if len(glyphs) == 0 {
+	// 	return nil, false
+	// }
+	// out := make([]int, len(glyphs))
+	// cur := pos
+	// for i, gid := range glyphs {
+	// 	mpos, ok := nextMatchable(ctx, buf, cur)
+	// 	if !ok {
+	// 		return nil, false
+	// 	}
+	// 	if buf.At(mpos) != gid {
+	// 		return nil, false
+	// 	}
+	// 	out[i] = mpos
+	// 	cur = mpos + 1
+	// }
+	// return out, true
+}
+
+func matchGlyphSequenceBackward(ctx *applyCtx, buf GlyphBuffer, pos int, glyphs []ot.GlyphIndex) ([]int, bool) {
+	mctx := matchingGlyphCtx{
+		glyphs:  glyphs,
+		pos:     pos,
+		dir:     -1,
+		offset:  -1,
+		matcher: prevMatchable,
+	}
+	return matchGlyphSequence(ctx, buf, mctx)
+	// if len(glyphs) == 0 {
+	// 	return nil, false
+	// }
+	// out := make([]int, len(glyphs))
+	// cur := pos - 1
+	// for i, gid := range glyphs {
+	// 	mpos, ok := prevMatchable(ctx, buf, cur)
+	// 	if !ok {
+	// 		return nil, false
+	// 	}
+	// 	if buf.At(mpos) != gid {
+	// 		return nil, false
+	// 	}
+	// 	out[i] = mpos
+	// 	cur = mpos - 1
+	// }
+	// return out, true
+}
+
+func matchGlyphSequence(ctx *applyCtx, buf GlyphBuffer, matchCtx matchingGlyphCtx) ([]int, bool) {
+	if len(matchCtx.glyphs) == 0 {
 		return nil, false
 	}
-	out := make([]int, len(glyphs))
-	cur := pos
-	for i, gid := range glyphs {
-		mpos, ok := nextMatchable(ctx, buf, cur)
+	out := make([]int, len(matchCtx.glyphs))
+	cur := matchCtx.pos + matchCtx.offset
+	for i, gid := range matchCtx.glyphs {
+		mpos, ok := matchCtx.matcher(ctx, buf, cur)
 		if !ok {
 			return nil, false
 		}
@@ -499,29 +611,18 @@ func matchGlyphSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, glyphs [
 			return nil, false
 		}
 		out[i] = mpos
-		cur = mpos + 1
+		cur = mpos + matchCtx.dir
 	}
 	return out, true
 }
 
-func matchGlyphSequenceBackward(ctx *applyCtx, buf GlyphBuffer, pos int, glyphs []ot.GlyphIndex) ([]int, bool) {
-	if len(glyphs) == 0 {
-		return nil, false
-	}
-	out := make([]int, len(glyphs))
-	cur := pos - 1
-	for i, gid := range glyphs {
-		mpos, ok := prevMatchable(ctx, buf, cur)
-		if !ok {
-			return nil, false
-		}
-		if buf.At(mpos) != gid {
-			return nil, false
-		}
-		out[i] = mpos
-		cur = mpos - 1
-	}
-	return out, true
+type matchingClassCtx struct {
+	classDef ot.ClassDefinitions
+	classes  []uint16
+	pos      int
+	dir      int
+	offset   int
+	matcher  singleMatchFn
 }
 
 func matchClassSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, classDef ot.ClassDefinitions, classes []uint16) ([]int, bool) {
@@ -530,6 +631,7 @@ func matchClassSequenceForward(ctx *applyCtx, buf GlyphBuffer, pos int, classDef
 		classes:  classes,
 		pos:      pos,
 		dir:      1,
+		offset:   0,
 		matcher:  nextMatchable,
 	}
 	return matchClassSequence(ctx, buf, mctx)
@@ -555,6 +657,7 @@ func matchClassSequenceBackward(ctx *applyCtx, buf GlyphBuffer, pos int, classDe
 		classes:  classes,
 		pos:      pos,
 		dir:      -1,
+		offset:   -1,
 		matcher:  prevMatchable,
 	}
 	return matchClassSequence(ctx, buf, mctx)
@@ -575,17 +678,6 @@ func matchClassSequenceBackward(ctx *applyCtx, buf GlyphBuffer, pos int, classDe
 	// 	cur = mpos - 1
 	// }
 	// return out, true
-}
-
-type singleMatchFn func(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool)
-type matchSeqFn func(ctx *applyCtx, buf GlyphBuffer, pos int) ([]int, bool)
-
-type matchingClassCtx struct {
-	classDef ot.ClassDefinitions
-	classes  []uint16
-	pos      int
-	dir      int
-	matcher  singleMatchFn
 }
 
 func matchClassSequence(ctx *applyCtx, buf GlyphBuffer, matchCtx matchingClassCtx) ([]int, bool) {

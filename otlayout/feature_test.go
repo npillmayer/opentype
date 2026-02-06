@@ -32,11 +32,11 @@ func TestDispatchGSubLookupSingleFmt1Routing(t *testing.T) {
 	}
 	ctx := applyCtx{
 		lookup: &ot.Lookup{},
-		buf:    GlyphBuffer{10},
+		buf:    &BufferState{Glyphs: GlyphBuffer{10}},
 		pos:    0,
 	}
 
-	pos, ok, buf, edit := dispatchGSubLookup(&ctx, &sub)
+	pos, ok, buf, _, edit := dispatchGSubLookup(&ctx, &sub)
 	if !ok {
 		t.Fatalf("expected lookup to apply")
 	}

@@ -120,6 +120,93 @@ func parseAnchor(b binarySegm) Anchor {
 	return anchor
 }
 
+// parseMarkArray parses a MarkArray table from binary data.
+func parseMarkArray(b binarySegm) MarkArray {
+	if len(b) < 2 {
+		return MarkArray{}
+	}
+	markCount := b.U16(0)
+	records := make([]MarkRecord, 0, markCount)
+	offset := 2
+	for i := 0; i < int(markCount); i++ {
+		if offset+4 > len(b) {
+			break
+		}
+		rec := MarkRecord{
+			Class:      b.U16(offset),
+			MarkAnchor: b.U16(offset + 2),
+		}
+		records = append(records, rec)
+		offset += 4
+	}
+	return MarkArray{MarkCount: markCount, MarkRecords: records}
+}
+
+// parseBaseArray parses a BaseArray table from binary data.
+func parseBaseArray(b binarySegm, classCount int) []BaseRecord {
+	if len(b) < 2 || classCount <= 0 {
+		return nil
+	}
+	baseCount := int(b.U16(0))
+	offset := 2
+	recs := make([]BaseRecord, 0, baseCount)
+	for i := 0; i < baseCount; i++ {
+		if offset+classCount*2 > len(b) {
+			break
+		}
+		anchors := make([]uint16, classCount)
+		for c := 0; c < classCount; c++ {
+			anchors[c] = b.U16(offset + c*2)
+		}
+		recs = append(recs, BaseRecord{BaseAnchors: anchors})
+		offset += classCount * 2
+	}
+	return recs
+}
+
+// parseLigatureArray parses a LigatureArray table from binary data.
+func parseLigatureArray(b binarySegm, classCount int) []LigatureAttach {
+	if len(b) < 2 || classCount <= 0 {
+		return nil
+	}
+	ligCount := int(b.U16(0))
+	offset := 2
+	offs := make([]uint16, 0, ligCount)
+	for i := 0; i < ligCount; i++ {
+		if offset+2 > len(b) {
+			break
+		}
+		offs = append(offs, b.U16(offset))
+		offset += 2
+	}
+	out := make([]LigatureAttach, 0, len(offs))
+	for _, o := range offs {
+		if o == 0 || int(o)+2 > len(b) {
+			continue
+		}
+		lig := b[o:]
+		compCount := int(binarySegm(lig).U16(0))
+		compAnchors := make([][]uint16, 0, compCount)
+		compOff := 2
+		for c := 0; c < compCount; c++ {
+			if compOff+classCount*2 > len(lig) {
+				break
+			}
+			anchors := make([]uint16, classCount)
+			for k := 0; k < classCount; k++ {
+				anchors[k] = binarySegm(lig).U16(compOff + k*2)
+			}
+			compAnchors = append(compAnchors, anchors)
+			compOff += classCount * 2
+		}
+		out = append(out, LigatureAttach{
+			ComponentCount:   uint16(compCount),
+			ComponentAnchors: compAnchors,
+		})
+	}
+	return out
+}
+
 func parseGPosLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) LookupSubtable {
 	return parseGPosLookupSubtableWithDepth(b, lookupType, 0)
 }
@@ -182,7 +269,10 @@ func parseGPosLookupSubtableType1(b binarySegm, sub LookupSubtable) LookupSubtab
 	if sub.Format == 1 {
 		// Format 1: Single positioning value applied to all covered glyphs
 		vr, _ := parseValueRecord(b, 6, format)
-		sub.Support = vr
+		sub.Support = struct {
+			Format ValueFormat
+			Record ValueRecord
+		}{format, vr}
 	} else if sub.Format == 2 {
 		// Format 2: Array of positioning values, one per covered glyph
 		if len(b) < 8 {
@@ -198,7 +288,10 @@ func parseGPosLookupSubtableType1(b binarySegm, sub LookupSubtable) LookupSubtab
 			values[i] = vr
 			offset += size
 		}
-		sub.Support = values
+		sub.Support = struct {
+			Format  ValueFormat
+			Records []ValueRecord
+		}{format, values}
 	}
 
 	return sub
@@ -229,6 +322,37 @@ func parseGPosLookupSubtableType2(b binarySegm, sub LookupSubtable) LookupSubtab
 		class1Count := b.U16(12)
 		class2Count := b.U16(14)
 
+		// Parse class-based value records
+		recSize1 := valueRecordSize(valueFormat1)
+		recSize2 := valueRecordSize(valueFormat2)
+		offset := 16
+		need := offset + int(class1Count)*int(class2Count)*(recSize1+recSize2)
+		records := make([][]struct {
+			Value1 ValueRecord
+			Value2 ValueRecord
+		}, class1Count)
+		if need <= len(b) {
+			for i := 0; i < int(class1Count); i++ {
+				row := make([]struct {
+					Value1 ValueRecord
+					Value2 ValueRecord
+				}, class2Count)
+				for j := 0; j < int(class2Count); j++ {
+					v1, s1 := parseValueRecord(b, offset, valueFormat1)
+					offset += s1
+					v2, s2 := parseValueRecord(b, offset, valueFormat2)
+					offset += s2
+					row[j] = struct {
+						Value1 ValueRecord
+						Value2 ValueRecord
+					}{v1, v2}
+				}
+				records[i] = row
+			}
+		} else {
+			tracer().Errorf("GPOS 2/2 class records extend beyond buffer")
+		}
+
 		// Store format information and class definitions
 		sub.Support = struct {
 			ValueFormat1 ValueFormat
@@ -237,7 +361,11 @@ func parseGPosLookupSubtableType2(b binarySegm, sub LookupSubtable) LookupSubtab
 			ClassDef2    ClassDefinitions
 			Class1Count  uint16
 			Class2Count  uint16
-		}{valueFormat1, valueFormat2, classDef1, classDef2, class1Count, class2Count}
+			ClassRecords [][]struct {
+				Value1 ValueRecord
+				Value2 ValueRecord
+			}
+		}{valueFormat1, valueFormat2, classDef1, classDef2, class1Count, class2Count, records}
 	}
 
 	return sub
@@ -252,7 +380,9 @@ func parseGPosLookupSubtableType3(b binarySegm, sub LookupSubtable) LookupSubtab
 
 	// Parse array of entry/exit anchor pairs
 	sub.Index = parseVarArray16(b, 6, 4, 1, "LookupSubtableGPos3")
-	sub.Support = entryExitCount
+	sub.Support = struct {
+		EntryExitCount uint16
+	}{entryExitCount}
 
 	return sub
 }
@@ -274,15 +404,27 @@ func parseGPosLookupSubtableType4(b binarySegm, sub LookupSubtable) LookupSubtab
 		sub.Coverage = parseCoverage(markCovLink.Jump().Bytes())
 	}
 
-	// Parse base array as VarArray
-	sub.Index = parseVarArray16(b, int(baseArrayOffset), 2, int(markClassCount)*2, "LookupSubtableGPos4")
+	var baseCoverage Coverage
+	if baseCoverageOffset > 0 {
+		baseCovLink, _ := parseLink16(b, 4, b, "BaseCoverage")
+		baseCoverage = parseCoverage(baseCovLink.Jump().Bytes())
+	}
+	var markArray MarkArray
+	if markArrayOffset > 0 && int(markArrayOffset) < len(b) {
+		markArray = parseMarkArray(b[markArrayOffset:])
+	}
+	var baseArray []BaseRecord
+	if baseArrayOffset > 0 && int(baseArrayOffset) < len(b) {
+		baseArray = parseBaseArray(b[baseArrayOffset:], int(markClassCount))
+	}
 
 	// Store additional data
 	sub.Support = struct {
-		BaseCoverageOffset uint16
-		MarkClassCount     uint16
-		MarkArrayOffset    uint16
-	}{baseCoverageOffset, markClassCount, markArrayOffset}
+		BaseCoverage   Coverage
+		MarkClassCount uint16
+		MarkArray      MarkArray
+		BaseArray      []BaseRecord
+	}{baseCoverage, markClassCount, markArray, baseArray}
 
 	return sub
 }
@@ -304,15 +446,27 @@ func parseGPosLookupSubtableType5(b binarySegm, sub LookupSubtable) LookupSubtab
 		sub.Coverage = parseCoverage(markCovLink.Jump().Bytes())
 	}
 
-	// Parse ligature array as VarArray
-	sub.Index = parseVarArray16(b, int(ligatureArrayOffset), 2, 2, "LookupSubtableGPos5")
+	var ligatureCoverage Coverage
+	if ligatureCoverageOffset > 0 {
+		ligCovLink, _ := parseLink16(b, 4, b, "LigatureCoverage")
+		ligatureCoverage = parseCoverage(ligCovLink.Jump().Bytes())
+	}
+	var markArray MarkArray
+	if markArrayOffset > 0 && int(markArrayOffset) < len(b) {
+		markArray = parseMarkArray(b[markArrayOffset:])
+	}
+	var ligatureArray []LigatureAttach
+	if ligatureArrayOffset > 0 && int(ligatureArrayOffset) < len(b) {
+		ligatureArray = parseLigatureArray(b[ligatureArrayOffset:], int(markClassCount))
+	}
 
 	// Store additional data
 	sub.Support = struct {
-		LigatureCoverageOffset uint16
-		MarkClassCount         uint16
-		MarkArrayOffset        uint16
-	}{ligatureCoverageOffset, markClassCount, markArrayOffset}
+		LigatureCoverage Coverage
+		MarkClassCount   uint16
+		MarkArray        MarkArray
+		LigatureArray    []LigatureAttach
+	}{ligatureCoverage, markClassCount, markArray, ligatureArray}
 
 	return sub
 }
@@ -334,15 +488,27 @@ func parseGPosLookupSubtableType6(b binarySegm, sub LookupSubtable) LookupSubtab
 		sub.Coverage = parseCoverage(mark1CovLink.Jump().Bytes())
 	}
 
-	// Parse mark2 array as VarArray
-	sub.Index = parseVarArray16(b, int(mark2ArrayOffset), 2, int(markClassCount)*2, "LookupSubtableGPos6")
+	var mark2Coverage Coverage
+	if mark2CoverageOffset > 0 {
+		mark2CovLink, _ := parseLink16(b, 4, b, "Mark2Coverage")
+		mark2Coverage = parseCoverage(mark2CovLink.Jump().Bytes())
+	}
+	var mark1Array MarkArray
+	if mark1ArrayOffset > 0 && int(mark1ArrayOffset) < len(b) {
+		mark1Array = parseMarkArray(b[mark1ArrayOffset:])
+	}
+	var mark2Array []BaseRecord
+	if mark2ArrayOffset > 0 && int(mark2ArrayOffset) < len(b) {
+		mark2Array = parseBaseArray(b[mark2ArrayOffset:], int(markClassCount))
+	}
 
 	// Store additional data
 	sub.Support = struct {
-		Mark2CoverageOffset uint16
-		MarkClassCount      uint16
-		Mark1ArrayOffset    uint16
-	}{mark2CoverageOffset, markClassCount, mark1ArrayOffset}
+		Mark2Coverage  Coverage
+		MarkClassCount uint16
+		Mark1Array     MarkArray
+		Mark2Array     []BaseRecord
+	}{mark2Coverage, markClassCount, mark1Array, mark2Array}
 
 	return sub
 }

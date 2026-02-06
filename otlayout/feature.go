@@ -569,6 +569,10 @@ func dispatchGSubLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, Glyph
 }
 
 func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, GlyphBuffer, PosBuffer, *EditSpan) {
+	pos := ctx.pos
+	ok := false
+	buf := ctx.buf.Glyphs
+	var edit *EditSpan
 	switch sub.LookupType {
 	case ot.GPosLookupTypeSingle,
 		ot.GPosLookupTypePair,
@@ -578,13 +582,67 @@ func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, Glyph
 		ot.GPosLookupTypeMarkToMark,
 		ot.GPosLookupTypeContextPos,
 		ot.GPosLookupTypeChainedContextPos:
+		switch sub.LookupType {
+		case ot.GPosLookupTypeSingle:
+			switch sub.Format {
+			case 1:
+				pos, ok, buf, edit = gposLookupType1Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			case 2:
+				pos, ok, buf, edit = gposLookupType1Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			}
+		case ot.GPosLookupTypePair:
+			switch sub.Format {
+			case 1:
+				pos, ok, buf, edit = gposLookupType2Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			case 2:
+				pos, ok, buf, edit = gposLookupType2Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			}
+		case ot.GPosLookupTypeCursive:
+			switch sub.Format {
+			case 1:
+				pos, ok, buf, edit = gposLookupType3Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			}
+		case ot.GPosLookupTypeMarkToBase:
+			switch sub.Format {
+			case 1:
+				pos, ok, buf, edit = gposLookupType4Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			}
+		case ot.GPosLookupTypeMarkToLigature:
+			switch sub.Format {
+			case 1:
+				pos, ok, buf, edit = gposLookupType5Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			}
+		case ot.GPosLookupTypeMarkToMark:
+			switch sub.Format {
+			case 1:
+				pos, ok, buf, edit = gposLookupType6Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			}
+		case ot.GPosLookupTypeContextPos:
+			switch sub.Format {
+			case 1:
+				pos, ok, buf, edit = gposLookupType7Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			case 2:
+				pos, ok, buf, edit = gposLookupType7Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			case 3:
+				pos, ok, buf, edit = gposLookupType7Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			}
+		case ot.GPosLookupTypeChainedContextPos:
+			switch sub.Format {
+			case 1:
+				pos, ok, buf, edit = gposLookupType8Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			case 2:
+				pos, ok, buf, edit = gposLookupType8Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			case 3:
+				pos, ok, buf, edit = gposLookupType8Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			}
+		}
 		tracer().Errorf("GPOS lookup type %d/%d not implemented", sub.LookupType, sub.Format)
 	case ot.GPosLookupTypeExtensionPos:
 		tracer().Errorf("GPOS extension subtable reached dispatch; extension should be unwrapped during parsing")
 	default:
 		tracer().Errorf("unknown GPOS lookup type %d/%d", sub.LookupType, sub.Format)
 	}
-	return ctx.pos, false, ctx.buf.Glyphs, ctx.buf.Pos, nil
+	return pos, ok, buf, ctx.buf.Pos, edit
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -645,14 +703,14 @@ func prevMatchable(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool) {
 type singleMatchFn func(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool)
 type matchSeqFn func(ctx *applyCtx, buf GlyphBuffer, pos int) ([]int, bool)
 
-func matchCoverageForward(ctx *applyCtx, buf GlyphBuffer, pos int, cov ot.Coverage) (int, int, bool) {
+func matchCoverageForward(ctx *applyCtx, buf GlyphBuffer, pos int, cov ot.Coverage) (mpos, inx int, ok bool) {
 	for i := pos; i < buf.Len(); {
-		mpos, ok := nextMatchable(ctx, buf, i)
+		mpos, ok = nextMatchable(ctx, buf, i)
 		if !ok {
 			return 0, 0, false
 		}
-		if inx, ok := cov.Match(buf.At(mpos)); ok {
-			return mpos, inx, true
+		if inx, ok = cov.Match(buf.At(mpos)); ok {
+			return
 		}
 		i = mpos + 1
 	}

@@ -91,7 +91,11 @@ func TestFeatureCase(t *testing.T) {
 	if featcase.LookupIndex(0) != 9 {
 		t.Errorf("expected index of lookup #0 of feature 'case' to be 9, isn't")
 	}
-	_, applied, buf := ApplyFeature(otf, featcase, prepareGlyphBuffer("@", otf, t), 0, 0)
+	in := prepareGlyphBuffer("@", otf, t)
+	st := NewBufferState(in, NewPosBuffer(len(in)))
+	st.Index = 0
+	_, applied := ApplyFeature(otf, featcase, st, 0)
+	buf := st.Glyphs
 	t.Logf("Application of 'case' returned glyph buffer %v", buf)
 	if !applied {
 		t.Error("feature 'case' not applied")
@@ -155,7 +159,11 @@ func TestFeatureCCMPCalibri(t *testing.T) {
 	if featCCMP.LookupIndex(0) != 4 {
 		t.Errorf("expected index of lookup #0 of feature 'ccmp' to be 4, isn't")
 	}
-	_, applied, buf := ApplyFeature(otf, featCCMP, []ot.GlyphIndex{3776, 3780, 840}, 0, 0)
+	in := []ot.GlyphIndex{3776, 3780, 840}
+	st := NewBufferState(in, NewPosBuffer(len(in)))
+	st.Index = 0
+	_, applied := ApplyFeature(otf, featCCMP, st, 0)
+	buf := st.Glyphs
 	t.Logf("Application of 'ccmp' returned glyph buffer %v", buf)
 	if !applied {
 		t.Error("feature 'ccmp' not applied")
@@ -192,7 +200,11 @@ func TestFeatureCCMPGentium(t *testing.T) {
 	if featCCMP.LookupIndex(0) != 0 {
 		t.Errorf("expected index of lookup #0 of feature 'ccmp' to be 0, isn't")
 	}
-	_, applied, buf := ApplyFeature(otf, featCCMP, []ot.GlyphIndex{76, 2195}, 0, 0) // glyphs 'i' + '^' (#0069)
+	in := []ot.GlyphIndex{76, 2195} // glyphs 'i' + '^' (#0069)
+	st := NewBufferState(in, NewPosBuffer(len(in)))
+	st.Index = 0
+	_, applied := ApplyFeature(otf, featCCMP, st, 0)
+	buf := st.Glyphs
 	t.Logf("Application of 'ccmp' returned glyph buffer %v", buf)
 	if !applied {
 		t.Error("feature 'ccmp' not applied")

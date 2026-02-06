@@ -221,6 +221,87 @@ Legend:
 - ✅ Glyph buffers should support replacement, insertion, and positioning adjustments to simplify GPOS code.
 - ✅ An edit tracking mechanism is needed so contextual/chaining logic can keep lookup-record positions stable across buffer mutations.
 
+### Positioning buffer design (GPOS groundwork)
+
+The GSUB pipeline works purely on glyph IDs, but GPOS needs advances and offsets. To keep GSUB usable in
+isolation (and avoid forcing clients to carry positioning state), GPOS should operate on a *parallel*
+position buffer rather than fusing glyph ID and positioning into one struct. This matches the plan for
+future `otshape` streaming: glyph IDs flow through GSUB; positioning accumulates later and can be emitted
+at stream-out.
+
+Design choice:
+- Use an array-of-structs (AoS) position buffer, not SoA.
+- Do not eagerly resolve anchor coordinates into absolute values; keep offsets and attachment references
+  relative to anchors until final stream-out.
+
+Proposed data model (sketch):
+- `GlyphBuffer` stays as `[]GlyphIndex` (already in `otlayout/buffer.go`).
+- Add `PosBuffer []PosItem` with one entry per glyph (same length as glyph buffer).
+- `PosItem` should carry (tightened proposal):
+  - `XAdvance`, `YAdvance` (int32): advance deltas (font units).
+  - `XOffset`, `YOffset` (int32): placement offsets (relative, not absolute).
+  - `AttachTo` (int32): index of the glyph this glyph is attached to; `-1` means none.
+  - `AttachKind` (enum): `None`, `MarkToBase`, `MarkToLigature`, `MarkToMark`, `Cursive`.
+  - `AttachClass` (uint16): mark class / attachment type, for later resolution or debugging.
+  - `AnchorRef` (struct, optional): unresolved anchor references used to compute offsets at stream-out:
+    - `MarkAnchor` (uint16): index into MarkArray for mark attachments (GPOS 4/5/6).
+    - `BaseAnchor` (uint16): index into BaseArray / Mark2Array for mark attachments.
+    - `LigatureComp` (uint16): ligature component index (GPOS 5).
+    - `CursiveEntry` / `CursiveExit` (uint16): anchor indices for cursive (GPOS 3).
+  - Optional shaping metadata (future use by `otshape`):
+    - `Cluster` (uint32)
+    - `Flags` (bitset: mark/base/ligature, unsafe-to-break, etc.).
+
+Flow of information (rough):
+1) Input → `GlyphBuffer` (glyph IDs).
+2) GSUB mutates `GlyphBuffer` only.
+3) GPOS operates on (`GlyphBuffer`, `PosBuffer`) and updates advances/offsets and attachments.
+4) Stream-out resolves `AnchorRef` to final positions (or emits relative offsets if the client prefers).
+
+Rationale:
+- Keeps GSUB standalone and minimal.
+- Allows clients to ignore positioning if only glyph IDs are needed.
+- Enables later `otshape` to provide a streaming interface (`RuneRead` → `GlyphWriter`) without
+  forcing immediate positioning resolution.
+
+### GPOS helper groundwork (plan)
+
+Before implementing any GPOS lookup types, add shared helpers and buffer maintenance so that
+lookup code stays small and consistent.
+
+1) Position buffer lifecycle helpers
+   - `NewPosBuffer(n int) PosBuffer`: returns a buffer with `AttachTo = -1` for all items.
+   - `PosBuffer.ResizeLike(buf GlyphBuffer)`: ensure length matches glyph buffer length.
+   - `PosBuffer.ApplyEdit(edit *EditSpan)`: mirror GSUB edits so positions stay aligned.
+
+2) ValueRecord application helpers
+   - `applyValueRecord(pos *PosItem, vr ot.ValueRecord)`:
+     - Adds deltas to `XAdvance/YAdvance` and `XOffset/YOffset` only for fields present in `vr`.
+   - `applyValueRecordPair(p1, p2 *PosItem, v1, v2 ot.ValueRecord)`:
+     - Applies paired adjustments for GPOS-2.
+   - `valueRecordAt(sub *ot.LookupSubtable, idx int) ot.ValueRecord`:
+     - Extracts the correct ValueRecord for the given index (format-specific storage).
+
+3) Attachment helpers (unresolved anchors)
+   - `setMarkAttachment(pos *PosItem, baseIndex int, kind AttachKind, class uint16, ref AnchorRef)`
+   - `setCursiveAttachment(pos *PosItem, baseIndex int, ref AnchorRef)`
+   - Do **not** resolve anchors here; leave coordinate resolution for stream-out.
+
+4) Matching helpers reuse
+   - Reuse GSUB matching helpers for GPOS-7/8:
+     - `matchCoverageForward/Sequence*`, `matchGlyphSequence*`, `matchClassSequence*`,
+       `matchChainedForward`.
+   - Add thin wrappers only if GPOS storage layouts require different extraction.
+
+5) Lookup-flag integration
+   - Use `skipGlyph`, `nextMatchable`, `prevMatchable` in all GPOS matching paths.
+   - Enforce mark filtering/attachment type consistently when searching for base/mark targets.
+
+6) EditSpan interaction
+   - GPOS lookups should not mutate glyph buffers, but contextual GPOS (types 7/8) can invoke
+     nested lookups via `applySequenceLookupRecords` which already handles `EditSpan`.
+   - Ensure `PosBuffer.ApplyEdit` exists for any path that reuses GSUB edits.
+
 ### Lookup flags
 
 Lookup flags are parsed and stored on `ot.Lookup.Flag` and copied into `applyCtx.flag`

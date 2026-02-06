@@ -39,8 +39,8 @@ func gsubLookupType1Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	newGlyph := int(buf.At(mpos)) + delta
 	tracer().Debugf("OT lookup GSUB 1/1: subst %d for %d", newGlyph, buf.At(mpos))
 	// TODO: check bounds against max glyph ID
-	buf.Set(mpos, ot.GlyphIndex(newGlyph))
-	return mpos + 1, true, buf, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
+	ctx.buf.Set(mpos, ot.GlyphIndex(newGlyph))
+	return mpos + 1, true, ctx.buf.Glyphs, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
 }
 
 // GSUB LookupSubtable Type 1 Format 2 provides an array of output glyph indices
@@ -60,8 +60,8 @@ func gsubLookupType1Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	}
 	if glyph := lookupGlyph(lksub.Index, inx, false); glyph != 0 {
 		tracer().Debugf("OT lookup GSUB 1/2: subst %d for %d", glyph, buf.At(mpos))
-		buf.Set(mpos, glyph)
-		return mpos + 1, true, buf, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
+		ctx.buf.Set(mpos, glyph)
+		return mpos + 1, true, ctx.buf.Glyphs, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
 	}
 	return pos, false, buf, nil
 }
@@ -89,8 +89,8 @@ func gsubLookupType2Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	}
 	if glyphs := lookupGlyphs(lksub.Index, inx, true); len(glyphs) != 0 {
 		tracer().Debugf("OT lookup GSUB 2/1: subst %v for %d", glyphs, buf.At(mpos))
-		buf = buf.Replace(mpos, mpos+1, glyphs)
-		return mpos + len(glyphs), true, buf, &EditSpan{From: mpos, To: mpos + 1, Len: len(glyphs)}
+		edit := ctx.buf.ReplaceGlyphs(mpos, mpos+1, glyphs)
+		return mpos + len(glyphs), true, ctx.buf.Glyphs, edit
 	}
 	return pos, false, buf, nil
 }
@@ -124,8 +124,8 @@ func gsubLookupType3Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		}
 		if alt < len(glyphs) {
 			tracer().Debugf("OT lookup GSUB 3/1: subst %v for %d", glyphs[alt], buf.At(mpos))
-			buf.Set(mpos, glyphs[alt])
-			return mpos + 1, true, buf, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
+			ctx.buf.Set(mpos, glyphs[alt])
+			return mpos + 1, true, ctx.buf.Glyphs, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
 		}
 	}
 	return pos, false, buf, nil
@@ -190,9 +190,9 @@ func gsubLookupType4Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		}
 		if match {
 			ligatureGlyph := ot.GlyphIndex(ligatureSet.U16(ligpos))
-			buf = buf.Replace(mpos, cur+1, []ot.GlyphIndex{ligatureGlyph})
-			tracer().Debugf("after application of ligature, glyph = %d", buf.At(mpos))
-			return mpos + 1, true, buf, &EditSpan{From: mpos, To: cur + 1, Len: 1}
+			edit := ctx.buf.ReplaceGlyphs(mpos, cur+1, []ot.GlyphIndex{ligatureGlyph})
+			tracer().Debugf("after application of ligature, glyph = %d", ctx.buf.At(mpos))
+			return mpos + 1, true, ctx.buf.Glyphs, edit
 		}
 	}
 	return pos, false, buf, nil
@@ -278,7 +278,8 @@ func gsubLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		if ctx.lookupList == nil {
 			return pos, false, buf, nil
 		}
-		out, applied := applySequenceLookupRecords(buf, matchPositions, records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		ctx.buf.Pos = outPosBuf
 		tracer().Debugf("GSUB 5|1 rule #%d applied = %v", i, applied)
 		if applied {
 			return pos, true, out, nil
@@ -359,7 +360,8 @@ func gsubLookupType5Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		if ctx.lookupList == nil {
 			return pos, false, buf, nil
 		}
-		out, applied := applySequenceLookupRecords(buf, matchPositions, records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		ctx.buf.Pos = outPosBuf
 		tracer().Debugf("GSUB 5|2 rule #%d applied = %v", i, applied)
 		if applied {
 			return pos, true, out, nil
@@ -393,7 +395,8 @@ func gsubLookupType5Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if ctx.lookupList == nil {
 		return pos, false, buf, nil
 	}
-	out, applied := applySequenceLookupRecords(buf, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+	ctx.buf.Pos = outPosBuf
 	if applied {
 		return pos, true, out, nil
 	}
@@ -446,7 +449,8 @@ func gsubLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			continue
 		}
 		tracer().Debugf("GSUB 6|1 matched at positions %v", matchPositions)
-		out, applied := applySequenceLookupRecords(buf, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		ctx.buf.Pos = outPosBuf
 		if applied {
 			return pos, true, out, nil
 		}
@@ -505,7 +509,8 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			continue
 		}
 		tracer().Debugf("GSUB 6|2 matched at positions %v", matchPositions)
-		out, applied := applySequenceLookupRecords(buf, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		ctx.buf.Pos = outPosBuf
 		if applied {
 			return pos, true, out, nil
 		}
@@ -574,7 +579,8 @@ func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		tracer().Debugf("GSUB 6|3 missing lookup list")
 		return pos, false, buf, nil
 	}
-	out, applied := applySequenceLookupRecords(buf, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+	ctx.buf.Pos = outPosBuf
 	tracer().Debugf("GSUB 6|3 applied = %v", applied)
 	if applied {
 		return pos, true, out, nil
@@ -630,8 +636,8 @@ func gsubLookupType8Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		}
 		subst := rc.SubstituteGlyphIDs[inx]
 		tracer().Debugf("GSUB 8|1 subst %d for %d at pos %d", subst, buf.At(mpos), mpos)
-		buf.Set(mpos, subst)
-		return mpos + 1, true, buf, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
+		ctx.buf.Set(mpos, subst)
+		return mpos + 1, true, ctx.buf.Glyphs, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
 	}
 	return pos, false, buf, nil
 }

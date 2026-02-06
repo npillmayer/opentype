@@ -41,7 +41,10 @@ func applyGSUBLookup(t *testing.T, otf *ot.Font, lookupIndex int, input []ot.Gly
 	lookup := otf.Layout.GSub.LookupList.Navigate(lookupIndex)
 	feat := testFeature{tag: ot.T("test"), typ: GSubFeatureType}
 	buf := append(GlyphBuffer(nil), input...)
-	_, ok, out, _ := applyLookup(&lookup, feat, buf, pos, alt, otf.Layout.GDef, otf.Layout.GSub.LookupList)
+	st := NewBufferState(buf, NewPosBuffer(len(buf)))
+	st.Index = pos
+	_, ok, _ := applyLookup(&lookup, feat, st, alt, otf.Layout.GDef, otf.Layout.GSub.LookupList)
+	out := st.Glyphs
 	return out, ok
 }
 

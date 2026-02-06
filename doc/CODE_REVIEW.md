@@ -106,15 +106,6 @@ Scope: `ot/` and `otlayout/` packages only. This is a source scan focused on cod
       seqLookupCount := int(b.U16(offset))
       ```
 
-11) **Forward/backward match functions are duplicated**
-    - Location: `otlayout/feature.go:1031-1083`, `1128-1189`
-    - Impact: Multiple functions differ only by direction (`nextMatchable` vs `prevMatchable`). A shared helper could reduce complexity and test surface.
-    - Evidence:
-      ```go
-      func matchCoverageSequenceForward(...) { ... cur = mpos + 1 }
-      func matchCoverageSequenceBackward(...) { ... cur = mpos - 1 }
-      ```
-
 12) **Interface-to-concrete type assertions create brittle coupling**
     - Locations:
       - `otlayout/layout.go:85-118` (asserts `ot.RootTagMap`, `ot.RootList`)
@@ -129,15 +120,6 @@ Scope: `ot/` and `otlayout/` packages only. This is a source scan focused on cod
       ```go
       for i := 0; i < m.records.length; i++ { ... }
       // TODO binary search with |N| > ?
-      ```
-
-14) **GPOS application path not implemented but only logs errors**
-    - Location: `otlayout/feature.go:319-331`
-    - Impact: GPOS lookup application is effectively a no-op; callers may believe positioning was applied. This should be documented at the API boundary or flagged as unsupported.
-    - Evidence:
-      ```go
-      tracer().Errorf("GPOS lookup type %d/%d not implemented", ...)
-      return ctx.pos, false, ctx.buf, nil
       ```
 
 ---
@@ -160,7 +142,7 @@ Scope: `ot/` and `otlayout/` packages only. This is a source scan focused on cod
 
 ## Suggested next steps (optional)
 
-- Prioritize fixing **ApplyFeature buffer return**, **glyphRangeRecords 32-bit offsets**, and **nil-deref risk in extractLayoutInfo**.
+- Prioritize fixing  **nil-deref risk in extractLayoutInfo**.
 - Replace panics in parsing with structured `errorCollector` entries or explicit errors.
 - Introduce shared helpers for duplicated GSUB/GPOS parse flow and chained-context parsing.
 - Add bounds checks in `LookupList.Navigate` and remove silent fallback in `array.Get`.
@@ -210,11 +192,3 @@ These are design proposals to reduce duplication without changing behavior.
          newRule func(back, in, look array, rec array) interface{},
      ) interface{}
      ```
-
-4) **Directional match helper for forward/backward**
-   - Candidates: `matchCoverageSequenceForward/Backward`, `matchGlyphSequenceForward/Backward`, `matchClassSequenceForward/Backward`.
-   - Proposed helper:
-     ```go
-     func matchSequence(ctx *applyCtx, buf GlyphBuffer, pos int, next func(int) (int, bool), match func(int) bool) ([]int, bool)
-     ```
-   - Then instantiate forward/backward via different `next` functions (`nextMatchable` / `prevMatchable`).

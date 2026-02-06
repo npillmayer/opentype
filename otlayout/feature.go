@@ -167,12 +167,15 @@ func (f feature) LookupIndex(i int) int {
 // GPOS) for the feature. Having the table missing may result in a crash. This should never happen, as
 // extracting the feature will have required the layout table in the first place. Presence of the
 // layout table is not checked again.
-func ApplyFeature(otf *ot.Font, feat Feature, buf GlyphBuffer, pos, alt int) (int, bool, GlyphBuffer) {
+func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bool) {
 	if feat == nil { // this is legal for unused mandatory feature slots
-		return pos, false, buf
-	} else if buf == nil || pos < 0 || pos >= len(buf) {
+		return st.Index, false
+	} else if st == nil || st.Glyphs == nil || st.Index < 0 || st.Index >= len(st.Glyphs) {
 		tracer().Infof("application of font-feature requested for unusable buffer condition")
-		return pos, false, buf
+		if st != nil {
+			return st.Index, false
+		}
+		return 0, false
 	}
 	var lytTable *ot.LayoutTable
 	if feat.Type() == GSubFeatureType {
@@ -186,10 +189,10 @@ func ApplyFeature(otf *ot.Font, feat Feature, buf GlyphBuffer, pos, alt int) (in
 		inx := feat.LookupIndex(i)
 		tracer().Debugf("feature %s lookup #%d => index %d", feat.Tag(), i, inx)
 		lookup := lytTable.LookupList.Navigate(inx)
-		pos, ok, buf, _ = applyLookup(&lookup, feat, buf, pos, alt, gdef, lytTable.LookupList)
+		_, ok, _ = applyLookup(&lookup, feat, st, alt, gdef, lytTable.LookupList)
 		applied = applied || ok
 	}
-	return pos, applied, buf
+	return st.Index, applied
 }
 
 // applyCtx bundles immutable lookup state for dispatch and helpers.
@@ -197,7 +200,7 @@ type applyCtx struct {
 	feat       Feature                  // active feature for alternate selection and tracing
 	lookup     *ot.Lookup               // lookup currently being applied
 	lookupList lookupNavigator          // lookup list for nested lookups
-	buf        GlyphBuffer              // mutable glyph buffer (GSUB), read-only for matching
+	buf        *BufferState             // buffer state (glyphs + positions)
 	pos        int                      // current glyph position in buffer
 	alt        int                      // alternate index (1..n) for substitution selection
 	isGPos     bool                     // true if lookup is GPOS (non-substituting)
@@ -213,38 +216,283 @@ type EditSpan struct {
 	Len  int // length of the replacement segment
 }
 
+// BufferState bundles glyph and position buffers with a current index.
+// Position buffer may be nil when only GSUB is applied.
+// Copy-on-write is implemented via shared flags; mutating methods will clone
+// backing slices when necessary.
+type BufferState struct {
+	Glyphs       GlyphBuffer
+	Pos          PosBuffer
+	Index        int
+	glyphsShared bool
+	posShared    bool
+}
+
+// NewBufferState constructs a buffer state with index 0.
+func NewBufferState(g GlyphBuffer, p PosBuffer) *BufferState {
+	b := &BufferState{
+		Glyphs: g,
+		Pos:    p,
+		Index:  0,
+	}
+	if p != nil && len(p) != len(g) {
+		b.Pos = p.ResizeLike(g)
+	}
+	return b
+}
+
+// CloneShared returns a logically shared copy of the buffer state.
+// Both the original and the clone will clone on the next mutation.
+func (b *BufferState) CloneShared() *BufferState {
+	if b == nil {
+		return nil
+	}
+	b.glyphsShared = true
+	b.posShared = true
+	return &BufferState{
+		Glyphs:       b.Glyphs,
+		Pos:          b.Pos,
+		Index:        b.Index,
+		glyphsShared: true,
+		posShared:    true,
+	}
+}
+
+func (b *BufferState) ensureUniqueGlyphs() {
+	if b == nil {
+		return
+	}
+	if b.glyphsShared {
+		b.Glyphs = append(GlyphBuffer(nil), b.Glyphs...)
+		b.glyphsShared = false
+	}
+}
+
+func (b *BufferState) ensureUniquePos() {
+	if b == nil {
+		return
+	}
+	if b.Pos == nil {
+		b.Pos = NewPosBuffer(len(b.Glyphs))
+		b.posShared = false
+		return
+	}
+	if b.posShared {
+		b.Pos = append(PosBuffer(nil), b.Pos...)
+		b.posShared = false
+	}
+}
+
+func (b *BufferState) Len() int {
+	if b == nil {
+		return 0
+	}
+	return b.Glyphs.Len()
+}
+
+func (b *BufferState) At(i int) ot.GlyphIndex {
+	return b.Glyphs.At(i)
+}
+
+func (b *BufferState) Set(i int, g ot.GlyphIndex) {
+	b.ensureUniqueGlyphs()
+	b.Glyphs.Set(i, g)
+}
+
+// ApplyEdit mirrors a GSUB edit onto the position buffer to keep alignment.
+func (b *BufferState) ApplyEdit(edit *EditSpan) {
+	if b == nil || edit == nil {
+		return
+	}
+	if b.Pos == nil {
+		return
+	}
+	b.ensureUniquePos()
+	b.Pos = b.Pos.ApplyEdit(edit)
+}
+
+// EnsurePos allocates a position buffer if missing and keeps it aligned with glyphs.
+func (b *BufferState) EnsurePos() {
+	if b == nil {
+		return
+	}
+	if b.Pos == nil {
+		b.Pos = NewPosBuffer(len(b.Glyphs))
+		b.posShared = false
+		return
+	}
+	if len(b.Pos) != len(b.Glyphs) {
+		b.ensureUniquePos()
+		b.Pos = b.Pos.ResizeLike(b.Glyphs)
+	}
+}
+
+// ReplaceGlyphs replaces the range [i:j) with repl and mirrors the edit into Pos when present.
+func (b *BufferState) ReplaceGlyphs(i, j int, repl []ot.GlyphIndex) *EditSpan {
+	if b == nil {
+		return nil
+	}
+	if i < 0 || j < i || j > len(b.Glyphs) {
+		panic("BufferState.ReplaceGlyphs: invalid range")
+	}
+	b.ensureUniqueGlyphs()
+	b.Glyphs = b.Glyphs.Replace(i, j, repl)
+	edit := &EditSpan{From: i, To: j, Len: len(repl)}
+	if b.Pos != nil {
+		b.ensureUniquePos()
+		b.Pos = b.Pos.ApplyEdit(edit)
+	}
+	return edit
+}
+
+// InsertGlyphs inserts glyphs before index i.
+func (b *BufferState) InsertGlyphs(i int, glyphs []ot.GlyphIndex) *EditSpan {
+	return b.ReplaceGlyphs(i, i, glyphs)
+}
+
+// DeleteGlyphs removes the range [i:j).
+func (b *BufferState) DeleteGlyphs(i, j int) *EditSpan {
+	return b.ReplaceGlyphs(i, j, nil)
+}
+
+// PosBuffer holds per-glyph positioning information for GPOS.
+// It is kept in sync with the glyph buffer by index.
+type PosBuffer []PosItem
+
+// AttachKind describes how a glyph is attached to another glyph.
+type AttachKind uint8
+
+const (
+	AttachNone AttachKind = iota
+	AttachMarkToBase
+	AttachMarkToLigature
+	AttachMarkToMark
+	AttachCursive
+)
+
+// AnchorRef carries unresolved anchor references for later resolution.
+// Indices are format-specific references into GPOS mark/base/ligature tables.
+type AnchorRef struct {
+	MarkAnchor   uint16 // index into MarkArray for mark attachments (GPOS 4/5/6)
+	BaseAnchor   uint16 // index into BaseArray / Mark2Array for mark attachments
+	LigatureComp uint16 // ligature component index (GPOS 5)
+	CursiveEntry uint16 // entry anchor index (GPOS 3)
+	CursiveExit  uint16 // exit anchor index (GPOS 3)
+}
+
+// PosItem stores positioning deltas and optional attachment metadata.
+// Advances/offsets are in font units and are relative, not absolute.
+type PosItem struct {
+	XAdvance int32
+	YAdvance int32
+	XOffset  int32
+	YOffset  int32
+
+	AttachTo    int32
+	AttachKind  AttachKind
+	AttachClass uint16
+	AnchorRef   AnchorRef
+
+	Cluster uint32 // potentially used for shaping
+	Flags   uint16 // TODO
+}
+
+// NewPosBuffer allocates a position buffer of length n.
+// All items start with AttachTo = -1 (no attachment).
+func NewPosBuffer(n int) PosBuffer {
+	if n <= 0 {
+		return PosBuffer{}
+	}
+	pb := make(PosBuffer, n)
+	for i := range pb {
+		pb[i].AttachTo = -1
+	}
+	return pb
+}
+
+// ResizeLike ensures the position buffer length matches the glyph buffer length.
+// New items (if any) are initialized with AttachTo = -1.
+func (pb PosBuffer) ResizeLike(buf GlyphBuffer) PosBuffer {
+	n := buf.Len()
+	if n == len(pb) {
+		return pb
+	}
+	if n < len(pb) {
+		return pb[:n]
+	}
+	out := make(PosBuffer, n)
+	copy(out, pb)
+	for i := len(pb); i < n; i++ {
+		out[i].AttachTo = -1
+	}
+	return out
+}
+
+// ApplyEdit mirrors a GSUB edit to keep positional data aligned with glyph indices.
+func (pb PosBuffer) ApplyEdit(edit *EditSpan) PosBuffer {
+	if edit == nil {
+		return pb
+	}
+	if edit.From < 0 || edit.To < edit.From || edit.To > len(pb) || edit.Len < 0 {
+		panic("PosBuffer.ApplyEdit: invalid edit span")
+	}
+	repl := make(PosBuffer, edit.Len)
+	for i := range repl {
+		repl[i].AttachTo = -1
+	}
+	out := append(pb[:edit.From], repl...)
+	out = append(out, pb[edit.To:]...)
+	return out
+}
+
 // To apply a lookup, we have to iterate over the lookup's subtables and call them
 // appropriately, respecting different subtable semantics and formats.
 // Therefore this function more or less is a large switch to delegate to functions
 // implementing a specific subtable logic.
-func applyLookup(lookup *ot.Lookup, feat Feature, buf GlyphBuffer, pos, alt int, gdef *ot.GDefTable, lookupList lookupNavigator) (int, bool, GlyphBuffer, *EditSpan) {
+func applyLookup(lookup *ot.Lookup, feat Feature, st *BufferState, alt int, gdef *ot.GDefTable, lookupList lookupNavigator) (int, bool, *EditSpan) {
 	if lookup == nil {
-		return pos, false, buf, nil
+		if st != nil {
+			return st.Index, false, nil
+		}
+		return 0, false, nil
 	}
 	ctx := applyCtx{
 		feat:       feat,
 		lookup:     lookup,
 		lookupList: lookupList,
-		buf:        buf,
-		pos:        pos,
+		buf:        st,
+		pos:        st.Index,
 		alt:        alt,
 		isGPos:     ot.IsGPosLookupType(lookup.Type),
 		flag:       lookup.Flag,
 		gdef:       gdef,
 	}
-	return dispatchLookup(&ctx)
+	pos, ok, buf, pbuf, edit := dispatchLookup(&ctx)
+	if st != nil {
+		if buf != nil {
+			st.Glyphs = buf
+		}
+		if pbuf != nil {
+			st.Pos = pbuf
+		}
+		if edit != nil {
+			st.ApplyEdit(edit)
+		}
+		st.Index = pos
+	}
+	return pos, ok, edit
 }
 
-func dispatchLookup(ctx *applyCtx) (int, bool, GlyphBuffer, *EditSpan) {
+func dispatchLookup(ctx *applyCtx) (int, bool, GlyphBuffer, PosBuffer, *EditSpan) {
 	if ctx.lookup == nil {
-		return ctx.pos, false, ctx.buf, nil
+		return ctx.pos, false, ctx.buf.Glyphs, ctx.buf.Pos, nil
 	}
 	lookupType := ot.GSubLookupType(ctx.lookup.Type)
 	if ctx.isGPos {
 		lookupType = ot.GPosLookupType(ctx.lookup.Type)
 	}
 	tracer().Debugf("applying lookup '%s'/%d flags=0x%04x", ctx.feat.Tag(), lookupType, uint16(ctx.lookup.Flag))
-	for i := 0; i < int(ctx.lookup.SubTableCount) && ctx.pos < ctx.buf.Len(); i++ {
+	for i := 0; i < int(ctx.lookup.SubTableCount) && ctx.pos < ctx.buf.Glyphs.Len(); i++ {
 		tracer().Debugf("-------------------- pos = %d", ctx.pos)
 		sub := ctx.lookup.Subtable(i)
 		if sub == nil {
@@ -255,67 +503,72 @@ func dispatchLookup(ctx *applyCtx) (int, bool, GlyphBuffer, *EditSpan) {
 			pos  int
 			ok   bool
 			buf  GlyphBuffer
+			pbuf PosBuffer
 			edit *EditSpan
 		)
 		if ctx.isGPos {
-			pos, ok, buf, edit = dispatchGPosLookup(ctx, sub)
+			pos, ok, buf, pbuf, edit = dispatchGPosLookup(ctx, sub)
 		} else {
-			pos, ok, buf, edit = dispatchGSubLookup(ctx, sub)
+			pos, ok, buf, pbuf, edit = dispatchGSubLookup(ctx, sub)
 		}
 		if ok {
-			return pos, ok, buf, edit
+			return pos, ok, buf, pbuf, edit
 		}
 	}
-	return ctx.pos, false, ctx.buf, nil
+	return ctx.pos, false, ctx.buf.Glyphs, ctx.buf.Pos, nil
 }
 
-func dispatchGSubLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, GlyphBuffer, *EditSpan) {
+func dispatchGSubLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, GlyphBuffer, PosBuffer, *EditSpan) {
+	pos := ctx.pos
+	ok := false
+	buf := ctx.buf.Glyphs
+	var edit *EditSpan
 	switch sub.LookupType {
 	case ot.GSubLookupTypeSingle: // Single Substitution Subtable
 		switch sub.Format {
 		case 1:
-			return gsubLookupType1Fmt1(ctx, sub, ctx.buf, ctx.pos)
+			pos, ok, buf, edit = gsubLookupType1Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 2:
-			return gsubLookupType1Fmt2(ctx, sub, ctx.buf, ctx.pos)
+			pos, ok, buf, edit = gsubLookupType1Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		}
 	case ot.GSubLookupTypeMultiple: // Multiple Substitution Subtable
-		return gsubLookupType2Fmt1(ctx, sub, ctx.buf, ctx.pos)
+		pos, ok, buf, edit = gsubLookupType2Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 	case ot.GSubLookupTypeAlternate: // Alternate Substitution Subtable
-		return gsubLookupType3Fmt1(ctx, sub, ctx.buf, ctx.pos, ctx.alt)
+		pos, ok, buf, edit = gsubLookupType3Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos, ctx.alt)
 	case ot.GSubLookupTypeLigature: // Ligature Substitution Subtable
-		return gsubLookupType4Fmt1(ctx, sub, ctx.buf, ctx.pos)
+		pos, ok, buf, edit = gsubLookupType4Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 	case ot.GSubLookupTypeContext:
 		switch sub.Format {
 		case 1:
-			return gsubLookupType5Fmt1(ctx, sub, ctx.buf, ctx.pos)
+			pos, ok, buf, edit = gsubLookupType5Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 2:
-			return gsubLookupType5Fmt2(ctx, sub, ctx.buf, ctx.pos)
+			pos, ok, buf, edit = gsubLookupType5Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 3:
-			return gsubLookupType5Fmt3(ctx, sub, ctx.buf, ctx.pos)
+			pos, ok, buf, edit = gsubLookupType5Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		}
 	case ot.GSubLookupTypeChainingContext:
 		switch sub.Format {
 		case 1:
-			return gsubLookupType6Fmt1(ctx, sub, ctx.buf, ctx.pos)
+			pos, ok, buf, edit = gsubLookupType6Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 2:
-			return gsubLookupType6Fmt2(ctx, sub, ctx.buf, ctx.pos)
+			pos, ok, buf, edit = gsubLookupType6Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 3:
-			return gsubLookupType6Fmt3(ctx, sub, ctx.buf, ctx.pos)
+			pos, ok, buf, edit = gsubLookupType6Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		}
 	case ot.GSubLookupTypeExtensionSubs:
 		tracer().Errorf("GSUB extension subtable reached dispatch; extension should be unwrapped during parsing")
-		return ctx.pos, false, ctx.buf, nil
 	case ot.GSubLookupTypeReverseChaining:
 		switch sub.Format {
 		case 1:
-			return gsubLookupType8Fmt1(ctx, sub, ctx.buf, ctx.pos)
+			pos, ok, buf, edit = gsubLookupType8Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		}
+	default:
+		tracer().Errorf("unknown GSUB lookup type %d/%d", sub.LookupType, sub.Format)
 	}
-	tracer().Errorf("unknown GSUB lookup type %d/%d", sub.LookupType, sub.Format)
-	return ctx.pos, false, ctx.buf, nil
+	return pos, ok, buf, ctx.buf.Pos, edit
 }
 
-func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, GlyphBuffer, *EditSpan) {
+func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, GlyphBuffer, PosBuffer, *EditSpan) {
 	switch sub.LookupType {
 	case ot.GPosLookupTypeSingle,
 		ot.GPosLookupTypePair,
@@ -331,11 +584,13 @@ func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupSubtable) (int, bool, Glyph
 	default:
 		tracer().Errorf("unknown GPOS lookup type %d/%d", sub.LookupType, sub.Format)
 	}
-	return ctx.pos, false, ctx.buf, nil
+	return ctx.pos, false, ctx.buf.Glyphs, ctx.buf.Pos, nil
 }
 
 // --- Helpers ---------------------------------------------------------------
 
+// skipGlyph applies lookup-flags to decide whether to skip a glyph while
+// matching with a coverage rule.
 func skipGlyph(ctx *applyCtx, g ot.GlyphIndex) bool {
 	if ctx == nil || ctx.gdef == nil {
 		return false
@@ -795,16 +1050,17 @@ func parseChainedClassSequenceRules(lksub *ot.LookupSubtable, coverageIndex int)
 
 func applySequenceLookupRecords(
 	buf GlyphBuffer,
+	posBuf PosBuffer,
 	matchPositions []int,
 	records []ot.SequenceLookupRecord,
 	lookupList lookupNavigator,
 	feat Feature,
 	alt int,
 	gdef *ot.GDefTable,
-) (GlyphBuffer, bool) {
+) (GlyphBuffer, PosBuffer, bool) {
 	mapIdx := buildInputMap(matchPositions)
 	if lookupList == nil || len(mapIdx) == 0 {
-		return buf, false
+		return buf, posBuf, false
 	}
 
 	applied := false
@@ -820,12 +1076,15 @@ func applySequenceLookupRecords(
 		}
 		tracer().Debugf("sequence lookup record: target position %d", targetPos)
 		lookup := lookupList.Navigate(int(rec.LookupListIndex))
-		_, ok, out, edit := applyLookup(&lookup, feat, buf, targetPos, alt, gdef, lookupList)
+		st := NewBufferState(buf, posBuf)
+		st.Index = targetPos
+		_, ok, edit := applyLookup(&lookup, feat, st, alt, gdef, lookupList)
 		if !ok {
 			continue
 		}
 		applied = true
-		buf = out
+		buf = st.Glyphs
+		posBuf = st.Pos
 		if edit == nil {
 			continue
 		}
@@ -845,7 +1104,7 @@ func applySequenceLookupRecords(
 			}
 		}
 	}
-	return buf, applied
+	return buf, posBuf, applied
 }
 
 // lookupGlyph is a small helper which looks up an index for a glyph (previously

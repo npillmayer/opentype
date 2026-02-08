@@ -66,7 +66,7 @@ func newOtShapePlanner(tables *font.Font, props SegmentProperties) *otShapePlann
 
 	out.shaper = out.categorizeComplex()
 
-	zwm, fb := out.shaper.MarksBehavior()
+	zwm, fb := shaperMarksBehavior(out.shaper)
 	out.scriptZeroMarks = zwm != zeroWidthMarksNone
 	out.scriptFallbackMarkPositioning = fb
 	return &out
@@ -85,7 +85,8 @@ func (planner *otShapePlanner) compile(plan *otShapePlan, key otShapePlanKey) {
 	plan.rtlmMask = plan.map_.getMask1(ot.NewTag('r', 't', 'l', 'm'))
 	plan.hasVert = plan.map_.getMask1(ot.NewTag('v', 'e', 'r', 't')) != 0
 
-	disableGpos := plan.shaper.GposTag() != 0 && plan.shaper.GposTag() != plan.map_.chosenScript[1]
+	gposTag := shaperGposTag(plan.shaper)
+	disableGpos := gposTag != 0 && gposTag != plan.map_.chosenScript[1]
 
 	// Decide who provides glyph classes. GDEF or Unicode.
 	if planner.tables.GDEF.GlyphClassDef == nil {
@@ -154,7 +155,7 @@ func (sp *otShapePlan) init0(tables *font.Font, props SegmentProperties, userFea
 
 	planner.compile(sp, otKey)
 
-	sp.shaper.InitPlan(sp)
+	shaperInitPlan(sp.shaper, sp)
 }
 
 func (sp *otShapePlan) substitute(font *Font, buffer *Buffer) {
@@ -215,7 +216,7 @@ func (planner *otShapePlanner) CollectFeatures(userFeatures []Feature) {
 	map_.EnableFeature(ot.NewTag('H', 'a', 'r', 'f')) /* Considered required. */
 	map_.EnableFeature(ot.NewTag('H', 'A', 'R', 'F')) /* Considered discretionary. */
 
-	planner.shaper.CollectFeatures(planner, planner.props.Script)
+	shaperCollectFeatures(planner.shaper, planner, planner.props.Script)
 
 	map_.EnableFeature(ot.NewTag('B', 'u', 'z', 'z')) /* Considered required. */
 	map_.EnableFeature(ot.NewTag('B', 'U', 'Z', 'Z')) /* Considered discretionary. */
@@ -244,7 +245,7 @@ func (planner *otShapePlanner) CollectFeatures(userFeatures []Feature) {
 		map_.AddFeatureExt(f.Tag, ftag, f.Value)
 	}
 
-	planner.shaper.OverrideFeatures(planner)
+	shaperOverrideFeatures(planner.shaper, planner)
 }
 
 /*
@@ -431,7 +432,7 @@ func (c *otContext) SetupMasks() {
 
 	c.setupMasksFraction()
 
-	c.plan.shaper.SetupMasks(buffer, c.font, c.plan.props.Script)
+	shaperSetupMasks(c.plan.shaper, buffer, c.font, c.plan.props.Script)
 
 	for _, feature := range c.userFeatures {
 		if !(feature.Start == FeatureGlobalStart && feature.End == FeatureGlobalEnd) {
@@ -541,7 +542,7 @@ func (c *otContext) substituteAfterPosition() {
 	if debugMode {
 		fmt.Println("POSTPROCESS glyphs start")
 	}
-	c.plan.shaper.PostprocessGlyphs(c.buffer, c.font)
+	shaperPostprocessGlyphs(c.plan.shaper, c.buffer, c.font)
 	if debugMode {
 		fmt.Println("POSTPROCESS glyphs end ")
 	}
@@ -609,7 +610,7 @@ func (c *otContext) positionComplex() {
 	}
 
 	otLayoutPositionStart(c.font, c.buffer)
-	markBehavior, _ := c.plan.shaper.MarksBehavior()
+	markBehavior, _ := shaperMarksBehavior(c.plan.shaper)
 
 	if c.plan.zeroMarks {
 		if markBehavior == zeroWidthMarksByGdefEarly {
@@ -755,7 +756,7 @@ func (sp *shaperOpentype) shape(font *Font, buffer *Buffer, features []Feature) 
 	if debugMode {
 		fmt.Printf("PREPROCESS text start\n")
 	}
-	c.plan.shaper.PreprocessText(c.buffer, c.font)
+	shaperPreprocessText(c.plan.shaper, c.buffer, c.font)
 	if debugMode {
 		fmt.Println("PREPROCESS text end:", c.buffer.Info)
 	}

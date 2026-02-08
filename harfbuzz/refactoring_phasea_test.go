@@ -23,8 +23,8 @@ func TestPhaseA_BuiltinsExposeExportedHookSurface(t *testing.T) {
 
 		_ = clone.Name()
 		_ = clone.Match(SelectionContext{})
-		_ = clone.GposTag()
-		_, _ = clone.MarksBehavior()
-		_ = clone.NormalizationPreference()
+		_ = shaperGposTag(clone)
+		_, _ = shaperMarksBehavior(clone)
+		_ = shaperNormalizationPreference(clone)
 	}
 }

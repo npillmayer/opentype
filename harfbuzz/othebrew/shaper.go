@@ -9,28 +9,12 @@ import (
 	"github.com/npillmayer/opentype/harfbuzz"
 )
 
-type noOpHooks struct{}
-
-func (noOpHooks) GposTag() tables.Tag                                                  { return 0 }
-func (noOpHooks) CollectFeatures(plan harfbuzz.FeaturePlanner, script language.Script) {}
-func (noOpHooks) OverrideFeatures(plan harfbuzz.FeaturePlanner)                        {}
-func (noOpHooks) InitPlan(plan harfbuzz.PlanContext)                                   {}
-func (noOpHooks) PreprocessText(*harfbuzz.Buffer, *harfbuzz.Font)                      {}
-func (noOpHooks) Decompose(c harfbuzz.NormalizeContext, ab rune) (a, b rune, ok bool) {
-	return c.DecomposeUnicode(ab)
-}
-func (noOpHooks) Compose(c harfbuzz.NormalizeContext, a, b rune) (ab rune, ok bool) {
-	return c.ComposeUnicode(a, b)
-}
-func (noOpHooks) SetupMasks(*harfbuzz.Buffer, *harfbuzz.Font, language.Script) {}
-func (noOpHooks) ReorderMarks(*harfbuzz.Buffer, int, int)                      {}
-func (noOpHooks) PostprocessGlyphs(*harfbuzz.Buffer, *harfbuzz.Font)           {}
-
-type Shaper struct {
-	noOpHooks
-}
+type Shaper struct{}
 
 var _ harfbuzz.ShapingEngine = Shaper{}
+var _ harfbuzz.ShapingEnginePolicy = Shaper{}
+var _ harfbuzz.ShapingEngineComposeHook = Shaper{}
+var _ harfbuzz.ShapingEngineReorderHook = Shaper{}
 
 func (Shaper) Name() string { return "hebrew" }
 

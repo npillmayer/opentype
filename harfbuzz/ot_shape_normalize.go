@@ -294,7 +294,7 @@ func otShapeNormalize(plan *otShapePlan, buffer *Buffer, font *Font) {
 		return
 	}
 
-	mode := plan.shaper.NormalizationPreference()
+	mode := shaperNormalizationPreference(plan.shaper)
 	if mode == nmAuto {
 		if plan.hasGposMark {
 			// https://github.com/harfbuzz/harfbuzz/issues/653#issuecomment-423905920
@@ -308,8 +308,12 @@ func otShapeNormalize(plan *otShapePlan, buffer *Buffer, font *Font) {
 		buffer,
 		font,
 		currentOTNormalizeBackend(),
-		plan.shaper.Decompose,
-		plan.shaper.Compose,
+		func(ctx NormalizeContext, ab rune) (a, b rune, ok bool) {
+			return shaperDecompose(plan.shaper, ctx, ab)
+		},
+		func(ctx NormalizeContext, a, b rune) (ab rune, ok bool) {
+			return shaperCompose(plan.shaper, ctx, a, b)
+		},
 	}
 
 	alwaysShortCircuit := mode == nmNone
@@ -403,7 +407,7 @@ func otShapeNormalize(plan *otShapePlan, buffer *Buffer, font *Font) {
 
 			buffer.sort(i, end, compareCombiningClass)
 
-			plan.shaper.ReorderMarks(buffer, i, end)
+			shaperReorderMarks(plan.shaper, buffer, i, end)
 
 			i = end
 		}

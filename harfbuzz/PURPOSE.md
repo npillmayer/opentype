@@ -587,14 +587,13 @@ Completed:
 6. Added focused end-to-end parity fixtures for Latin/Hebrew/Arabic shaping invariants in `ot_shaper_parity_test.go`.
 7. Added package split wiring boundary with new subpackages:
    - `otcore` (default/core shaper registration helpers)
-   - `otcomplex` (compat registration facade for complex shapers)
    - `othebrew` (Hebrew shaper)
    - `otarabic` (Arabic shaper)
 8. Moved Hebrew/Arabic `ShapingEngine` implementations out of base and switched base built-ins to core-only (`default`).
-9. Removed duplicated legacy base Arabic engine implementation (`ot_arabic.go`) after migrating parity fixtures to registered `otcomplex` shapers.
+9. Removed duplicated legacy base Arabic engine implementation (`ot_arabic.go`) after migrating parity fixtures to registered split shapers.
 
 Pending:
-1. Finalize and document the reduced Arabic bridge API as the intended stable compatibility layer between base and `otcomplex`.
+1. Finalize and document the reduced Arabic bridge API as the intended stable compatibility layer between base and `otarabic`.
 2. Decompose `ShapingEngine` and related helper contracts into externally implementable interfaces (exported method surface) to avoid adapter leakage.
 3. Optional migration from global registry to constructor-injected registries in the future API redesign.
 
@@ -610,11 +609,10 @@ What is already split:
   - `harfbuzz/otcore` (`New()`, `Register()`)
   - `harfbuzz/othebrew` (`New()`, `Register()`)
   - `harfbuzz/otarabic` (`New()`, `Register()`)
-  - `harfbuzz/otcomplex` (`NewHebrew()`, `NewArabic()`, `Register()`) as compatibility facade.
 - `othebrew` and `otarabic` own concrete Hebrew/Arabic `ShapingEngine` types and their runtime/plan logic.
 - Base registry built-ins are now core-only (`default`); complex shapers are registered from split packages.
 - Dependency direction is correct for modularity:
-  - `otcore`/`othebrew`/`otarabic`/`otcomplex` import `harfbuzz`
+  - `otcore`/`othebrew`/`otarabic` import `harfbuzz`
   - `harfbuzz` does **not** import split shaper packages
 - Registry duplicate handling now has an explicit sentinel (`ErrShaperAlreadyRegistered`), allowing idempotent `Register()` calls in split packages.
 
@@ -645,7 +643,7 @@ Main blockers to a full source move:
 Practical interpretation:
 
 - Package boundary and registration API are working.
-- Concrete complex-engine ownership moved to `othebrew` / `otarabic` (with `otcomplex` compatibility wrappers).
+- Concrete complex-engine ownership moved to `othebrew` / `otarabic`.
 - Remaining split work is focused on shrinking and hardening temporary compatibility bridges.
   - Bridge cleanup progress: removed unused Arabic bridge exports (joining constants and fallback-tag exporter) and decoupled fallback-plan creation from fixed-size public array constants.
 
@@ -745,7 +743,7 @@ Status:
   `Codepoint`, `SetCodepoint`, `ComplexAux`, `SetComplexAux`,
   `ModifiedCombiningClass`, `SetModifiedCombiningClass`,
   `GeneralCategory`, `IsDefaultIgnorable`, `Multiplied`, `LigComp`.
-- External compile-surface checks were added in split-package tests (for example `otcomplex/runtime_surface_test.go`).
+- External compile-surface checks were added in split-package tests.
 
 #### Phase D: Extract GSUB pause context and Arabic fallback integration
 
@@ -768,7 +766,7 @@ Status:
   `otShapePlanner.AddGSUBPause`, `otMapBuilder`/`stageMap` pause storage and execution).
 - Arabic pause hooks were decoupled from `*otShapePlan`:
   `recordStch` and fallback shape pause now run as bound engine methods and read
-  per-plan state from `complexShaperArabic.plan`.
+  per-plan state from Arabic engine-owned plan state.
 - Arabic fallback lookup mask selection is now initialized during `InitPlan` and passed through
   narrow data (`fallbackMaskArray`) into fallback-plan creation; no pause-time plan assertions remain.
 - Validation: `go test .` and `go test ./...` pass.
@@ -789,7 +787,7 @@ Status:
   - Hebrew/Arabic `ShapingEngine` implementations now live outside base in `harfbuzz/othebrew` and `harfbuzz/otarabic`.
   - Hebrew shaping behavior is implemented directly inside `othebrew` (compose/reorder/tag), rather than delegated to base helpers.
   - Arabic shaping behavior is implemented directly inside `otarabic` (feature collection, plan init, joining/setup masks, mark reordering, stretch postprocess, fallback pause orchestration), rather than delegating to `harfbuzz.ArabicPlanState`.
-  - Base built-ins are now core-only (`default`); complex engines are provided/registered via split packages (with `otcomplex` compatibility registration).
+  - Base built-ins are now core-only (`default`); complex engines are provided/registered via split packages.
   - Legacy duplicated base Arabic engine file (`ot_arabic.go`) was removed.
   - Parity fixtures rely on registered split shapers instead of base Arabic plan-state types.
   - Validation: `go test .` and `go test ./...` pass.
@@ -838,7 +836,6 @@ Wiring options:
   - `harfbuzz/otcore`: `New()` + `Register()` for default/core engine
   - `harfbuzz/othebrew`: `New()` + `Register()` for Hebrew engine
   - `harfbuzz/otarabic`: `New()` + `Register()` for Arabic engine
-  - `harfbuzz/otcomplex`: `NewHebrew()`, `NewArabic()`, `Register()` compatibility facade
 - Future option: constructor injection of registries for non-global wiring.
 - In a later stage, we will de-compose `ShapingEngine` into narrower interfaces, allowing more modularity and shared functionality between shaper packages. 
 
@@ -857,36 +854,48 @@ Determinism/safety rules:
 
 ### Hebrew Isolation Plan (Next)
 
-Goal: complete Hebrew/Arabic disentanglement so Hebrew shaping is isolated behind a minimal contract,
-with `otcomplex` remaining compatibility-only during transition.
+Goal: complete Hebrew/Arabic disentanglement so Hebrew shaping is isolated behind a minimal contract.
 
 1. Freeze split baseline:
-   keep `othebrew` and `otarabic` as engine owners, and keep `otcomplex` as a thin compatibility
-   facade (`NewHebrew`, `NewArabic`, `Register`).
+   keep `othebrew` and `otarabic` as engine owners with direct registration.
 2. Define isolation rule:
    Hebrew must not depend on Arabic bridge APIs (`ArabicJoiningType`, `ArabicIsWord`,
    `NewArabicFallbackPlan`) or Arabic package internals.
 3. Decompose base shaper contracts (Hebrew-first):
    split `ShapingEngine` into narrower optional interfaces (selection/policy, feature collection,
-   plan init, normalization hooks, runtime hooks), with temporary compatibility adapters.
+   plan init, normalization hooks, runtime hooks), with temporary dispatch helpers.
 4. Minimize Hebrew implementation surface:
    refactor `othebrew` to implement only required interfaces (selection, policy, compose/reorder),
    removing broad no-op scaffolding.
-5. Keep Arabic on compatibility surface temporarily:
+5. Keep Arabic on full hook surface temporarily:
    keep `otarabic` on the broad hook set until Hebrew isolation is complete and stable.
 6. Add isolation regression checks:
    add tests for registry selection with Hebrew-only and Hebrew+Arabic registration, and explicit
    checks that Hebrew has no Arabic bridge usage.
 7. Migrate docs/tests to split-native terminology:
-   treat `otcomplex` as compatibility-only in docs and helper tests.
-8. Retire compatibility facade (later phase):
-   after downstream adoption, deprecate and eventually remove `otcomplex` wrappers.
+   remove transitional compatibility terminology in docs and helper tests.
+8. Tighten split contracts (later phase):
+   remove remaining migration-only interfaces/helpers after Hebrew and Arabic
+   packages are fully minimal.
 
 Acceptance targets:
 
 - Hebrew shaping path compiles and runs without Arabic bridge dependencies.
 - Base pipeline remains shared and behaviorally stable for existing parity fixtures.
-- `otcomplex` can be removed without changing Hebrew/Arabic engine behavior.
+- split registration and behavior stay stable without compatibility wrappers.
+
+Status checkpoint (2026-02-08):
+
+- Step 3 started and first incremental pass is in place:
+  `ShapingEngine` now exposes minimal selection hooks, optional hook interfaces
+  are defined for policy/plan/runtime behavior, and base OT pipeline call-sites
+  dispatch through explicit optional-hook helpers with sane defaults.
+- Hebrew step-4 prep started:
+  Hebrew shaper now relies on minimal optional hooks (policy + compose +
+  reorder) instead of broad no-op hook scaffolding.
+- Compatibility facade removed:
+  `otcomplex` package was deleted and tests now register `othebrew` and
+  `otarabic` directly.
 
 
 ## ot_tag.go

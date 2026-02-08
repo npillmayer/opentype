@@ -141,19 +141,19 @@ Base Arabic code is now support-only, while the active Arabic engine lives in `o
 In short, Arabic complex shaping behavior moved out of base; base now hosts reusable Arabic support
 primitives and fallback lookup synthesis only.
 
-## ot_hebrew.go
+## othebrew/hebrew.go
 
-`ot_hebrew.go` provides Hebrew-specific helper logic used historically by the Hebrew complex shaper.
+`othebrew/hebrew.go` provides Hebrew-specific shaping helpers used by the dedicated Hebrew engine.
 
 - Hebrew composition fallback: extends canonical composition with Hebrew presentation-form
   combinations (hiriq/patah/qamats/holam/dagesh/rafe/shin-dot/sin-dot cases) for compatibility with
-  older fonts when GPOS mark positioning is unavailable (ot_hebrew.go:50, ot_hebrew.go:53).
-- GPOS script tag helper: returns explicit `'hebr'` for Hebrew GPOS script selection (ot_hebrew.go:105).
+  older fonts when GPOS mark positioning is unavailable (othebrew/hebrew.go).
+- GPOS script tag helper: returns explicit `'hebr'` for Hebrew GPOS script selection (othebrew/hebrew.go).
 - Mark reordering heuristic: applies targeted reordering for specific Hebrew combining-mark
   sequences (patah/qamats + sheva/hiriq + meteg/below), with cluster merge before swap to preserve
-  cluster integrity (ot_hebrew.go:111, ot_hebrew.go:122).
+  cluster integrity (othebrew/hebrew.go).
 
-In short, `ot_hebrew.go` is helper logic; active Hebrew engine ownership is in `othebrew`.
+In short, Hebrew helper logic and active Hebrew engine ownership are in `othebrew`.
 
 ## ot_language_table.go
 
@@ -385,519 +385,6 @@ glyph availability.
 In short, `ot_shape_normalize.go` is the font-aware normalization engine that prepares Unicode input
 for stable OpenType shaping behavior.
 
-## Normalization Refactor Checklist (x/text)
-
-This checklist describes a safe migration path to treat `golang.org/x/text/unicode/norm` as the
-canonical Unicode normalization source while preserving HarfBuzz-specific shaping behavior.
-
-- Scope: focus on OpenType shaping for Latin/Cyrillic/Hebrew/Arabic. Chinese-specific behavior is
-  out of scope for this refactor.
-- Non-goal: do not replace glyph-availability gating, variation-selector handling, cluster merging,
-  or script-specific mark reordering with generic Unicode normalization calls.
-
-Phase 0 (baseline and guardrails):
-
-1. Capture current behavior with `go test .` and keep a list of representative shaping cases for
-   Latin/Hebrew/Cyrillic/Arabic.
-2. Record key invariants to preserve: cluster monotonicity, no spurious glyph-not-found regressions,
-   stable fallback behavior for space/U+2011 handling.
-
-Phase 0 baseline commands:
-
-```bash
-go version
-go test . -count=1
-go test . -run TestPhase0 -count=1 -v
-```
-
-- Record the date and Go version next to the baseline run in this file.
-- Treat `ot_shape_normalize_phase0_test.go` as the frozen guardrail suite for:
-  canonical-equivalence checks (Latin/Cyrillic/Arabic), cluster monotonicity, `.notdef` regressions,
-  and space/U+2011 fallback behavior.
-
-Phase 1 (backend abstraction, no behavior change):
-
-1. Introduce an internal normalization backend abstraction used only by `ot_shape_normalize.go`.
-2. Keep the current backend as default (`internal/unicodedata`) so runtime behavior is unchanged.
-3. Add a second backend implemented with `x/text/unicode/norm` primitives for canonical data access.
-
-Status checkpoint (2026-02-07):
-
-- Phase 0 is complete.
-- Phase 0 guardrails are implemented in `ot_shape_normalize_phase0_test.go`.
-- Phase 1 is complete.
-- Backend abstraction and implementations are in `ot_normalize_backend.go`.
-- `ot_shape_normalize.go` at this checkpoint built an `otNormalizeContext` with
-  `defaultOTNormalizeBackend()` (before Phase 2 selector wiring).
-- `complexShaperNil` and Hebrew compose hooks now call normalization primitives through context
-  methods (`decomposeUnicode` / `composeUnicode`) instead of direct `uni.compose/decompose`.
-- Runtime behavior is unchanged: default backend remains `internal/unicodedata`.
-- `x/text` backend is present but not selected as default yet.
-- Validation pass at this checkpoint:
-  `go test . -run 'TestOTNormalizeBackendParitySmoke|TestPhase0' -count=1 -v`
-  and `go test . -count=1`.
-
-Phase 2 (hybrid integration):
-
-1. Route canonical combining-class lookup through the backend.
-2. Route per-rune canonical decomposition through the backend.
-3. Route pair composition checks through the backend.
-4. Keep these paths unchanged: glyph checks (`NominalGlyph`), shaper hooks (`compose`/`decompose`/
-   `reorderMarks`), variation selector clusters, and cluster bookkeeping.
-
-Status checkpoint (2026-02-07):
-
-- Phase 2 is complete.
-- `ot_shape_normalize.go` now initializes normalization with `currentOTNormalizeBackend()` and
-  applies modified combining classes from backend canonical CCC values inside normalization output
-  paths.
-- Canonical decomposition and composition continue to flow through shaper hooks backed by the
-  selected normalization backend.
-- Variation-selector handling, glyph availability gating, and cluster bookkeeping are unchanged.
-- Backend parity test coverage was expanded in `ot_normalize_backend_test.go`:
-  representative-script parity and reference-case parity (legacy vs `x/text`).
-- Midpoint reevaluation gate passed:
-  `go test . -run 'TestOTNormalizeBackendParitySmoke|TestPhase2NormalizationBackendParityRepresentative|TestPhase2NormalizationBackendParityReferenceCases|TestPhase0' -count=1 -v`
-  and `go test . -count=1`.
-
-Midpoint reevaluation gate (mandatory before cleanup):
-
-1. Run `go test .`.
-2. Diff shaping outputs for the representative script set.
-3. Stop and fix before proceeding if regressions are not clearly attributable to intended canonical
-   Unicode behavior.
-
-Phase 3 (switch default backend):
-
-1. Make the `x/text` backend the default for canonical normalization primitives.
-2. Keep legacy backend available behind a temporary debug switch for side-by-side comparison.
-
-Status checkpoint (2026-02-07):
-
-- Phase 3 is complete.
-- Default canonical normalization backend selection is now `x/text`.
-- A temporary process-level debug switch was introduced for side-by-side comparison
-  during Phase 3; it is removed in Phase 4 cleanup.
-- Selection/parsing checks were added in `ot_normalize_backend_test.go`.
-- Validation pass at this checkpoint:
-  `go test . -run 'TestParseOTNormalizeBackendKind|TestCurrentOTNormalizeBackendSelection|TestOTNormalizeBackendParitySmoke|TestPhase2NormalizationBackendParityRepresentative|TestPhase2NormalizationBackendParityReferenceCases|TestPhase0' -count=1 -v`
-  and `go test . -count=1`.
-
-Phase 4 (cleanup):
-
-1. Remove temporary comparison wiring once behavior is accepted.
-2. Minimize direct reliance on `internal/unicodedata` for canonical compose/decompose in this
-   package, while retaining HarfBuzz-specific modified combining class and shaping heuristics.
-
-Status checkpoint (2026-02-07):
-
-- Phase 4 is complete.
-- Temporary comparison wiring was removed from `ot_normalize_backend.go`:
-  no backend kind selector, no environment override, no testing swap helper.
-- Normalization backend selection is now fixed to `x/text` through
-  `currentOTNormalizeBackend()`.
-- Legacy canonical backend implementation used only for comparison was removed.
-- `ot_normalize_backend_test.go` now contains focused `x/text` smoke tests only.
-- HarfBuzz-specific modified combining class mapping and script heuristics in shaping are unchanged.
-
-Risk notes:
-
-1. Avoid full-cluster `NFD`/`NFC` transforms in shaping loops; they may trigger stream-safe behavior
-   not suitable for cluster-level shaping normalization.
-2. Keep script-specific overrides (notably Hebrew/Arabic shaping nuances) as first-class behavior.
-
-## ot_shaper.go
-
-`ot_shaper.go` is the top-level OpenType shaping coordinator that builds plans and executes the full
-shape pipeline on a buffer.
-
-- Primary purpose: define planning/runtime structs (`otShapePlanner`, `otShapePlan`, `otContext`,
-  `shaperOpentype`) and wire feature collection, map compilation, and execution policy
-  (ot_shaper.go:29, ot_shaper.go:104, ot_shaper.go:240, ot_shaper.go:693).
-- Plan compilation policy: applies an OpenType-focused positioning policy (GPOS when present;
-  no legacy `kern` execution path), and computes key feature masks (`frac/numr/dnom/rtlm`)
-  plus fallback mark-positioning toggles (ot_shaper.go:52, ot_shaper.go:75, ot_shaper.go:81,
-  ot_shaper.go:85, ot_shaper.go:91).
-- Feature registration stage: adds core/common/horizontal features, direction-specific features,
-  user features, and shaper-specific feature hooks into the map builder in shaping order
-  (ot_shaper.go:156, ot_shaper.go:178, ot_shaper.go:209, ot_shaper.go:225, ot_shaper.go:233).
-- Substitution preprocessing/postprocessing: handles mirroring/vertical-char rotation, normalization,
-  mask setup, fallback mark recategorization, glyph-class synthesis, GSUB execution, and
-  post-substitution default-ignorable handling (ot_shaper.go:341, ot_shaper.go:414, ot_shaper.go:493,
-  ot_shaper.go:515, ot_shaper.go:524).
-- Positioning orchestration: sets default advances/origins, applies GPOS positioning, controls
-  mark-zeroing timing, finalizes offsets, optional fallback mark positioning, and cluster
-  glyph-flag propagation (ot_shaper.go:556, ot_shaper.go:577, ot_shaper.go:600, ot_shaper.go:622,
-  ot_shaper.go:645).
-- End-to-end entrypoint: `shaperOpentype.shape` executes the complete pipeline (Unicode props,
-  clustering, native-direction handling, preprocess, substitute, position, postprocess) and restores
-  final buffer direction/state limits (ot_shaper.go:715).
-
-In short, `ot_shaper.go` is the pipeline director that turns a prepared shaping plan into concrete
-GSUB/GPOS application and final positioned glyph output.
-
-## Refactoring of Shaper Engine
-
-The current architecture is one shared OpenType pipeline with script-specific hooks, not two fully
-separate shaping engines. A single script selector chooses one shaper implementation, then the
-shared GSUB/GPOS pipeline calls hook methods at defined points.
-
-### Implemented Interface Boundary
-
-The temporary all-encompassing interface is now `ShapingEngine` (`refactoring.go`). It is wired
-into planner and plan state (replacing the old `otComplexShaper` field types), while preserving the
-single shared OT executor.
-
-Current hook groups:
-
-- Policy: `marksBehavior`, `normalizationPreference`, `gposTag`.
-- Plan-time: `collectFeatures(plan, script)`, `overrideFeatures(plan)`, `dataCreate(plan)`.
-- Runtime: `preprocessText(buffer, font)`, `setupMasks(buffer, font, script)`,
-  `reorderMarks(buffer, start, end)`, `postprocessGlyphs(buffer, font)`.
-- Normalization hooks remain context-based: `decompose(c, ab)`, `compose(c, a, b)`.
-
-### Extracted Narrow Interfaces
-
-- `FeaturePlanner`: exposes only feature-map and GSUB-pause operations needed during
-  `collectFeatures`/`overrideFeatures`.
-- `NormalizeContext`: exposes normalization primitives (`decomposeUnicode`, `composeUnicode`) and
-  `hasGposMark`.
-
-`RuntimeContext` was introduced temporarily and then removed; runtime hooks now use explicit
-parameters only.
-
-### Script Handling Decision
-
-`language.Script` is now threaded explicitly to only the hook paths that actually need it:
-
-- `collectFeatures(plan, script)`
-- `setupMasks(buffer, font, script)`
-
-The previous `script()` accessor on temporary interfaces was removed. This matches the project’s
-preference for explicit dataflow over dynamic context access.
-
-### Status Against Plan
-
-Completed:
-1. Extracted and wired interface boundary (`ShapingEngine`) across planner/plan/shaper call sites.
-2. Kept one shared executor (`shaperOpentype.shape` + `otMap`) unchanged.
-3. Introduced narrow plan/normalization interfaces and removed broad runtime context coupling.
-4. Replaced hard-wired script switch with registry-based shaper resolution (`categorizeComplex` now resolves from `SelectionContext`).
-5. Added deterministic resolver behavior (score first, then name, then registration order) and resolver tests.
-6. Added focused end-to-end parity fixtures for Latin/Hebrew/Arabic shaping invariants in `ot_shaper_parity_test.go`.
-7. Added package split wiring boundary with new subpackages:
-   - `otcore` (default/core shaper registration helpers)
-   - `othebrew` (Hebrew shaper)
-   - `otarabic` (Arabic shaper)
-8. Moved Hebrew/Arabic `ShapingEngine` implementations out of base and switched base built-ins to core-only (`default`).
-9. Removed duplicated legacy base Arabic engine implementation (`ot_arabic.go`) after migrating parity fixtures to registered split shapers.
-
-Pending:
-1. Finalize and document the reduced Arabic bridge API as the intended stable compatibility layer between base and `otarabic`.
-2. Decompose `ShapingEngine` and related helper contracts into externally implementable interfaces (exported method surface) to avoid adapter leakage.
-3. Optional migration from global registry to constructor-injected registries in the future API redesign.
-
-Current validation state: `go test .` passes after each refactor step.
-
-### Package Split Status (Detailed)
-
-Current state is an **engine split** with helper internals still in base.
-
-What is already split:
-
-- New subpackages exist and compile:
-  - `harfbuzz/otcore` (`New()`, `Register()`)
-  - `harfbuzz/othebrew` (`New()`, `Register()`)
-  - `harfbuzz/otarabic` (`New()`, `Register()`)
-- `othebrew` and `otarabic` own concrete Hebrew/Arabic `ShapingEngine` types and their runtime/plan logic.
-- Base registry built-ins are now core-only (`default`); complex shapers are registered from split packages.
-- Dependency direction is correct for modularity:
-  - `otcore`/`othebrew`/`otarabic` import `harfbuzz`
-  - `harfbuzz` does **not** import split shaper packages
-- Registry duplicate handling now has an explicit sentinel (`ErrShaperAlreadyRegistered`), allowing idempotent `Register()` calls in split packages.
-
-What remains in base package (not yet split):
-
-- Default/core shaper implementation (`ot_shape_complex.go`).
-- Arabic support/fallback bridges used by `otarabic` remain in base:
-  - joining helpers/types (`ot_arabic_support.go`, generated `ot_arabic_table.go`)
-  - fallback lookup synthesis (`ot_arabic_fallback.go`)
-  - exported bridge surface (`arabic_export.go`)
-- `otarabic` uses exported bridges from base for:
-  - joining/category classification (`UnicodeGeneralCategory`, `ArabicJoiningType`, `ArabicIsWord`)
-  - fallback plan synthesis (`NewArabicFallbackPlan([]GlyphMask, *Font)` returning `ArabicFallbackPlan`)
-- Legacy Hebrew helper API still exists in base (`ot_hebrew.go`) for in-package consumers/tests, but `othebrew` now implements Hebrew shaping directly.
-- Default startup registration still happens in base (`builtInShapers()` in `shaper_registry.go`), and now registers only core/default.
-
-Main blockers to a full source move:
-
-- `ShapingEngine` externalization blocker is mostly resolved:
-  - hook contracts are exported (`ShapingEngine`, `FeaturePlanner`, `NormalizeContext`, `PlanContext`, `PauseContext`),
-    and split packages now ship real Hebrew/Arabic engines against that surface.
-  - remaining work here is API hardening/cleanup (temporary broad interface), not basic external implementability.
-- Plan/runtime coupling blocker is mostly resolved:
-  - complex plan/runtime behavior now lives in split packages (`othebrew`, `otarabic`).
-  - remaining coupling is intentionally narrow bridge usage from `otarabic` into base Arabic support/fallback helpers.
-  - cleanup focus is documenting/locking this reduced bridge surface.
-
-Practical interpretation:
-
-- Package boundary and registration API are working.
-- Concrete complex-engine ownership moved to `othebrew` / `otarabic`.
-- Remaining split work is focused on shrinking and hardening temporary compatibility bridges.
-  - Bridge cleanup progress: removed unused Arabic bridge exports (joining constants and fallback-tag exporter) and decoupled fallback-plan creation from fixed-size public array constants.
-
-### Low-Level Exports Avoided (Arabic)
-
-If we moved Arabic fallback/support code fully into `otarabic` without the current bridge wrappers,
-the following base internals would need to be exported:
-
-- GSUB fallback construction/runtime internals:
-  `lookupGSUB` (`ot_layout_gsub.go`), `otLayoutLookupAccelerator` + `init`
-  (`ot_layout_gsubgpos.go`), and `otApplyContext` plus
-  `reset`/`setLookupMask`/`substituteLookup` (`ot_layout_gsubgpos.go`).
-- Lookup-flag internals:
-  `otIgnoreMarks` (`ot_layout.go`).
-- Internal glyph-ID alias:
-  `gID` (`harfbuzz.go`).
-- Arabic shaping fallback data symbols:
-  `firstArabicShape`, `lastArabicShape`, `arabicShaping`, and ligature table
-  types/data (`arabicLig`, `arabicTableEntry`, `arabicLigatureTable`,
-  `arabicLigatureMarkTable`, `arabicLigature3Table`) from
-  `ot_arabic_table.go`.
-- Joining/category internals (for joining-classification support):
-  `generalCategory` + category constants and `uni.generalCategory`
-  (`unicode.go`), plus `arabicJoining` and related joining helpers/data
-  (`ot_arabic_support.go`, `ot_arabic_table.go`).
-- Potential font-storage internals:
-  direct `Font.face` access patterns in fallback code (`fonts.go`).
-  Note: this can be avoided by using `Font.Face()` instead of exporting the
-  field.
-
-This list is the main reason we currently keep narrow bridge APIs in base
-(`arabic_export.go`) instead of exporting core shaping internals broadly.
-
-### Minimal Hook Contracts: Phase-Ordered Patch Plan
-
-Goal: make Hebrew/Arabic shapers externally implementable in split packages while keeping the shared
-OT pipeline in base and avoiding broad internals export.
-
-#### Phase A: Export naming-only API boundary (no behavior change)
-
-1. Export current hook method names and enum/type names used by engines:
-   `ZeroWidthMarksMode`, `NormalizationMode`, `FeatureFlags`, exported `FeaturePlanner` and
-   `NormalizeContext` method names.
-2. Keep behavior and call graph unchanged; this is a pure API-surface rename/alias step.
-3. Add compile-time assertions and targeted tests to ensure old built-ins still satisfy the
-   updated interfaces.
-
-Acceptance:
-- `go test .` remains green.
-- No shaping diffs in existing parity tests.
-
-Status:
-- Phase A is complete.
-
-#### Phase B: Replace `dataCreate(*otShapePlan)` with narrow plan view
-
-1. Introduce exported `PlanContext` to expose only what Hebrew/Arabic need at plan-init time:
-   script/direction, feature mask lookup (`FeatureMask1`), and feature fallback status
-   (`FeatureNeedsFallback`).
-2. Replace engine hook `dataCreate(plan *otShapePlan)` with `InitPlan(ctx PlanContext)`.
-3. Move Arabic per-plan state initialization (`newArabicPlan` equivalent) behind this narrow
-   context.
-
-Acceptance:
-- No engine type outside base references `otShapePlan`.
-- Existing Arabic/Hebrew parity tests stay green.
-
-Status:
-- Phase B is complete.
-- `ShapingEngine` now uses `InitPlan(plan PlanContext)` instead of
-  `DataCreate(plan *otShapePlan)`.
-- Base `otShapePlan` now implements `PlanContext` (`Script`, `Direction`,
-  `FeatureMask1`, `FeatureNeedsFallback`) and Arabic per-plan setup consumes only
-  that narrow view.
-
-#### Phase C: Export minimal runtime buffer/glyph operations for complex shapers
-
-1. Add a minimal exported method set needed by Hebrew/Arabic runtime hooks:
-   - buffer cluster/flag operations (`MergeClusters`, `UnsafeToBreak`, `UnsafeToConcat`,
-     `UnsafeToConcatFromOutbuffer`, `SafeToInsertTatweel`, `PreContext`, `PostContext`)
-   - glyph accessors/mutators (`Codepoint`, `SetCodepoint`, `ComplexAux`, `SetComplexAux`,
-     `ModifiedCombiningClass`, `SetModifiedCombiningClass`, `GeneralCategory`,
-     `IsDefaultIgnorable`, `Multiplied`, `LigComp`).
-2. Keep storage layout unchanged; add wrappers only.
-
-Acceptance:
-- Arabic/Hebrew implementations can compile using only exported members.
-- No measurable behavior drift in parity fixtures.
-
-Status:
-- Phase C is complete.
-- Exported runtime buffer operations are now available:
-  `MergeClusters`, `UnsafeToBreak`, `UnsafeToConcat`,
-  `UnsafeToConcatFromOutbuffer`, `SafeToInsertTatweel`, `PreContext`,
-  `PostContext`.
-- Exported glyph accessors/mutators are now available:
-  `Codepoint`, `SetCodepoint`, `ComplexAux`, `SetComplexAux`,
-  `ModifiedCombiningClass`, `SetModifiedCombiningClass`,
-  `GeneralCategory`, `IsDefaultIgnorable`, `Multiplied`, `LigComp`.
-- External compile-surface checks were added in split-package tests.
-
-#### Phase D: Extract GSUB pause context and Arabic fallback integration
-
-1. Replace internal `pauseFunc(plan *otShapePlan, font *Font, buffer *Buffer)` dependency with
-   exported `GSUBPauseFunc(PauseContext) bool`.
-2. Provide a narrow pause context exposing only `Font()` and `Buffer()`.
-3. For Arabic fallback, expose a narrow base helper API for fallback lookup application, rather
-   than exporting low-level layout accelerator internals.
-
-Acceptance:
-- Arabic pause hooks (`stch` recorder and fallback shape pause) no longer require `otShapePlan`
-  type assertions.
-
-Status:
-- Phase D is complete.
-- Pause hooks now use exported pause contracts:
-  `GSUBPauseFunc(PauseContext) bool` with `PauseContext` exposing only
-  `Font()` and `Buffer()`.
-- Planner/map pause plumbing was rewired to the new type (`FeaturePlanner.AddGSUBPause`,
-  `otShapePlanner.AddGSUBPause`, `otMapBuilder`/`stageMap` pause storage and execution).
-- Arabic pause hooks were decoupled from `*otShapePlan`:
-  `recordStch` and fallback shape pause now run as bound engine methods and read
-  per-plan state from Arabic engine-owned plan state.
-- Arabic fallback lookup mask selection is now initialized during `InitPlan` and passed through
-  narrow data (`fallbackMaskArray`) into fallback-plan creation; no pause-time plan assertions remain.
-- Validation: `go test .` and `go test ./...` pass.
-
-#### Phase E: Move implementations out of base
-
-1. Move Hebrew and Arabic engine implementations into split packages.
-2. Keep selection/registration behavior identical (`Name`, `Match`, `New` unchanged).
-3. Base package continues to host pipeline execution and default/core engine only.
-
-Acceptance:
-- Active complex-engine path (`othebrew`/`otarabic`) owns Hebrew/Arabic behavior without delegating to base plan-state helpers.
-- `go test ./...` passes.
-
-Status:
-- Phase E is complete.
-- Completed:
-  - Hebrew/Arabic `ShapingEngine` implementations now live outside base in `harfbuzz/othebrew` and `harfbuzz/otarabic`.
-  - Hebrew shaping behavior is implemented directly inside `othebrew` (compose/reorder/tag), rather than delegated to base helpers.
-  - Arabic shaping behavior is implemented directly inside `otarabic` (feature collection, plan init, joining/setup masks, mark reordering, stretch postprocess, fallback pause orchestration), rather than delegating to `harfbuzz.ArabicPlanState`.
-  - Base built-ins are now core-only (`default`); complex engines are provided/registered via split packages.
-  - Legacy duplicated base Arabic engine file (`ot_arabic.go`) was removed.
-  - Parity fixtures rely on registered split shapers instead of base Arabic plan-state types.
-  - Validation: `go test .` and `go test ./...` pass.
-
-#### Phase F: Cleanup and hardening
-
-1. Remove temporary adapters/aliases introduced during A-D.
-2. Add explicit API docs for exported shaper contracts.
-3. Add split-focused regression tests (selection, Hebrew compose fallback, Arabic joining/stch and
-   fallback pause invariants).
-
-Acceptance:
-- Public contract is minimal, documented, and sufficient for external complex shapers.
-- No functional regressions in existing and new parity suites.
-
-### Registry/Factory Wiring (Implemented)
-
-Goal: keep the OpenType pipeline in the base package while allowing shaper implementations to live
-in sub-packages that depend on base. The base package must not import those sub-packages.
-
-Implemented contracts (base package):
-
-- `ShapingEngine` now includes selection hooks:
-  `Name() string`, `Match(SelectionContext) int`, `New() ShapingEngine`
-- `SelectionContext`:
-  carries only data needed for selection (`Script`, `Direction`, chosen/found GSUB/GPOS script tags).
-- Registry API:
-  `RegisterShaper(ShapingEngine) error`, `ClearRegistry()`, internal `resolveShaperForContext(ctx SelectionContext)`.
-
-Selection model:
-
-1. Build `SelectionContext` in planner creation.
-2. Resolve a shaper through registry.
-3. Fall back to built-in default shaper if no engine matches (or if `New()` returns `nil`).
-
-Design intent:
-
-- `Match(ctx)` supports script-only and conditional logic (for example, Arabic-specific direction or script-tag behavior).
-- Deterministic tie-break is stable: score, then name, then registration order.
-- `New()` returns per-plan instances to avoid shared mutable shaper state in runtime hooks.
-
-Wiring options:
-
-- Current: global default registry initialized with built-ins (`default` only).
-- Split helpers now available as packages:
-  - `harfbuzz/otcore`: `New()` + `Register()` for default/core engine
-  - `harfbuzz/othebrew`: `New()` + `Register()` for Hebrew engine
-  - `harfbuzz/otarabic`: `New()` + `Register()` for Arabic engine
-- Future option: constructor injection of registries for non-global wiring.
-- In a later stage, we will de-compose `ShapingEngine` into narrower interfaces, allowing more modularity and shared functionality between shaper packages. 
-
-Registration semantics:
-
-- each sub-package can export a type implementing `ShapingEngine`.
-- clients can register extra engines through `RegisterShaper(...)`.
-- if no registered engine matches a context, the default shaper is used.
-- `ClearRegistry()` clears registered engines in the default registry (used primarily for controlled setup in tests).
-
-Determinism/safety rules:
-
-- registration is startup-time only; registry treated read-only during shaping.
-- conflict resolution is deterministic (score, then name, then registration order).
-- tests should use fresh registries rather than shared global state.
-
-### Hebrew Isolation Plan (Next)
-
-Goal: complete Hebrew/Arabic disentanglement so Hebrew shaping is isolated behind a minimal contract.
-
-1. Freeze split baseline:
-   keep `othebrew` and `otarabic` as engine owners with direct registration.
-2. Define isolation rule:
-   Hebrew must not depend on Arabic bridge APIs (`ArabicJoiningType`, `ArabicIsWord`,
-   `NewArabicFallbackPlan`) or Arabic package internals.
-3. Decompose base shaper contracts (Hebrew-first):
-   split `ShapingEngine` into narrower optional interfaces (selection/policy, feature collection,
-   plan init, normalization hooks, runtime hooks), with temporary dispatch helpers.
-4. Minimize Hebrew implementation surface:
-   refactor `othebrew` to implement only required interfaces (selection, policy, compose/reorder),
-   removing broad no-op scaffolding.
-5. Keep Arabic on full hook surface temporarily:
-   keep `otarabic` on the broad hook set until Hebrew isolation is complete and stable.
-6. Add isolation regression checks:
-   add tests for registry selection with Hebrew-only and Hebrew+Arabic registration, and explicit
-   checks that Hebrew has no Arabic bridge usage.
-7. Migrate docs/tests to split-native terminology:
-   remove transitional compatibility terminology in docs and helper tests.
-8. Tighten split contracts (later phase):
-   remove remaining migration-only interfaces/helpers after Hebrew and Arabic
-   packages are fully minimal.
-
-Acceptance targets:
-
-- Hebrew shaping path compiles and runs without Arabic bridge dependencies.
-- Base pipeline remains shared and behaviorally stable for existing parity fixtures.
-- split registration and behavior stay stable without compatibility wrappers.
-
-Status checkpoint (2026-02-08):
-
-- Step 3 started and first incremental pass is in place:
-  `ShapingEngine` now exposes minimal selection hooks, optional hook interfaces
-  are defined for policy/plan/runtime behavior, and base OT pipeline call-sites
-  dispatch through explicit optional-hook helpers with sane defaults.
-- Hebrew step-4 prep started:
-  Hebrew shaper now relies on minimal optional hooks (policy + compose +
-  reorder) instead of broad no-op hook scaffolding.
-- Compatibility facade removed:
-  `otcomplex` package was deleted and tests now register `othebrew` and
-  `otarabic` directly.
-
-
 ## ot_tag.go
 
 `ot_tag.go` maps Unicode script/language identifiers to OpenType script and language tags used by
@@ -971,3 +458,34 @@ cached compiled plan execution over the OpenType shaping pipeline.
 
 In short, this file bridges raw Unicode semantics to the exact flags and ordering behavior the
 shaper pipeline needs.
+
+
+## ot_shaper.go
+
+`ot_shaper.go` is the top-level OpenType shaping coordinator that builds plans and executes the full
+shape pipeline on a buffer.
+
+- Primary purpose: define planning/runtime structs (`otShapePlanner`, `otShapePlan`, `otContext`,
+  `shaperOpentype`) and wire feature collection, map compilation, and execution policy
+  (ot_shaper.go:29, ot_shaper.go:104, ot_shaper.go:240, ot_shaper.go:693).
+- Plan compilation policy: applies an OpenType-focused positioning policy (GPOS when present;
+  no legacy `kern` execution path), and computes key feature masks (`frac/numr/dnom/rtlm`)
+  plus fallback mark-positioning toggles (ot_shaper.go:52, ot_shaper.go:75, ot_shaper.go:81,
+  ot_shaper.go:85, ot_shaper.go:91).
+- Feature registration stage: adds core/common/horizontal features, direction-specific features,
+  user features, and shaper-specific feature hooks into the map builder in shaping order
+  (ot_shaper.go:156, ot_shaper.go:178, ot_shaper.go:209, ot_shaper.go:225, ot_shaper.go:233).
+- Substitution preprocessing/postprocessing: handles mirroring/vertical-char rotation, normalization,
+  mask setup, fallback mark recategorization, glyph-class synthesis, GSUB execution, and
+  post-substitution default-ignorable handling (ot_shaper.go:341, ot_shaper.go:414, ot_shaper.go:493,
+  ot_shaper.go:515, ot_shaper.go:524).
+- Positioning orchestration: sets default advances/origins, applies GPOS positioning, controls
+  mark-zeroing timing, finalizes offsets, optional fallback mark positioning, and cluster
+  glyph-flag propagation (ot_shaper.go:556, ot_shaper.go:577, ot_shaper.go:600, ot_shaper.go:622,
+  ot_shaper.go:645).
+- End-to-end entrypoint: `shaperOpentype.shape` executes the complete pipeline (Unicode props,
+  clustering, native-direction handling, preprocess, substitute, position, postprocess) and restores
+  final buffer direction/state limits (ot_shaper.go:715).
+
+In short, `ot_shaper.go` is the pipeline director that turns a prepared shaping plan into concrete
+GSUB/GPOS application and final positioned glyph output.

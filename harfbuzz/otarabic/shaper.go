@@ -15,8 +15,11 @@ type noOpHooks struct{}
 func (noOpHooks) GposTag() tables.Tag                                                  { return 0 }
 func (noOpHooks) CollectFeatures(plan harfbuzz.FeaturePlanner, script language.Script) {}
 func (noOpHooks) OverrideFeatures(plan harfbuzz.FeaturePlanner)                        {}
-func (noOpHooks) InitPlan(plan harfbuzz.PlanContext)                                   {}
-func (noOpHooks) PreprocessText(*harfbuzz.Buffer, *harfbuzz.Font)                      {}
+func (noOpHooks) PostResolveFeatures(plan harfbuzz.ResolvedFeaturePlanner, view harfbuzz.ResolvedFeatureView, script language.Script) {
+}
+func (noOpHooks) InitPlan(plan harfbuzz.PlanContext)                            {}
+func (noOpHooks) PreprocessText(*harfbuzz.Buffer, *harfbuzz.Font)               {}
+func (noOpHooks) PrepareGSUB(*harfbuzz.Buffer, *harfbuzz.Font, language.Script) {}
 func (noOpHooks) Decompose(c harfbuzz.NormalizeContext, ab rune) (a, b rune, ok bool) {
 	return c.DecomposeUnicode(ab)
 }
@@ -33,6 +36,8 @@ type Shaper struct {
 }
 
 var _ harfbuzz.ShapingEngine = (*Shaper)(nil)
+var _ harfbuzz.ShapingEnginePostResolveHook = (*Shaper)(nil)
+var _ harfbuzz.ShapingEnginePreGSUBHook = (*Shaper)(nil)
 
 func (Shaper) Name() string { return "arabic" }
 
@@ -69,6 +74,14 @@ func (s *Shaper) CollectFeatures(plan harfbuzz.FeaturePlanner, script language.S
 
 func (s *Shaper) InitPlan(plan harfbuzz.PlanContext) {
 	s.plan.InitPlan(plan)
+}
+
+func (s *Shaper) PostResolveFeatures(plan harfbuzz.ResolvedFeaturePlanner, view harfbuzz.ResolvedFeatureView, script language.Script) {
+	s.plan.PostResolveFeatures(plan, view, script)
+}
+
+func (s *Shaper) PrepareGSUB(buffer *harfbuzz.Buffer, font *harfbuzz.Font, script language.Script) {
+	s.plan.PrepareGSUB(buffer, font, script)
 }
 
 func (s *Shaper) SetupMasks(buffer *harfbuzz.Buffer, font *harfbuzz.Font, script language.Script) {

@@ -70,10 +70,60 @@ type stageInfo struct {
 	index     int
 }
 
+type gsubPauseAnchorKind uint8
+
+const (
+	gsubPauseBeforeTag gsubPauseAnchorKind = iota
+	gsubPauseAfterTag
+)
+
+type gsubPauseAnchor struct {
+	tag       tables.Tag
+	kind      gsubPauseAnchorKind
+	pauseFunc GSUBPauseFunc
+}
+
+type resolvedFeatureSnapshot struct {
+	selected     [2][]ResolvedFeature
+	chosenScript [2]tables.Tag
+	foundScript  [2]bool
+}
+
+func layoutTableIndex(table LayoutTable) int {
+	if table == LayoutGPOS {
+		return 1
+	}
+	return 0
+}
+
+func (v resolvedFeatureSnapshot) SelectedFeatures(table LayoutTable) []ResolvedFeature {
+	idx := layoutTableIndex(table)
+	return append([]ResolvedFeature(nil), v.selected[idx]...)
+}
+
+func (v resolvedFeatureSnapshot) HasSelectedFeature(table LayoutTable, tag tables.Tag) bool {
+	idx := layoutTableIndex(table)
+	for _, feat := range v.selected[idx] {
+		if feat.Tag == tag {
+			return true
+		}
+	}
+	return false
+}
+
+func (v resolvedFeatureSnapshot) ChosenScript(table LayoutTable) tables.Tag {
+	return v.chosenScript[layoutTableIndex(table)]
+}
+
+func (v resolvedFeatureSnapshot) FoundScript(table LayoutTable) bool {
+	return v.foundScript[layoutTableIndex(table)]
+}
+
 type otMapBuilder struct {
 	tables        *font.Font
 	props         SegmentProperties
 	stages        [2][]stageInfo
+	gsubAnchors   []gsubPauseAnchor
 	featureInfos  []featureInfo
 	scriptIndex   [2]int
 	languageIndex [2]int
@@ -134,6 +184,30 @@ func (mb *otMapBuilder) addPause(tableIndex int, fn GSUBPauseFunc) {
 func (mb *otMapBuilder) AddGSUBPause(fn GSUBPauseFunc) { mb.addPause(0, fn) }
 func (mb *otMapBuilder) addGPOSPause(fn GSUBPauseFunc) { mb.addPause(1, fn) }
 
+func (mb *otMapBuilder) AddGSUBPauseBefore(tag tables.Tag, fn GSUBPauseFunc) bool {
+	if tag == 0 {
+		return false
+	}
+	mb.gsubAnchors = append(mb.gsubAnchors, gsubPauseAnchor{
+		tag:       tag,
+		kind:      gsubPauseBeforeTag,
+		pauseFunc: fn,
+	})
+	return true
+}
+
+func (mb *otMapBuilder) AddGSUBPauseAfter(tag tables.Tag, fn GSUBPauseFunc) bool {
+	if tag == 0 {
+		return false
+	}
+	mb.gsubAnchors = append(mb.gsubAnchors, gsubPauseAnchor{
+		tag:       tag,
+		kind:      gsubPauseAfterTag,
+		pauseFunc: fn,
+	})
+	return true
+}
+
 func (mb *otMapBuilder) EnableFeatureExt(tag tables.Tag, flags FeatureFlags, value uint32) {
 	mb.AddFeatureExt(tag, ffGLOBAL|flags, value)
 }
@@ -143,7 +217,67 @@ func (mb *otMapBuilder) EnableFeature(tag tables.Tag)  { mb.EnableFeatureExt(tag
 func (mb *otMapBuilder) addFeature(tag tables.Tag)     { mb.AddFeatureExt(tag, ffNone, 1) }
 func (mb *otMapBuilder) disableFeature(tag tables.Tag) { mb.AddFeatureExt(tag, ffGLOBAL, 0) }
 
-func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
+func newResolvedFeatureSnapshot(features []featureMap, chosenScript [2]tables.Tag, foundScript [2]bool) resolvedFeatureSnapshot {
+	var snapshot resolvedFeatureSnapshot
+	snapshot.chosenScript = chosenScript
+	snapshot.foundScript = foundScript
+	for _, feat := range features {
+		for ti := 0; ti < 2; ti++ {
+			if feat.index[ti] == NoFeatureIndex {
+				continue
+			}
+			snapshot.selected[ti] = append(snapshot.selected[ti], ResolvedFeature{
+				Tag:            feat.tag,
+				Stage:          feat.stage[ti],
+				NeedsFallback:  feat.needsFallback,
+				AutoZWNJ:       feat.autoZWNJ,
+				AutoZWJ:        feat.autoZWJ,
+				PerSyllable:    feat.perSyllable,
+				SupportsRandom: feat.random,
+			})
+		}
+	}
+	return snapshot
+}
+
+func addAnchoredGSUBPauses(stages []stageInfo, anchors []gsubPauseAnchor, features []featureMap) []stageInfo {
+	if len(anchors) == 0 || len(features) == 0 {
+		return stages
+	}
+
+	stageByTag := make(map[tables.Tag]int, len(features))
+	for _, feat := range features {
+		stage, seen := stageByTag[feat.tag]
+		if !seen || feat.stage[0] < stage {
+			stageByTag[feat.tag] = feat.stage[0]
+		}
+	}
+
+	out := append([]stageInfo(nil), stages...)
+	for _, anchor := range anchors {
+		stage, ok := stageByTag[anchor.tag]
+		if !ok {
+			continue
+		}
+
+		pauseIndex := stage
+		if anchor.kind == gsubPauseBeforeTag {
+			pauseIndex = stage - 1
+		}
+
+		out = append(out, stageInfo{
+			index:     pauseIndex,
+			pauseFunc: anchor.pauseFunc,
+		})
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].index < out[j].index
+	})
+	return out
+}
+
+func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey, postResolve func(view ResolvedFeatureView)) {
 	const globalBitShift = 8*4 - 1
 	const globalBitMask = 1 << globalBitShift
 
@@ -268,14 +402,32 @@ func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
 	}
 	mb.featureInfos = mb.featureInfos[:0] // done with these
 
+	if postResolve != nil {
+		snapshot := newResolvedFeatureSnapshot(m.features, m.chosenScript, m.foundScript)
+		postResolve(snapshot)
+	}
+	mb.stages[0] = addAnchoredGSUBPauses(mb.stages[0], mb.gsubAnchors, m.features)
+	mb.gsubAnchors = mb.gsubAnchors[:0]
+
 	mb.AddGSUBPause(nil)
 	mb.addGPOSPause(nil)
 
 	// collect lookup indices for features
 	for tableIndex, table := range tables {
+		sort.SliceStable(mb.stages[tableIndex], func(i, j int) bool {
+			return mb.stages[tableIndex][i].index < mb.stages[tableIndex][j].index
+		})
 		// Collect lookup indices for features
 		stageIndex := 0
 		lastNumLookups := 0
+		for stageIndex < len(mb.stages[tableIndex]) && mb.stages[tableIndex][stageIndex].index < 0 {
+			sm := stageMap{
+				lastLookup: lastNumLookups,
+				pauseFunc:  mb.stages[tableIndex][stageIndex].pauseFunc,
+			}
+			m.stages[tableIndex] = append(m.stages[tableIndex], sm)
+			stageIndex++
+		}
 		for stage := 0; stage < mb.currentStage[tableIndex]; stage++ {
 			if requiredFeatureIndex[tableIndex] != NoFeatureIndex &&
 				requiredFeatureStage[tableIndex] == stage {
@@ -320,7 +472,7 @@ func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
 
 			lastNumLookups = len(m.lookups[tableIndex])
 
-			if stageIndex < len(mb.stages[tableIndex]) && mb.stages[tableIndex][stageIndex].index == stage {
+			for stageIndex < len(mb.stages[tableIndex]) && mb.stages[tableIndex][stageIndex].index == stage {
 				sm := stageMap{
 					lastLookup: lastNumLookups,
 					pauseFunc:  mb.stages[tableIndex][stageIndex].pauseFunc,

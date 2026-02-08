@@ -92,12 +92,10 @@ var arabicStateTable = [...][numStateMachineCols]struct {
 }
 
 type arabicShapePlan struct {
-	fallbackPlan *harfbuzz.ArabicFallbackPlan
+	fallback ArabicFallbackEngine
 	/* The +1 slot is for arabNone, which is not an OT feature. */
-	maskArray         [len(arabicFeatures) + 1]harfbuzz.GlyphMask
-	fallbackMaskArray [arabicFallbackMaxLookups]harfbuzz.GlyphMask
-	doFallback        bool
-	hasStch           bool
+	maskArray [len(arabicFeatures) + 1]harfbuzz.GlyphMask
+	hasStch   bool
 }
 
 type arabicPlanState struct {
@@ -106,7 +104,7 @@ type arabicPlanState struct {
 
 func (cs *arabicPlanState) CollectFeatures(plan harfbuzz.FeaturePlanner, script language.Script) {
 	plan.EnableFeature(ot.NewTag('s', 't', 'c', 'h'))
-	plan.AddGSUBPause(cs.recordStchPause)
+	plan.AddGSUBPause(nil)
 
 	plan.EnableFeatureExt(ot.NewTag('c', 'c', 'm', 'p'), harfbuzz.FeatureManualZWJ, 1)
 	plan.EnableFeatureExt(ot.NewTag('l', 'o', 'c', 'l'), harfbuzz.FeatureManualZWJ, 1)
@@ -126,7 +124,7 @@ func (cs *arabicPlanState) CollectFeatures(plan harfbuzz.FeaturePlanner, script 
 	plan.EnableFeatureExt(ot.NewTag('r', 'l', 'i', 'g'), harfbuzz.FeatureManualZWJ|harfbuzz.FeatureHasFallback, 1)
 
 	if script == language.Arabic {
-		plan.AddGSUBPause(cs.arabicFallbackShapePause)
+		plan.AddGSUBPause(nil)
 	}
 	plan.EnableFeatureExt(ot.NewTag('c', 'a', 'l', 't'), harfbuzz.FeatureManualZWJ, 1)
 	if !plan.HasFeature(ot.NewTag('r', 'c', 'l', 't')) {
@@ -142,15 +140,10 @@ func (cs *arabicPlanState) CollectFeatures(plan harfbuzz.FeaturePlanner, script 
 func newArabicPlan(plan harfbuzz.PlanContext) arabicShapePlan {
 	var arabicPlan arabicShapePlan
 
-	arabicPlan.doFallback = plan.Script() == language.Arabic
+	arabicPlan.fallback = newArabicFallbackEngine(plan)
 	arabicPlan.hasStch = plan.FeatureMask1(ot.NewTag('s', 't', 'c', 'h')) != 0
 	for i, arabFeat := range arabicFeatures {
 		arabicPlan.maskArray[i] = plan.FeatureMask1(arabFeat)
-		arabicPlan.doFallback = arabicPlan.doFallback &&
-			(featureIsSyriac(arabFeat) || plan.FeatureNeedsFallback(arabFeat))
-	}
-	for i, fallbackFeat := range arabicFallbackFeatures {
-		arabicPlan.fallbackMaskArray[i] = plan.FeatureMask1(fallbackFeat)
 	}
 	return arabicPlan
 }
@@ -159,8 +152,11 @@ func (cs *arabicPlanState) InitPlan(plan harfbuzz.PlanContext) {
 	cs.plan = newArabicPlan(plan)
 }
 
-func getJoiningType(u rune, genCat uint8) uint8 {
-	return harfbuzz.ArabicJoiningType(u, genCat)
+func (cs *arabicPlanState) PostResolveFeatures(plan harfbuzz.ResolvedFeaturePlanner, _ harfbuzz.ResolvedFeatureView, script language.Script) {
+	plan.AddGSUBPauseAfter(ot.NewTag('s', 't', 'c', 'h'), cs.recordStchPause)
+	if script == language.Arabic {
+		plan.AddGSUBPauseAfter(ot.NewTag('r', 'l', 'i', 'g'), cs.arabicFallbackShapePause)
+	}
 }
 
 func applyArabicJoining(buffer *harfbuzz.Buffer) {
@@ -235,38 +231,29 @@ func mongolianVariationSelectors(buffer *harfbuzz.Buffer) {
 	}
 }
 
-func (arabicPlan arabicShapePlan) SetupMasks(buffer *harfbuzz.Buffer, script language.Script) {
-	applyArabicJoining(buffer)
-	if script == language.Mongolian {
-		mongolianVariationSelectors(buffer)
-	}
-
+func (arabicPlan arabicShapePlan) SetupMasks(buffer *harfbuzz.Buffer) {
 	info := buffer.Info
 	for i := range info {
 		info[i].Mask |= arabicPlan.maskArray[info[i].ComplexAux()]
 	}
 }
 
+func (cs *arabicPlanState) PrepareGSUB(buffer *harfbuzz.Buffer, _ *harfbuzz.Font, script language.Script) {
+	applyArabicJoining(buffer)
+	if script == language.Mongolian {
+		mongolianVariationSelectors(buffer)
+	}
+}
+
 func (cs *arabicPlanState) SetupMasks(buffer *harfbuzz.Buffer, _ *harfbuzz.Font, script language.Script) {
-	cs.plan.SetupMasks(buffer, script)
+	_ = script
+	cs.plan.SetupMasks(buffer)
 }
 
 func (cs *arabicPlanState) arabicFallbackShapePause(ctx harfbuzz.PauseContext) bool {
-	if !cs.plan.doFallback {
-		return false
-	}
-
 	font := ctx.Font()
 	buffer := ctx.Buffer()
-
-	fallbackPlan := cs.plan.fallbackPlan
-	if fallbackPlan == nil {
-		fallbackPlan = harfbuzz.NewArabicFallbackPlan(cs.plan.fallbackMaskArray[:], font)
-		cs.plan.fallbackPlan = fallbackPlan
-	}
-
-	fallbackPlan.Shape(font, buffer)
-	return true
+	return cs.plan.fallback.Apply(font, buffer)
 }
 
 func (cs *arabicPlanState) recordStchPause(ctx harfbuzz.PauseContext) bool {
@@ -355,7 +342,7 @@ func (cs *arabicPlanState) PostprocessGlyphs(buffer *harfbuzz.Buffer, font *harf
 			context := i
 			for context != 0 && !inRange(info[context-1].ComplexAux()) &&
 				(info[context-1].IsDefaultIgnorable() ||
-					harfbuzz.ArabicIsWord(info[context-1].GeneralCategory())) {
+					arabicIsWord(info[context-1].GeneralCategory())) {
 				context--
 				wTotal += pos[context].XAdvance
 			}

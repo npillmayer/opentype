@@ -37,6 +37,7 @@ type otShapePlanner struct {
 }
 
 var _ FeaturePlanner = (*otShapePlanner)(nil)
+var _ ResolvedFeaturePlanner = (*otShapePlanner)(nil)
 
 func (planner *otShapePlanner) EnableFeature(tag tables.Tag) {
 	planner.map_.EnableFeature(tag)
@@ -52,6 +53,14 @@ func (planner *otShapePlanner) EnableFeatureExt(tag tables.Tag, flags FeatureFla
 
 func (planner *otShapePlanner) AddGSUBPause(fn GSUBPauseFunc) {
 	planner.map_.AddGSUBPause(fn)
+}
+
+func (planner *otShapePlanner) AddGSUBPauseBefore(tag tables.Tag, fn GSUBPauseFunc) bool {
+	return planner.map_.AddGSUBPauseBefore(tag, fn)
+}
+
+func (planner *otShapePlanner) AddGSUBPauseAfter(tag tables.Tag, fn GSUBPauseFunc) bool {
+	return planner.map_.AddGSUBPauseAfter(tag, fn)
 }
 
 func (planner *otShapePlanner) HasFeature(tag tables.Tag) bool {
@@ -75,7 +84,9 @@ func newOtShapePlanner(tables *font.Font, props SegmentProperties) *otShapePlann
 func (planner *otShapePlanner) compile(plan *otShapePlan, key otShapePlanKey) {
 	plan.props = planner.props
 	plan.shaper = planner.shaper
-	planner.map_.compile(&plan.map_, key)
+	planner.map_.compile(&plan.map_, key, func(view ResolvedFeatureView) {
+		shaperPostResolveFeatures(planner.shaper, planner, view, planner.props.Script)
+	})
 
 	plan.fracMask = plan.map_.getMask1(ot.NewTag('f', 'r', 'a', 'c'))
 	plan.numrMask = plan.map_.getMask1(ot.NewTag('n', 'u', 'm', 'r'))
@@ -431,6 +442,8 @@ func (c *otContext) SetupMasks() {
 	buffer := c.buffer
 
 	c.setupMasksFraction()
+
+	shaperPrepareGSUB(c.plan.shaper, buffer, c.font, c.plan.props.Script)
 
 	shaperSetupMasks(c.plan.shaper, buffer, c.font, c.plan.props.Script)
 

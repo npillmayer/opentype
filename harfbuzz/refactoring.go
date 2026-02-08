@@ -15,6 +15,39 @@ type FeaturePlanner interface {
 	HasFeature(tag tables.Tag) bool
 }
 
+// LayoutTable identifies an OpenType layout table.
+type LayoutTable uint8
+
+const (
+	LayoutGSUB LayoutTable = iota
+	LayoutGPOS
+)
+
+// ResolvedFeature describes a selected feature after map-resolution.
+type ResolvedFeature struct {
+	Tag            tables.Tag
+	Stage          int
+	NeedsFallback  bool
+	AutoZWNJ       bool
+	AutoZWJ        bool
+	PerSyllable    bool
+	SupportsRandom bool
+}
+
+// ResolvedFeatureView is a read-only snapshot of selected layout features.
+type ResolvedFeatureView interface {
+	SelectedFeatures(table LayoutTable) []ResolvedFeature
+	HasSelectedFeature(table LayoutTable, tag tables.Tag) bool
+	ChosenScript(table LayoutTable) tables.Tag
+	FoundScript(table LayoutTable) bool
+}
+
+// ResolvedFeaturePlanner exposes post-resolution plan controls.
+type ResolvedFeaturePlanner interface {
+	AddGSUBPauseBefore(tag tables.Tag, fn GSUBPauseFunc) bool
+	AddGSUBPauseAfter(tag tables.Tag, fn GSUBPauseFunc) bool
+}
+
 // NormalizeContext is the temporary runtime view exposed to shaper-specific
 // normalization hooks.
 type NormalizeContext interface {
@@ -80,9 +113,21 @@ type ShapingEnginePlanHooks interface {
 	InitPlan(plan PlanContext)
 }
 
+// ShapingEnginePostResolveHook allows scripts to inspect selected features and
+// add post-resolution stage controls.
+type ShapingEnginePostResolveHook interface {
+	PostResolveFeatures(plan ResolvedFeaturePlanner, view ResolvedFeatureView, script language.Script)
+}
+
 // ShapingEnginePreprocessHook allows pre-GSUB text preprocessing.
 type ShapingEnginePreprocessHook interface {
 	PreprocessText(buffer *Buffer, font *Font)
+}
+
+// ShapingEnginePreGSUBHook allows preparation after normalization and before
+// GSUB lookup application.
+type ShapingEnginePreGSUBHook interface {
+	PrepareGSUB(buffer *Buffer, font *Font, script language.Script)
 }
 
 // ShapingEngineDecomposeHook allows custom normalization decomposition.
@@ -149,9 +194,21 @@ func shaperInitPlan(engine ShapingEngine, plan PlanContext) {
 	}
 }
 
+func shaperPostResolveFeatures(engine ShapingEngine, plan ResolvedFeaturePlanner, view ResolvedFeatureView, script language.Script) {
+	if hooks, ok := engine.(ShapingEnginePostResolveHook); ok {
+		hooks.PostResolveFeatures(plan, view, script)
+	}
+}
+
 func shaperPreprocessText(engine ShapingEngine, buffer *Buffer, font *Font) {
 	if hooks, ok := engine.(ShapingEnginePreprocessHook); ok {
 		hooks.PreprocessText(buffer, font)
+	}
+}
+
+func shaperPrepareGSUB(engine ShapingEngine, buffer *Buffer, font *Font, script language.Script) {
+	if hooks, ok := engine.(ShapingEnginePreGSUBHook); ok {
+		hooks.PrepareGSUB(buffer, font, script)
 	}
 }
 

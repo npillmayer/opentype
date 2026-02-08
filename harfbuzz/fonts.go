@@ -101,6 +101,11 @@ func (f *Font) nominalGlyph(r rune, notFound GID) (GID, bool) {
 	return g, ok
 }
 
+// NominalGlyph returns the nominal glyph ID for a rune if present in the font.
+func (f *Font) NominalGlyph(r rune) (GID, bool) {
+	return f.face.NominalGlyph(r)
+}
+
 // ---- Convert from font-space to user-space ----
 
 func (f *Font) emScaleX(v int16) Position    { return Position(v) * f.XScale / f.faceUpem }

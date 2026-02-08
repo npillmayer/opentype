@@ -6,6 +6,11 @@ import (
 	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
+type langTag struct {
+	language string
+	tag      tables.Tag
+}
+
 var (
 	otLanguageIndexOnce sync.Once
 	otLanguageIndex     map[string][]tables.Tag

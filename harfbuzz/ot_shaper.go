@@ -73,7 +73,7 @@ func newOtShapePlanner(tables *font.Font, props SegmentProperties) *otShapePlann
 	out.tables = tables
 	out.map_ = newOtMapBuilder(tables, props)
 
-	out.shaper = out.categorizeComplex()
+	out.shaper = out.selectShaper()
 
 	zwm, fb := shaperMarksBehavior(out.shaper)
 	out.scriptZeroMarks = zwm != zeroWidthMarksNone

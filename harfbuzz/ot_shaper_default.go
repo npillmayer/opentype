@@ -19,7 +19,7 @@ const (
 	zeroWidthMarksByGdefLate  = ZeroWidthMarksByGDEFLate
 )
 
-func (planner *otShapePlanner) categorizeComplex() ShapingEngine {
+func (planner *otShapePlanner) selectShaper() ShapingEngine {
 	return resolveShaperForContext(SelectionContext{
 		Script:       planner.props.Script,
 		Direction:    planner.props.Direction,
@@ -61,6 +61,11 @@ type complexShaperDefault struct {
 
 var _ ShapingEngine = complexShaperDefault{}
 
+// NewDefaultShapingEngine returns a fresh default OpenType shaping engine.
+func NewDefaultShapingEngine() ShapingEngine {
+	return complexShaperDefault{}.New()
+}
+
 func (cs complexShaperDefault) Name() string {
 	return "default"
 }
@@ -85,60 +90,4 @@ func (cs complexShaperDefault) NormalizationPreference() NormalizationMode {
 		return nmNone
 	}
 	return nmDefault
-}
-
-func syllabicInsertDottedCircles(font *Font, buffer *Buffer, brokenSyllableType,
-	dottedcircleCategory uint8, rephaCategory, dottedCirclePosition int,
-) bool {
-	if (buffer.Flags & DoNotinsertDottedCircle) != 0 {
-		return false
-	}
-
-	if (buffer.scratchFlags & bsfHasBrokenSyllable) == 0 {
-		return false
-	}
-
-	dottedcircleGlyph, ok := font.face.NominalGlyph(0x25CC)
-	if !ok {
-		return false
-	}
-
-	dottedcircle := GlyphInfo{
-		Glyph:           dottedcircleGlyph,
-		complexCategory: dottedcircleCategory,
-	}
-
-	if dottedCirclePosition != -1 {
-		dottedcircle.complexAux = uint8(dottedCirclePosition)
-	}
-
-	buffer.clearOutput()
-
-	buffer.idx = 0
-	var lastSyllable uint8
-	for buffer.idx < len(buffer.Info) {
-		syllable := buffer.cur(0).syllable
-		if lastSyllable != syllable && (syllable&0x0F) == brokenSyllableType {
-			lastSyllable = syllable
-
-			ginfo := dottedcircle
-			ginfo.Cluster = buffer.cur(0).Cluster
-			ginfo.Mask = buffer.cur(0).Mask
-			ginfo.syllable = buffer.cur(0).syllable
-
-			/* Insert dottedcircle after possible Repha. */
-			if rephaCategory != -1 {
-				for buffer.idx < len(buffer.Info) &&
-					lastSyllable == buffer.cur(0).syllable &&
-					buffer.cur(0).complexCategory == uint8(rephaCategory) {
-					buffer.nextGlyph()
-				}
-			}
-			buffer.outInfo = append(buffer.outInfo, ginfo)
-		} else {
-			buffer.nextGlyph()
-		}
-	}
-	buffer.swapBuffers()
-	return true
 }

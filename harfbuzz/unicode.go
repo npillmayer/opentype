@@ -12,6 +12,11 @@ var uni = unicodeFuncs{}
 // generalCategory is an enum value to allow compact storage (see generalCategories)
 type generalCategory uint8
 
+// UnicodeGeneralCategory returns the internal numeric general category code for a rune.
+func UnicodeGeneralCategory(u rune) uint8 {
+	return uint8(uni.generalCategory(u))
+}
+
 const (
 	control generalCategory = iota
 	format

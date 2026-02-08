@@ -455,7 +455,7 @@ Goal: complete Hebrew/Arabic disentanglement so Hebrew shaping is isolated behin
    add tests for registry selection with Hebrew-only and Hebrew+Arabic registration, and explicit
    checks that Hebrew has no Arabic-package usage.
 7. Migrate docs/tests to split-native terminology:
-   remove transitional compatibility terminology in docs and helper tests.
+   remove remaining transitional terminology in docs and helper tests.
 8. Tighten split contracts (later phase):
    remove remaining migration-only interfaces/helpers after Hebrew and Arabic
    packages are fully minimal.
@@ -465,6 +465,7 @@ Acceptance targets:
 - Hebrew shaping path compiles and runs without Arabic-package dependencies.
 - Base pipeline remains shared and behaviorally stable for existing parity fixtures.
 - split registration and behavior stay stable without compatibility wrappers.
+- split registration and behavior stay stable with split-native terminology.
 
 Status checkpoint (2026-02-08):
 
@@ -607,3 +608,7 @@ Status (2026-02-08):
   generated joining map from `ot_arabic_table.go`, and Arabic-specific bridge
   exports) were moved/removed from base and are now local to `harfbuzz/otarabic`.
   Base now retains only generic shaping primitives used by split packages.
+- Regression guard added:
+  `harfbuzz/otarabic/runtime_surface_test.go` now includes
+  `TestNoBaseArabicBridgeSelectors`, which fails if `otarabic` source files
+  reference forbidden base Arabic selectors (`ArabicJoiningType`, `ArabicIsWord`).

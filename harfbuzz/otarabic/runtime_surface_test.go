@@ -41,13 +41,54 @@ var (
 
 func TestRuntimeSurfaceCompiles(t *testing.T) {}
 
+func TestShaperHookSurface(t *testing.T) {
+	t.Helper()
+
+	engine := New()
+
+	if _, ok := engine.(harfbuzz.ShapingEnginePolicy); !ok {
+		t.Fatal("arabic shaper must implement policy hooks")
+	}
+	if _, ok := engine.(harfbuzz.ShapingEnginePlanHooks); !ok {
+		t.Fatal("arabic shaper must implement plan hooks")
+	}
+	if _, ok := engine.(harfbuzz.ShapingEnginePostResolveHook); !ok {
+		t.Fatal("arabic shaper must implement post-resolve hooks")
+	}
+	if _, ok := engine.(harfbuzz.ShapingEnginePreGSUBHook); !ok {
+		t.Fatal("arabic shaper must implement pre-GSUB hooks")
+	}
+	if _, ok := engine.(harfbuzz.ShapingEngineMaskHook); !ok {
+		t.Fatal("arabic shaper must implement mask hooks")
+	}
+	if _, ok := engine.(harfbuzz.ShapingEngineReorderHook); !ok {
+		t.Fatal("arabic shaper must implement reorder hooks")
+	}
+	if _, ok := engine.(harfbuzz.ShapingEnginePostprocessHook); !ok {
+		t.Fatal("arabic shaper must implement postprocess hooks")
+	}
+
+	// Keep the Arabic hook surface narrow: no preprocess/compose/decompose custom hooks.
+	if _, ok := engine.(harfbuzz.ShapingEnginePreprocessHook); ok {
+		t.Fatal("arabic shaper must not implement preprocess hook")
+	}
+	if _, ok := engine.(harfbuzz.ShapingEngineComposeHook); ok {
+		t.Fatal("arabic shaper must not implement compose hook")
+	}
+	if _, ok := engine.(harfbuzz.ShapingEngineDecomposeHook); ok {
+		t.Fatal("arabic shaper must not implement decompose hook")
+	}
+}
+
 func TestNoBaseArabicBridgeSelectors(t *testing.T) {
 	t.Helper()
 
 	const basePkgPath = "github.com/npillmayer/opentype/harfbuzz"
 	forbidden := map[string]struct{}{
-		"ArabicJoiningType": {},
-		"ArabicIsWord":      {},
+		"ArabicJoiningType":        {},
+		"ArabicIsWord":             {},
+		"NewArabicFallbackPlan":    {},
+		"NewArabicFallbackProgram": {},
 	}
 
 	entries, err := os.ReadDir(".")
@@ -95,7 +136,7 @@ func TestNoBaseArabicBridgeSelectors(t *testing.T) {
 			if _, ok := baseImportNames[ident.Name]; !ok {
 				return true
 			}
-			if _, bad := forbidden[sel.Sel.Name]; bad {
+			if _, bad := forbidden[sel.Sel.Name]; bad || strings.HasPrefix(sel.Sel.Name, "Arabic") {
 				t.Errorf("%s references forbidden base selector %s.%s", name, ident.Name, sel.Sel.Name)
 			}
 			return true

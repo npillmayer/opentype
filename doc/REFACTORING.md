@@ -169,7 +169,7 @@ Completed:
 2. Kept one shared executor (`shaperOpentype.shape` + `otMap`) unchanged.
 3. Introduced optional hook interfaces (policy/plan/runtime/normalization) and rewired planner,
    shaping, and normalization call-sites through explicit dispatch helpers.
-4. Replaced hard-wired script switch with registry-based shaper resolution (`categorizeComplex` now resolves from `SelectionContext`).
+4. Replaced hard-wired script switch with registry-based shaper resolution (`selectShaper` resolves from `SelectionContext`).
 5. Added deterministic resolver behavior (score first, then name, then registration order) and resolver tests.
 6. Added focused end-to-end parity fixtures for Latin/Hebrew/Arabic shaping invariants in `ot_shaper_parity_test.go`.
 7. Added package split wiring boundary with new subpackages:
@@ -181,12 +181,11 @@ Completed:
 10. Removed `otcomplex` compatibility facade; tests now register split shapers directly.
 11. Removed migration-only `LegacyShapingEngine` type.
 12. Reduced Hebrew shaper surface to minimal optional hooks (policy + compose + reorder).
+13. Reduced Arabic shaper surface by removing embedded no-op hook scaffolding and implementing only required optional interfaces explicitly.
 
 Pending:
-1. Continue contract cleanup by removing remaining migration-oriented defaults once Arabic hooks are
-   narrowed similarly to Hebrew.
-2. Add explicit Hebrew-isolation regression checks (Hebrew-only registry path and dependency guards).
-3. Optional migration from global registry to constructor-injected registries in the future API redesign.
+1. Add explicit Hebrew-isolation regression checks (Hebrew-only registry path and dependency guards).
+2. Optional migration from global registry to constructor-injected registries in the future API redesign.
 
 Current validation state: `go test .` passes after each refactor step.
 
@@ -209,7 +208,7 @@ What is already split:
 
 What remains in base package (not yet split):
 
-- Default/core shaper implementation (`ot_shape_complex.go`).
+- Default/core shaper implementation (`ot_shaper_default.go`).
 - Generic synthetic GSUB execution remains in base (`ot_synthetic_gsub.go`) as shared runtime
   infrastructure used by split shapers.
 - Generic Unicode category export remains in base (`unicode_export.go`: `UnicodeGeneralCategory`)
@@ -612,3 +611,7 @@ Status (2026-02-08):
   `harfbuzz/otarabic/runtime_surface_test.go` now includes
   `TestNoBaseArabicBridgeSelectors`, which fails if `otarabic` source files
   reference forbidden base Arabic selectors (`ArabicJoiningType`, `ArabicIsWord`).
+- Additional contract guard added:
+  `harfbuzz/otarabic/runtime_surface_test.go` now includes
+  `TestShaperHookSurface`, which locks the intended Arabic hook surface
+  (required interfaces implemented; preprocess/compose/decompose hooks absent).

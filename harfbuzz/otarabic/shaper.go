@@ -10,34 +10,18 @@ import (
 	"github.com/npillmayer/opentype/harfbuzz"
 )
 
-type noOpHooks struct{}
-
-func (noOpHooks) GposTag() tables.Tag                                                  { return 0 }
-func (noOpHooks) CollectFeatures(plan harfbuzz.FeaturePlanner, script language.Script) {}
-func (noOpHooks) OverrideFeatures(plan harfbuzz.FeaturePlanner)                        {}
-func (noOpHooks) PostResolveFeatures(plan harfbuzz.ResolvedFeaturePlanner, view harfbuzz.ResolvedFeatureView, script language.Script) {
-}
-func (noOpHooks) InitPlan(plan harfbuzz.PlanContext)                            {}
-func (noOpHooks) PreprocessText(*harfbuzz.Buffer, *harfbuzz.Font)               {}
-func (noOpHooks) PrepareGSUB(*harfbuzz.Buffer, *harfbuzz.Font, language.Script) {}
-func (noOpHooks) Decompose(c harfbuzz.NormalizeContext, ab rune) (a, b rune, ok bool) {
-	return c.DecomposeUnicode(ab)
-}
-func (noOpHooks) Compose(c harfbuzz.NormalizeContext, a, b rune) (ab rune, ok bool) {
-	return c.ComposeUnicode(a, b)
-}
-func (noOpHooks) SetupMasks(*harfbuzz.Buffer, *harfbuzz.Font, language.Script) {}
-func (noOpHooks) ReorderMarks(*harfbuzz.Buffer, int, int)                      {}
-func (noOpHooks) PostprocessGlyphs(*harfbuzz.Buffer, *harfbuzz.Font)           {}
-
 type Shaper struct {
-	noOpHooks
 	plan arabicPlanState
 }
 
 var _ harfbuzz.ShapingEngine = (*Shaper)(nil)
+var _ harfbuzz.ShapingEnginePolicy = (*Shaper)(nil)
+var _ harfbuzz.ShapingEnginePlanHooks = (*Shaper)(nil)
 var _ harfbuzz.ShapingEnginePostResolveHook = (*Shaper)(nil)
 var _ harfbuzz.ShapingEnginePreGSUBHook = (*Shaper)(nil)
+var _ harfbuzz.ShapingEngineMaskHook = (*Shaper)(nil)
+var _ harfbuzz.ShapingEngineReorderHook = (*Shaper)(nil)
+var _ harfbuzz.ShapingEnginePostprocessHook = (*Shaper)(nil)
 
 func (Shaper) Name() string { return "arabic" }
 
@@ -66,6 +50,12 @@ func (Shaper) MarksBehavior() (harfbuzz.ZeroWidthMarksMode, bool) {
 
 func (Shaper) NormalizationPreference() harfbuzz.NormalizationMode {
 	return harfbuzz.NormalizationDefault
+}
+
+func (Shaper) GposTag() tables.Tag { return 0 }
+
+func (Shaper) OverrideFeatures(plan harfbuzz.FeaturePlanner) {
+	_ = plan
 }
 
 func (s *Shaper) CollectFeatures(plan harfbuzz.FeaturePlanner, script language.Script) {

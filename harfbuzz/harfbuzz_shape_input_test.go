@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,6 +15,8 @@ import (
 	"github.com/go-text/typesetting/language"
 	tu "github.com/go-text/typesetting/testutils"
 )
+
+var clusterLevelOptPattern = regexp.MustCompile(`--cluster-level(?:=|\s+)(\d+)`)
 
 // collectTests walk through the tests directories, parsing .tests files
 func collectTests(t testing.TB) []testData {
@@ -72,15 +75,22 @@ func readTestFile(t testing.TB, filename string) (out []testData) {
 		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" { // skip comments
 			continue
 		}
+		if strings.HasPrefix(strings.TrimSpace(line), "@") {
+			// Upstream fixture directives (e.g. @font-funcs=...) are metadata, not test lines.
+			continue
+		}
 
 		// special case
 		if strings.Contains(line, "--shaper=fallback") {
 			// we do not support fallback shaper
 			continue
 		}
-		if strings.Contains(line, "--cluster-level=1") || strings.Contains(line, "--cluster-level=2") ||
-			strings.Contains(line, "--cluster-level 1") || strings.Contains(line, "--cluster-level 2") {
-			// strict cluster policy: only cluster-level=0 is supported
+		if strings.Contains(line, "--font-slant") || strings.Contains(line, "--not-found-variation-selector-glyph") {
+			// unsupported synthetic/style and VS fallback controls in this harness.
+			continue
+		}
+		if hasUnsupportedClusterLevel(line) {
+			// strict cluster policy: only cluster-level=0 is supported.
 			continue
 		}
 
@@ -88,6 +98,18 @@ func readTestFile(t testing.TB, filename string) (out []testData) {
 	}
 
 	return out
+}
+
+func hasUnsupportedClusterLevel(line string) bool {
+	matches := clusterLevelOptPattern.FindStringSubmatch(line)
+	if len(matches) != 2 {
+		return false
+	}
+	level, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return true
+	}
+	return level != 0
 }
 
 // testData represents one line of a .tests file

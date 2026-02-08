@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/go-text/typesetting/harfbuzz"
-	"github.com/go-text/typesetting/harfbuzz/otcomplex"
+	"github.com/npillmayer/opentype/harfbuzz"
+	"github.com/npillmayer/opentype/harfbuzz/otcomplex"
 )
 
 func init() {

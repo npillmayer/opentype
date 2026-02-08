@@ -1,4 +1,4 @@
-package otcomplex
+package otarabic
 
 import (
 	"testing"
@@ -34,4 +34,4 @@ var (
 	_ runtimeGlyphSurface  = (*harfbuzz.GlyphInfo)(nil)
 )
 
-func TestPhaseC_RuntimeSurfaceCompiles(t *testing.T) {}
+func TestRuntimeSurfaceCompiles(t *testing.T) {}

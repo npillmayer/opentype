@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/go-text/typesetting/harfbuzz"
+	"github.com/npillmayer/opentype/harfbuzz"
 )
 
 // New returns the core/default shaping engine.

@@ -3,7 +3,7 @@ package harfbuzz
 import (
 	"unicode"
 
-	ucd "github.com/go-text/typesetting/internal/unicodedata"
+	ucd "github.com/npillmayer/opentype/harfbuzz/internal/unicodedata"
 )
 
 // uni exposes some lookup functions for Unicode properties.

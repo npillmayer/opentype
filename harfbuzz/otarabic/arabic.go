@@ -1,10 +1,10 @@
-package otcomplex
+package otarabic
 
 import (
 	ot "github.com/go-text/typesetting/font/opentype"
 	"github.com/go-text/typesetting/language"
 
-	"github.com/go-text/typesetting/harfbuzz"
+	"github.com/npillmayer/opentype/harfbuzz"
 )
 
 func featureIsSyriac(tag ot.Tag) bool {

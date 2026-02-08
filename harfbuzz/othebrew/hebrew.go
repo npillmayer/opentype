@@ -1,8 +1,8 @@
-package otcomplex
+package othebrew
 
 import (
 	ot "github.com/go-text/typesetting/font/opentype"
-	"github.com/go-text/typesetting/harfbuzz"
+	"github.com/npillmayer/opentype/harfbuzz"
 )
 
 // Hebrew presentation forms with dagesh, for characters U+05D0..05EA.

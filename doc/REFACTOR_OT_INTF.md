@@ -386,16 +386,16 @@ This section records the current behavior in `ot/` for lookup decomposition deta
 2. Slice 2.1: GSUB typed payloads. (`Status: complete`)
    1. Implement concrete payload parsing for GSUB lookup types 1–8.
    2. Include extension type 7 normalization and reverse chaining type 8 payload.
-3. Slice 2.2: GPOS typed payloads. (`Status: in progress`)
+3. Slice 2.2: GPOS typed payloads. (`Status: complete`)
    1. Implement concrete payload parsing for GPOS lookup types 1–9.
    2. Include extension type 9 normalization and class/anchor payload groups.
-4. Slice 2.3: Context/chaining typed rule materialization. (`Status: partially complete`)
+4. Slice 2.3: Context/chaining typed rule materialization. (`Status: complete`)
    1. Move contextual/chaining rule decoding into explicit typed structures.
    2. Eliminate dependency on `VarArray` for the new concrete path.
 5. Slice 2.4: Legacy cache bug fix (required stabilization). (`Status: complete`)
    1. Fix value-receiver cache loss in legacy lookup traversal (`LookupList.Navigate`, `Lookup.Subtable`) via stable cache ownership.
    2. Keep external legacy behavior unchanged.
-6. Slice 2.5: Parity and concurrency hardening. (`Status: partially complete`)
+6. Slice 2.5: Parity and concurrency hardening. (`Status: complete`)
    1. Add concrete-vs-legacy parity tests for GSUB/GPOS lookup traversal and payload summaries.
    2. Add concurrent lazy-load tests for lookup and subtable pointer stability.
 
@@ -406,17 +406,21 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    1. GSUB concrete payload path is implemented for types 1–8, including extension type 7 unwrapping and reverse chaining.
    2. GPOS concrete payload path is wired and implemented for types 1–9, including extension type 9 unwrapping.
    3. Lookup graph lazy caches are guarded with one-shot synchronization and have concurrent pointer-stability tests.
+   4. Parity/concurrency hardening now includes extension/context-heavy checks:
+      1. GSUB extension parity over lookup traversal,
+      2. GPOS extension parity over lookup traversal,
+      3. GSUB contextual/chaining format-2/3 parity against legacy support payloads,
+      4. GPOS payload parity checks across effective payloads (including non-extension nodes on available fonts),
+      5. synthetic contextual/chaining parity checks for GPOS format-1/2/3 edge forms against legacy traversal,
+      6. negative malformed-input checks for concrete GSUB/GPOS parsing (offset/format truncation and recursive extension guards),
+      7. concurrent access checks for extension-resolved and context-heavy concrete nodes.
 3. Transitional coexistence remains intact:
    1. parser still populates both legacy `LookupList` and concrete `LookupGraph`.
    2. legacy consumers remain on old path.
 
 #### What remains to finish Phase 2
-1. Close Slice 2.2/2.3 gaps with broader verification:
-   1. add more per-format/per-type negative tests (malformed offsets/formats) across GPOS and GSUB.
-   2. add stronger legacy-vs-concrete parity assertions for GPOS payload details (not only scaffold/count parity).
-2. Finish Slice 2.5:
-   1. extend parity coverage to include extension-heavy paths and contextual/chaining payload summaries on real fonts.
-   2. keep/add concurrency hardening tests where caches are still map-backed.
+1. No open verification gaps are currently tracked for Phase 2.
+2. Remaining work shifts to transition planning/execution for later phases (compatibility adapters and consumer migration).
 
 #### Test plan for Phase 2
 1. Parse and count parity:

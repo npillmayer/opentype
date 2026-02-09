@@ -300,12 +300,17 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    1. ClassDef format and record views are parsed immediately.
    2. `Lookup/Class` operations still decode from stored byte views on demand.
 
-### Known bug: cache lost due to value receivers
+### Known bug: cache lost due to value receivers (resolved 2026-02-09)
 1. The code intends to cache lazy parse results (`lookupsCache`, `subTablesCache`).
 2. `LookupList.Navigate` and `Lookup.Subtable` currently use value receivers.
 3. Cache writes therefore happen on copies, so cached instances are not reliably reused across calls.
 4. This is a bug (not an intentional tradeoff): lazy parsing currently degenerates into repeated parsing in common call patterns.
-5. Required fix: move cache ownership to stable instances (for example pointer receivers and/or explicit owner objects) and define cache lifetime semantics consistent with thread-safe read access and deferred pointer-identity decision.
+5. Implemented fix:
+   1. cache backing arrays are allocated on stable instances during parse/construction and shared across value copies,
+   2. explicit parsed sentinels (`lookupsParsed`, `subTablesParsed`) prevent repeated parsing and make cache state robust for zero-value payloads,
+   3. regression coverage added for repeated value-receiver traversal (`LookupList.Navigate(...).Subtable(...)`).
+6. Remaining caveat:
+   1. this fix addresses cache-loss and repeated parse behavior; broader legacy-path concurrency guarantees are still a separate hardening topic.
 
 ## Implementation Phases
 1. Phase 1: Introduce concrete shared layout graph types in parallel with existing interfaces.
@@ -374,25 +379,44 @@ This section records the current behavior in `ot/` for lookup decomposition deta
 4. No consumer migration in this phase; consumers remain on legacy path until Phase 4.
 
 #### Implementation slices
-1. Slice 2.0: Scaffolding and wiring.
+1. Slice 2.0: Scaffolding and wiring. (`Status: complete`)
    1. Add `LookupListGraph`/`LookupTable`/`LookupNode` scaffolds.
    2. Add `LayoutTable.LookupGraph()` and parser hook.
    3. Add baseline “graph exists + count parity” tests.
-2. Slice 2.1: GSUB typed payloads.
+2. Slice 2.1: GSUB typed payloads. (`Status: complete`)
    1. Implement concrete payload parsing for GSUB lookup types 1–8.
    2. Include extension type 7 normalization and reverse chaining type 8 payload.
-3. Slice 2.2: GPOS typed payloads.
+3. Slice 2.2: GPOS typed payloads. (`Status: in progress`)
    1. Implement concrete payload parsing for GPOS lookup types 1–9.
    2. Include extension type 9 normalization and class/anchor payload groups.
-4. Slice 2.3: Context/chaining typed rule materialization.
+4. Slice 2.3: Context/chaining typed rule materialization. (`Status: partially complete`)
    1. Move contextual/chaining rule decoding into explicit typed structures.
    2. Eliminate dependency on `VarArray` for the new concrete path.
-5. Slice 2.4: Legacy cache bug fix (required stabilization).
+5. Slice 2.4: Legacy cache bug fix (required stabilization). (`Status: complete`)
    1. Fix value-receiver cache loss in legacy lookup traversal (`LookupList.Navigate`, `Lookup.Subtable`) via stable cache ownership.
    2. Keep external legacy behavior unchanged.
-6. Slice 2.5: Parity and concurrency hardening.
+6. Slice 2.5: Parity and concurrency hardening. (`Status: partially complete`)
    1. Add concrete-vs-legacy parity tests for GSUB/GPOS lookup traversal and payload summaries.
    2. Add concurrent lazy-load tests for lookup and subtable pointer stability.
+
+#### Current status snapshot (2026-02-09)
+1. `Phase 1` is complete for the shared graph migration track:
+   1. concrete `ScriptList` / `Script` / `LangSys` / `FeatureList` / `Feature` and lazy graph access are present in parallel with legacy interfaces.
+2. `Phase 2` is active:
+   1. GSUB concrete payload path is implemented for types 1–8, including extension type 7 unwrapping and reverse chaining.
+   2. GPOS concrete payload path is wired and implemented for types 1–9, including extension type 9 unwrapping.
+   3. Lookup graph lazy caches are guarded with one-shot synchronization and have concurrent pointer-stability tests.
+3. Transitional coexistence remains intact:
+   1. parser still populates both legacy `LookupList` and concrete `LookupGraph`.
+   2. legacy consumers remain on old path.
+
+#### What remains to finish Phase 2
+1. Close Slice 2.2/2.3 gaps with broader verification:
+   1. add more per-format/per-type negative tests (malformed offsets/formats) across GPOS and GSUB.
+   2. add stronger legacy-vs-concrete parity assertions for GPOS payload details (not only scaffold/count parity).
+2. Finish Slice 2.5:
+   1. extend parity coverage to include extension-heavy paths and contextual/chaining payload summaries on real fonts.
+   2. keep/add concurrency hardening tests where caches are still map-backed.
 
 #### Test plan for Phase 2
 1. Parse and count parity:

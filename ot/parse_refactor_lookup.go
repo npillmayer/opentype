@@ -80,6 +80,10 @@ func parseConcreteLookupTable(b binarySegm, isGPos bool) *LookupTable {
 }
 
 func parseConcreteLookupNode(b binarySegm, lookupType LayoutTableLookupType) *LookupNode {
+	return parseConcreteLookupNodeWithDepth(b, lookupType, 0)
+}
+
+func parseConcreteLookupNodeWithDepth(b binarySegm, lookupType LayoutTableLookupType, depth int) *LookupNode {
 	node := &LookupNode{
 		LookupType: lookupType,
 		raw:        b,
@@ -89,5 +93,121 @@ func parseConcreteLookupNode(b binarySegm, lookupType LayoutTableLookupType) *Lo
 		return node
 	}
 	node.Format = b.U16(0)
+	if IsGPosLookupType(lookupType) {
+		gposType := GPosLookupType(lookupType)
+		node.GPos = parseConcreteGPosPayloadScaffold(gposType, node.Format)
+		parseConcreteGPosPayload(node, depth)
+	} else {
+		node.GSub = parseConcreteGSubPayloadScaffold(lookupType, node.Format)
+		parseConcreteGSubPayload(node, depth)
+	}
 	return node
+}
+
+func parseConcreteGSubPayloadScaffold(lookupType LayoutTableLookupType, format uint16) *GSubLookupPayload {
+	payload := &GSubLookupPayload{}
+	switch lookupType {
+	case GSubLookupTypeSingle:
+		if format == 1 {
+			payload.SingleFmt1 = &GSubSingleFmt1Payload{}
+		} else if format == 2 {
+			payload.SingleFmt2 = &GSubSingleFmt2Payload{}
+		}
+	case GSubLookupTypeMultiple:
+		if format == 1 {
+			payload.MultipleFmt1 = &GSubMultipleFmt1Payload{}
+		}
+	case GSubLookupTypeAlternate:
+		if format == 1 {
+			payload.AlternateFmt1 = &GSubAlternateFmt1Payload{}
+		}
+	case GSubLookupTypeLigature:
+		if format == 1 {
+			payload.LigatureFmt1 = &GSubLigatureFmt1Payload{}
+		}
+	case GSubLookupTypeContext:
+		switch format {
+		case 1:
+			payload.ContextFmt1 = &GSubContextFmt1Payload{}
+		case 2:
+			payload.ContextFmt2 = &GSubContextFmt2Payload{}
+		case 3:
+			payload.ContextFmt3 = &GSubContextFmt3Payload{}
+		}
+	case GSubLookupTypeChainingContext:
+		switch format {
+		case 1:
+			payload.ChainingContextFmt1 = &GSubChainingContextFmt1Payload{}
+		case 2:
+			payload.ChainingContextFmt2 = &GSubChainingContextFmt2Payload{}
+		case 3:
+			payload.ChainingContextFmt3 = &GSubChainingContextFmt3Payload{}
+		}
+	case GSubLookupTypeExtensionSubs:
+		if format == 1 {
+			payload.ExtensionFmt1 = &GSubExtensionFmt1Payload{}
+		}
+	case GSubLookupTypeReverseChaining:
+		if format == 1 {
+			payload.ReverseChainingFmt1 = &GSubReverseChainingFmt1Payload{}
+		}
+	}
+	return payload
+}
+
+func parseConcreteGPosPayloadScaffold(lookupType LayoutTableLookupType, format uint16) *GPosLookupPayload {
+	payload := &GPosLookupPayload{}
+	switch lookupType {
+	case GPosLookupTypeSingle:
+		if format == 1 {
+			payload.SingleFmt1 = &GPosSingleFmt1Payload{}
+		} else if format == 2 {
+			payload.SingleFmt2 = &GPosSingleFmt2Payload{}
+		}
+	case GPosLookupTypePair:
+		if format == 1 {
+			payload.PairFmt1 = &GPosPairFmt1Payload{}
+		} else if format == 2 {
+			payload.PairFmt2 = &GPosPairFmt2Payload{}
+		}
+	case GPosLookupTypeCursive:
+		if format == 1 {
+			payload.CursiveFmt1 = &GPosCursiveFmt1Payload{}
+		}
+	case GPosLookupTypeMarkToBase:
+		if format == 1 {
+			payload.MarkToBaseFmt1 = &GPosMarkToBaseFmt1Payload{}
+		}
+	case GPosLookupTypeMarkToLigature:
+		if format == 1 {
+			payload.MarkToLigatureFmt1 = &GPosMarkToLigatureFmt1Payload{}
+		}
+	case GPosLookupTypeMarkToMark:
+		if format == 1 {
+			payload.MarkToMarkFmt1 = &GPosMarkToMarkFmt1Payload{}
+		}
+	case GPosLookupTypeContextPos:
+		switch format {
+		case 1:
+			payload.ContextFmt1 = &GPosContextFmt1Payload{}
+		case 2:
+			payload.ContextFmt2 = &GPosContextFmt2Payload{}
+		case 3:
+			payload.ContextFmt3 = &GPosContextFmt3Payload{}
+		}
+	case GPosLookupTypeChainedContextPos:
+		switch format {
+		case 1:
+			payload.ChainingContextFmt1 = &GPosChainingContextFmt1Payload{}
+		case 2:
+			payload.ChainingContextFmt2 = &GPosChainingContextFmt2Payload{}
+		case 3:
+			payload.ChainingContextFmt3 = &GPosChainingContextFmt3Payload{}
+		}
+	case GPosLookupTypeExtensionPos:
+		if format == 1 {
+			payload.ExtensionFmt1 = &GPosExtensionFmt1Payload{}
+		}
+	}
+	return payload
 }

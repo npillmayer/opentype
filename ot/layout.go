@@ -619,11 +619,12 @@ var _ Navigator = feature{}
 // LookupList implements the NavList interface.
 type LookupList struct {
 	array
-	base         binarySegm
-	lookupsCache []Lookup
-	name         string
-	err          error
-	isGPos       bool // true if this is a GPOS lookup list, false for GSUB
+	base          binarySegm
+	lookupsCache  []Lookup
+	lookupsParsed []bool
+	name          string
+	err           error
+	isGPos        bool // true if this is a GPOS lookup list, false for GSUB
 }
 
 func (ll LookupList) Name() string {
@@ -650,9 +651,11 @@ func (ll LookupList) Subset(indices []int) RootList {
 			length:     len(indices),
 			loc:        binarySegm(buf),
 		},
-		base:   ll.base,
-		name:   ll.name,
-		isGPos: ll.isGPos,
+		base:          ll.base,
+		lookupsCache:  make([]Lookup, len(indices)),
+		lookupsParsed: make([]bool, len(indices)),
+		name:          ll.name,
+		isGPos:        ll.isGPos,
 	}
 	return sub
 }
@@ -669,17 +672,22 @@ func (ll LookupList) Get(i int) NavLocation {
 // Navigate will navigate to Lookup i in the list.
 func (ll LookupList) Navigate(i int) Lookup {
 	// acts like NavLink
-	if ll.err != nil {
+	if ll.err != nil || i < 0 || i >= ll.length {
 		return Lookup{}
 	}
 	if ll.lookupsCache == nil {
 		ll.lookupsCache = make([]Lookup, ll.length)
-	} else if ll.lookupsCache[i].Type != 0 { // type 0 is illegal, i.e. uninitialized
+	}
+	if ll.lookupsParsed == nil {
+		ll.lookupsParsed = make([]bool, ll.length)
+	}
+	if ll.lookupsParsed[i] {
 		return ll.lookupsCache[i]
 	}
 	lookupPtr := ll.Get(i)
 	lookup := ll.base[lookupPtr.U16(0):]
 	ll.lookupsCache[i] = viewLookup(lookup, ll.isGPos)
+	ll.lookupsParsed[i] = true
 	tracer().Debugf("cached new lookup #%d of type %d", i, ll.lookupsCache[i].Type)
 	return ll.lookupsCache[i]
 }
@@ -731,6 +739,7 @@ type Lookup struct {
 	subTables        array            // Array of offsets to lookup subrecords, from beginning of Lookup table
 	markFilteringSet uint16           // Index (base 0) into GDEF mark glyph sets structure. This field is only present if bit useMarkFilteringSet of lookup flags is set.
 	subTablesCache   []LookupSubtable // cache for sub-tables already parsed and called
+	subTablesParsed  []bool           // parse sentinels for sub-table cache entries
 }
 
 // header information for Lookup table
@@ -774,24 +783,30 @@ func viewLookup(b NavLocation, isGPos bool) Lookup {
 	if b.Size() >= 4+lookup.subTables.Size()+2 {
 		lookup.markFilteringSet = b.U16(4 + lookup.subTables.Size())
 	}
+	lookup.subTablesCache = make([]LookupSubtable, lookup.SubTableCount)
+	lookup.subTablesParsed = make([]bool, lookup.SubTableCount)
 	//trace().Debugf("lookup has type %s", lookup.Type.GSubString())
 	return lookup
 }
 
 func (l Lookup) Subtable(i int) *LookupSubtable {
-	if l.err != nil || i >= int(l.SubTableCount) {
+	if l.err != nil || i < 0 || i >= int(l.SubTableCount) {
 		return nil
 	}
 	if l.subTablesCache == nil {
 		l.subTablesCache = make([]LookupSubtable, l.SubTableCount)
-		for i := 0; i < l.subTables.length; i++ {
-			n := l.subTables.Get(i).U16(0) // offset to subtable[i]
-			tracer().Debugf("lookup subtable at offset %d", n)
-			link := makeLink16(n, l.loc.Bytes(), "LookupSubtable") // wrap offset into link
-			loc := link.Jump()
-			b := binarySegm(loc.Bytes())
-			l.subTablesCache[i] = parseLookupSubtable(b, l.Type)
-		}
+	}
+	if l.subTablesParsed == nil {
+		l.subTablesParsed = make([]bool, l.SubTableCount)
+	}
+	if !l.subTablesParsed[i] {
+		n := l.subTables.Get(i).U16(0) // offset to subtable[i]
+		tracer().Debugf("lookup subtable at offset %d", n)
+		link := makeLink16(n, l.loc.Bytes(), "LookupSubtable") // wrap offset into link
+		loc := link.Jump()
+		b := binarySegm(loc.Bytes())
+		l.subTablesCache[i] = parseLookupSubtable(b, l.Type)
+		l.subTablesParsed[i] = true
 	}
 	return &l.subTablesCache[i]
 }

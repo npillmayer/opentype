@@ -38,6 +38,8 @@ type LookupNode struct {
 	LookupType LayoutTableLookupType
 	Format     uint16
 	Coverage   Coverage
+	GSub       *GSubLookupPayload
+	GPos       *GPosLookupPayload
 
 	raw binarySegm
 	err error
@@ -141,4 +143,20 @@ func (ln *LookupNode) Error() error {
 		return nil
 	}
 	return ln.err
+}
+
+// GSubPayload returns the typed GSUB payload scaffold for this node, if applicable.
+func (ln *LookupNode) GSubPayload() *GSubLookupPayload {
+	if ln == nil {
+		return nil
+	}
+	return ln.GSub
+}
+
+// GPosPayload returns the typed GPOS payload scaffold for this node, if applicable.
+func (ln *LookupNode) GPosPayload() *GPosLookupPayload {
+	if ln == nil {
+		return nil
+	}
+	return ln.GPos
 }

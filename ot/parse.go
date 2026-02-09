@@ -1500,6 +1500,8 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ta
 	if ll.err != nil {
 		return ll.err
 	}
+	ll.lookupsCache = make([]Lookup, ll.array.Len())
+	ll.lookupsParsed = make([]bool, ll.array.Len())
 	lytt.LookupList = ll
 	lytt.lookupGraph = parseConcreteLookupListGraph(b, isGPos)
 

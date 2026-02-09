@@ -411,14 +411,14 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    2. This removes the remaining internal dual-parser behavior from the transitional entrypoint while preserving legacy return shape.
 4. Slice D: Switch `otlayout` contextual/chaining runtime to concrete-first lookup payloads. (`Status: complete`)
    1. `otlayout` lookup dispatch now threads concrete lookup table/node context in parallel with legacy lookup structs.
-   2. GSUB contextual/chaining paths (types 5/6/8) and GPOS contextual/chaining paths (types 7/8) now consume concrete payloads first, with legacy fallback retained.
+   2. GSUB contextual/chaining paths (types 5/6/8) and GPOS contextual/chaining paths (types 7/8) now consume concrete payloads.
    3. Nested sequence-lookup application now resolves concrete nested lookups through `LookupGraph` when available.
 5. Slice E: Switch `otlayout` GSUB non-context runtime to concrete-first lookup payloads. (`Status: complete`)
    1. GSUB simple/multi/alternate/ligature execution (types 1/2/3/4) now consumes concrete payloads first.
-   2. Transitional legacy fallback remains in place for compatibility and parity checking.
+   2. Runtime path now executes concrete payload semantics only.
 6. Slice F: Switch `otlayout` GPOS non-context runtime to concrete-first lookup payloads. (`Status: complete`)
    1. GPOS single/pair/cursive/mark-attachment execution (types 1/2/3/4/5/6) now consumes concrete payloads first.
-   2. Transitional legacy fallback remains in place for compatibility and parity checking.
+   2. Runtime path now executes concrete payload semantics only.
 
 #### Current status snapshot (2026-02-09)
 1. `Phase 1` is complete for the shared graph migration track:
@@ -457,34 +457,59 @@ This section records the current behavior in `ot/` for lookup decomposition deta
 5. Bug fix applied during runtime-golden pass:
    1. `gposLookupType1Fmt1` incorrectly rejected covered glyphs by requiring coverage index `== 1`; this guard was removed.
 
-#### Batch 2.0 status (concrete-only switch + parity harness)
+#### Batch 2.0 status (historical mode harness)
 1. Batch 2.0 is complete.
-2. `otlayout` now exposes a runtime execution mode switch:
-   1. `ConcreteFirst` (default): concrete payload path.
-   2. `ConcreteOnly`: concrete payload path, intended to reject legacy fallback.
-3. As of Batch 2.1 runtime fallback removal, lookup execution paths no longer rely on `Support`/`Index` fallback; the mode switch remains as a transition/testing control surface.
-4. Mode parity harness is in place:
-   1. GSUB parity checks run concrete-first vs concrete-only on representative alternate/context cases.
-   2. GPOS parity checks run concrete-first vs concrete-only on single/pair/chaining and mark-attachment cases.
-   3. A synthetic negative check verifies legacy-only dispatch no longer applies in concrete-only mode.
+2. Batch 2.0 temporarily introduced a runtime execution-mode switch and mode-parity harness during fallback removal.
+3. This transitional switch/harness was removed in Slice 2.1-G after runtime behavior became concrete-only.
 
 #### Batch 2.1 status (fallback removal by lookup family)
 1. Batch 2.1 is complete for lookup-behavior fallback removal.
 2. Slice 2.1-A is complete:
    1. GPOS non-context runtime families (types 1/2/3/4/5/6) no longer execute legacy fallback branches.
-   2. These families now require concrete payloads in both `ConcreteFirst` and `ConcreteOnly` modes.
+   2. These families now require concrete payloads unconditionally.
 3. Slice 2.1-B is complete:
    1. GPOS context/chaining runtime families (types 7/8) no longer execute legacy fallback branches.
-   2. These families now require concrete payloads in both `ConcreteFirst` and `ConcreteOnly` modes.
+   2. These families now require concrete payloads unconditionally.
 4. Slice 2.1-C is complete:
    1. GSUB runtime families (types 1/2/3/4/5/6/8, with type 7 unwrapped at parse-time) no longer execute legacy fallback branches.
-   2. Synthetic GSUB dispatch tests now require explicit concrete payload nodes and no longer assume legacy fallback in `ConcreteFirst`.
+   2. Synthetic GSUB dispatch tests now require explicit concrete payload nodes.
 5. Slice 2.1-D is complete:
    1. GPOS cursive/mark-attachment runtime (types 3/4/5/6) now sources unresolved `AnchorRef` offsets from concrete payload metadata, not from legacy `lksub.Index`/`lksub.Support`.
    2. Added concrete payload accessor coverage for anchor-offset metadata in `ot` parser tests and `otlayout` runtime golden tests.
 6. Slice 2.1-E is complete:
    1. removed dead legacy helper code in `otlayout/gpos_helpers.go` that parsed legacy `Support` shapes.
    2. validated `otlayout` and `ot` test suites after cleanup.
+7. Slice 2.1-F is complete:
+   1. `otlayout` lookup dispatch now threads concrete `*ot.LookupNode` directly into GSUB/GPOS handlers instead of synthesizing transitional `LookupSubtable` wrappers.
+   2. GSUB/GPOS runtime handler signatures in `otlayout/gsub.go` and `otlayout/gpos.go` now consume concrete lookup nodes directly.
+   3. Removed dead chained-rule legacy parsing helpers from `otlayout/feature.go`; runtime path no longer references `ot.LookupSubtable`.
+   4. validated `otlayout`, `ot`, and `otquery` test suites after the dispatch-signature cleanup.
+8. Slice 2.1-G is complete:
+   1. removed dead transitional fallback scaffolding in `otlayout` (`runtime_mode.go` and unused fallback hooks in `feature.go`).
+   2. removed dead legacy `VarArray` helper functions in `otlayout/feature.go` (`lookupGlyph`, `lookupGlyphs`) that were no longer reachable after concrete-only runtime migration.
+   3. replaced mode-parity tests with deterministic concrete-runtime checks in `otlayout/concrete_mode_parity_test.go`.
+   4. validated `otlayout`, `ot`, and `otquery` test suites after cleanup.
+9. Batch 6 is complete (legacy layout helper API cleanup; intentional breaking change):
+   1. removed legacy `otlayout` helper APIs tied to navigation abstractions (`Navigator`, `NavList`, `TagRecordMap`) from `otlayout/layout.go` and removed `otlayout/list.go`.
+   2. introduced concrete helper APIs in `otlayout/layout.go`:
+      1. `GetScriptGraph(table)`,
+      2. `GetFeatureGraph(table)`,
+      3. `GetLookupGraph(table)`,
+      4. `ScriptTags(scriptGraph)`,
+      5. `FeatureTags(featureGraph)`,
+      6. `FeaturesForLangSys(langSys)`,
+      7. `LookupsForFeature(feature, lookupGraph)`.
+   3. updated `otcli` callsites to stop depending on removed legacy `otlayout` helpers (legacy subset/key listing now handled locally in `otcli`).
+   4. validated `otlayout`, `ot`, `otquery`, and `otcli` package builds/tests after the API cleanup.
+10. Batch 7 is complete (test migration and hardening):
+   1. added dedicated concrete-helper coverage in `otlayout/layout_test.go` for:
+      1. successful graph/helper resolution (`GetScriptGraph`, `GetFeatureGraph`, `GetLookupGraph`),
+      2. tag extraction helpers (`ScriptTags`, `FeatureTags`),
+      3. feature-to-lookup resolution (`FeaturesForLangSys`, `LookupsForFeature`).
+   2. added negative-path hardening tests for:
+      1. non-layout table rejection,
+      2. nil/empty argument handling (`ErrVoid`, `ErrNoLookupGraph`, `ErrFeatureHasNoRefs`).
+   3. validated `otlayout`, `ot`, `otquery`, and `otcli` package builds/tests after test migration.
 
 #### What remains to finish Phase 2
 1. No open verification gaps are currently tracked for Phase 2.

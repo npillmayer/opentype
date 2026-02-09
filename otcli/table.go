@@ -92,29 +92,31 @@ func mapOp(intp *Intp, op *Op) (err error, stop bool) {
 			return
 		}
 		target = trm.LookupTag(ot.T(tag))
-		tracer().Infof("%s map keys = %v", trm.Name(), otlayout.KeyTags(trm))
+		tracer().Infof("%s map keys = %v", trm.Name(), tagMapKeys(trm))
 		pterm.Printf("%s table maps [tag %v] => %v\n", trm.Name(), ot.T(tag), target.Name())
 		n := intp.lastPathNode()
 		n.key, n.link = tag, target
 		intp.setLastPathNode(n)
 	} else if trm != nil {
-		pterm.Printf("%s map keys = %v\n", trm.Name(), otlayout.KeyTags(trm))
+		pterm.Printf("%s map keys = %v\n", trm.Name(), tagMapKeys(trm))
 	}
 	return
 }
 
 func scriptsOp(intp *Intp, op *Op) (err error, stop bool) {
-	var nav ot.Navigator
+	var lyt *ot.LayoutTable
 	var scr ot.TagRecordMap
 	if table := intp.clearPath(); table == nil {
 		return errors.New("no table set"), false
-	} else if nav, err = otlayout.GetScriptList(intp.table); err != nil {
+	} else if lyt, err = otlayout.GetLayoutTable(intp.table); err != nil {
 		return
-	} else if scr = nav.Map().AsTagRecordMap(); scr == nil {
+	} else if lyt.ScriptList == nil {
+		return errors.New("table has no script list"), false
+	} else if scr = lyt.ScriptList.Map().AsTagRecordMap(); scr == nil {
 		return errors.New("table has no script list"), false
 	}
-	pterm.Printf("ScriptList keys: %v\n", otlayout.KeyTags(scr))
-	n := pathNode{kind: nodeNav, nav: nav, inx: -1}
+	pterm.Printf("ScriptList keys: %v\n", tagMapKeys(scr))
+	n := pathNode{kind: nodeNav, nav: lyt.ScriptList, inx: -1}
 	var ok bool
 	if n.key, ok = op.hasArg(); ok {
 		l := scr.LookupTag(ot.T(op.arg))
@@ -150,14 +152,19 @@ func subsetOp(intp *Intp, op *Op) (err error, stop bool) {
 	if tableName, ok := op.hasArg(); ok {
 		switch tableName {
 		case "FeatureList":
-			var features ot.TagRecordMap
-			if features, err = otlayout.GetFeatureList(intp.table); err != nil {
+			var lyt *ot.LayoutTable
+			if lyt, err = otlayout.GetLayoutTable(intp.table); err != nil {
 				return
 			}
-			subset, err := otlayout.FeatureSubsetForLangSys(l, features)
-			if err != nil {
-				return err, false
+			features, ok := lyt.FeatureList.(ot.RootTagMap)
+			if !ok || features == nil || features.Len() == 0 {
+				return errors.New("feature list is empty or not subsettable"), false
 			}
+			indices := make([]int, 0, l.Len())
+			for _, loc := range l.Range() {
+				indices = append(indices, int(loc.U16(0)))
+			}
+			subset := features.Subset(indices)
 			pterm.Printf("Subset of %d features\n", subset.Len())
 			n := pathNode{kind: nodeTagMap, tm: subset, inx: -1}
 			intp.stack = append(intp.stack, n)
@@ -167,10 +174,15 @@ func subsetOp(intp *Intp, op *Op) (err error, stop bool) {
 				return
 			}
 			pterm.Printf("Subsetting %s\n", lyt.LookupList.Name())
-			subset, err := otlayout.LookupSubsetForFeature(l, lyt.LookupList)
-			if err != nil {
-				return err, false
+			root, ok := any(lyt.LookupList).(ot.RootList)
+			if !ok || root == nil || root.Len() == 0 {
+				return errors.New("lookup list is empty or not subsettable"), false
 			}
+			indices := make([]int, 0, l.Len())
+			for _, loc := range l.Range() {
+				indices = append(indices, int(loc.U16(0)))
+			}
+			subset := root.Subset(indices)
 			pterm.Printf("Subset(%s) of %d lookups\n", subset.Name(), subset.Len())
 			n := pathNode{kind: nodeList, list: subset, inx: -1}
 			intp.stack = append(intp.stack, n)
@@ -185,8 +197,13 @@ func featureListOp(intp *Intp, op *Op) (err error, stop bool) {
 	if err = intp.checkTable(); err != nil {
 		return
 	}
-	var features ot.TagRecordMap
-	if features, err = otlayout.GetFeatureList(intp.table); err != nil {
+	var lyt *ot.LayoutTable
+	if lyt, err = otlayout.GetLayoutTable(intp.table); err != nil {
+		return
+	}
+	features := lyt.FeatureList
+	if features == nil {
+		err = errors.New("table has no feature list")
 		return
 	}
 	n := intp.lastPathNode()
@@ -214,6 +231,17 @@ func featureListOp(intp *Intp, op *Op) (err error, stop bool) {
 		intp.setLastPathNode(n)
 	}
 	return
+}
+
+func tagMapKeys(m ot.TagRecordMap) []ot.Tag {
+	if m == nil || m.Len() == 0 {
+		return nil
+	}
+	keyTags := make([]ot.Tag, 0, m.Len())
+	for tag := range m.Range() {
+		keyTags = append(keyTags, tag)
+	}
+	return keyTags
 }
 
 func lookupListOp(intp *Intp, op *Op) (err error, stop bool) {

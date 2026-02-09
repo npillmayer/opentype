@@ -38,7 +38,6 @@ func applyGSUBLookup(t *testing.T, otf *ot.Font, lookupIndex int, input []ot.Gly
 	if otf.Layout.GSub == nil {
 		t.Fatalf("font has no GSUB table")
 	}
-	lookup := otf.Layout.GSub.LookupList.Navigate(lookupIndex)
 	var clookup *ot.LookupTable
 	if graph := otf.Layout.GSub.LookupGraph(); graph != nil {
 		clookup = graph.Lookup(lookupIndex)
@@ -47,7 +46,7 @@ func applyGSUBLookup(t *testing.T, otf *ot.Font, lookupIndex int, input []ot.Gly
 	buf := append(GlyphBuffer(nil), input...)
 	st := NewBufferState(buf, NewPosBuffer(len(buf)))
 	st.Index = pos
-	_, ok, _ := applyLookupConcrete(&lookup, clookup, otf.Layout.GSub.LookupGraph(), feat, st, alt, otf.Layout.GDef, otf.Layout.GSub.LookupList)
+	_, ok, _ := applyLookupConcrete(clookup, otf.Layout.GSub.LookupGraph(), feat, st, alt, otf.Layout.GDef)
 	out := st.Glyphs
 	return out, ok
 }

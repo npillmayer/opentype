@@ -357,6 +357,14 @@ func (f *Feature) LookupCount() int {
 	return len(f.lookupListIndices)
 }
 
+// LookupIndex returns the lookup-list index at position i, or -1 if out of bounds.
+func (f *Feature) LookupIndex(i int) int {
+	if f == nil || i < 0 || i >= len(f.lookupListIndices) {
+		return -1
+	}
+	return int(f.lookupListIndices[i])
+}
+
 // Error returns an accumulated error for the feature.
 func (f *Feature) Error() error {
 	if f == nil {

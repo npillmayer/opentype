@@ -6,50 +6,27 @@ import (
 	"github.com/npillmayer/opentype/ot"
 )
 
-func runWithLookupMode[T any](mode LookupExecutionMode, fn func() T) T {
-	prev := SetLookupExecutionMode(mode)
-	defer SetLookupExecutionMode(prev)
-	return fn()
-}
-
 func TestMissingConcretePayloadDoesNotApply(t *testing.T) {
-	sub := ot.LookupSubtable{
+	sub := ot.LookupNode{
 		LookupType: ot.GSubLookupTypeSingle,
 		Format:     1,
 		Coverage: ot.Coverage{
 			GlyphRange: testGlyphRange{glyph: 10},
 		},
-		Support: ot.GlyphIndex(2),
 	}
 
-	concreteFirstApplied := runWithLookupMode(ConcreteFirst, func() bool {
-		ctx := applyCtx{
-			lookup: &ot.Lookup{},
-			buf:    &BufferState{Glyphs: GlyphBuffer{10}},
-			pos:    0,
-		}
-		_, ok, _, _, _ := dispatchGSubLookup(&ctx, &sub)
-		return ok
-	})
-	if concreteFirstApplied {
-		t.Fatalf("expected missing concrete payload to skip lookup in ConcreteFirst mode")
+	ctx := applyCtx{
+		clookup: &ot.LookupTable{},
+		buf:     &BufferState{Glyphs: GlyphBuffer{10}},
+		pos:     0,
 	}
-
-	concreteOnlyApplied := runWithLookupMode(ConcreteOnly, func() bool {
-		ctx := applyCtx{
-			lookup: &ot.Lookup{},
-			buf:    &BufferState{Glyphs: GlyphBuffer{10}},
-			pos:    0,
-		}
-		_, ok, _, _, _ := dispatchGSubLookup(&ctx, &sub)
-		return ok
-	})
-	if concreteOnlyApplied {
-		t.Fatalf("expected missing concrete payload to skip lookup in ConcreteOnly mode")
+	_, ok, _, _, _ := dispatchGSubLookup(&ctx, &sub)
+	if ok {
+		t.Fatalf("expected missing concrete payload to skip lookup")
 	}
 }
 
-func TestConcreteOnlyGSUBParity(t *testing.T) {
+func TestConcreteGSUBDeterministic(t *testing.T) {
 	type gsubCase struct {
 		name   string
 		font   string
@@ -79,64 +56,37 @@ func TestConcreteOnlyGSUBParity(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			otf := loadTestFont(t, tc.font)
-			concreteFirst := runWithLookupMode(ConcreteFirst, func() struct {
-				out     []ot.GlyphIndex
-				applied bool
-			} {
-				out, applied := applyGSUBLookup(t, otf, tc.lookup, tc.input, tc.pos, tc.alt)
-				return struct {
-					out     []ot.GlyphIndex
-					applied bool
-				}{
-					out:     append([]ot.GlyphIndex(nil), out...),
-					applied: applied,
-				}
-			})
-			concreteOnly := runWithLookupMode(ConcreteOnly, func() struct {
-				out     []ot.GlyphIndex
-				applied bool
-			} {
-				out, applied := applyGSUBLookup(t, otf, tc.lookup, tc.input, tc.pos, tc.alt)
-				return struct {
-					out     []ot.GlyphIndex
-					applied bool
-				}{
-					out:     append([]ot.GlyphIndex(nil), out...),
-					applied: applied,
-				}
-			})
-
-			if concreteOnly.applied != concreteFirst.applied {
-				t.Fatalf("applied mismatch: concrete-only=%v concrete-first=%v", concreteOnly.applied, concreteFirst.applied)
+			firstOut, firstApplied := applyGSUBLookup(t, otf, tc.lookup, tc.input, tc.pos, tc.alt)
+			secondOut, secondApplied := applyGSUBLookup(t, otf, tc.lookup, tc.input, tc.pos, tc.alt)
+			if secondApplied != firstApplied {
+				t.Fatalf("applied mismatch: run-2=%v run-1=%v", secondApplied, firstApplied)
 			}
-			if len(concreteOnly.out) != len(concreteFirst.out) {
-				t.Fatalf("glyph length mismatch: concrete-only=%d concrete-first=%d", len(concreteOnly.out), len(concreteFirst.out))
+			if len(secondOut) != len(firstOut) {
+				t.Fatalf("glyph length mismatch: run-2=%d run-1=%d", len(secondOut), len(firstOut))
 			}
-			for i := range concreteOnly.out {
-				if concreteOnly.out[i] != concreteFirst.out[i] {
-					t.Fatalf("glyph[%d] mismatch: concrete-only=%d concrete-first=%d", i, concreteOnly.out[i], concreteFirst.out[i])
+			for i := range secondOut {
+				if secondOut[i] != firstOut[i] {
+					t.Fatalf("glyph[%d] mismatch: run-2=%d run-1=%d", i, secondOut[i], firstOut[i])
 				}
 			}
 		})
 	}
 }
 
-func TestConcreteOnlyGPOSParity(t *testing.T) {
+func TestConcreteGPOSDeterministic(t *testing.T) {
 	type gposRun struct {
 		applied bool
 		glyphs  []ot.GlyphIndex
 		pos     []PosItem
 	}
-	runGPOS := func(mode LookupExecutionMode, otf *ot.Font, lookup int, input []ot.GlyphIndex, pos int) gposRun {
-		return runWithLookupMode(mode, func() gposRun {
-			st, applied := applyGPOSLookup(t, otf, lookup, input, pos)
-			out := gposRun{
-				applied: applied,
-				glyphs:  append([]ot.GlyphIndex(nil), st.Glyphs...),
-				pos:     append([]PosItem(nil), st.Pos...),
-			}
-			return out
-		})
+	runGPOS := func(otf *ot.Font, lookup int, input []ot.GlyphIndex, pos int) gposRun {
+		st, applied := applyGPOSLookup(t, otf, lookup, input, pos)
+		out := gposRun{
+			applied: applied,
+			glyphs:  append([]ot.GlyphIndex(nil), st.Glyphs...),
+			pos:     append([]PosItem(nil), st.Pos...),
+		}
+		return out
 	}
 
 	t.Run("single_pair_chaining", func(t *testing.T) {
@@ -189,9 +139,9 @@ func TestConcreteOnlyGPOSParity(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				first := runGPOS(ConcreteFirst, otf, tc.lookup, tc.input, tc.pos)
-				only := runGPOS(ConcreteOnly, otf, tc.lookup, tc.input, tc.pos)
-				assertGPOSRunEqual(t, first, only)
+				run1 := runGPOS(otf, tc.lookup, tc.input, tc.pos)
+				run2 := runGPOS(otf, tc.lookup, tc.input, tc.pos)
+				assertGPOSRunEqual(t, run1, run2)
 			})
 		}
 	})
@@ -206,9 +156,9 @@ func TestConcreteOnlyGPOSParity(t *testing.T) {
 		}
 		baseGlyph := firstCoveredGlyph(t, baseFont, basePayload.BaseCoverage)
 		baseMark := firstCoveredGlyph(t, baseFont, baseNode.Coverage)
-		firstBase := runGPOS(ConcreteFirst, baseFont, 0, []ot.GlyphIndex{baseGlyph, baseMark}, 1)
-		onlyBase := runGPOS(ConcreteOnly, baseFont, 0, []ot.GlyphIndex{baseGlyph, baseMark}, 1)
-		assertGPOSRunEqual(t, firstBase, onlyBase)
+		run1Base := runGPOS(baseFont, 0, []ot.GlyphIndex{baseGlyph, baseMark}, 1)
+		run2Base := runGPOS(baseFont, 0, []ot.GlyphIndex{baseGlyph, baseMark}, 1)
+		assertGPOSRunEqual(t, run1Base, run2Base)
 
 		ligFont := loadTestFont(t, "gpos5_font1.otf")
 		ligGraph := ligFont.Layout.GPos.LookupGraph()
@@ -219,9 +169,9 @@ func TestConcreteOnlyGPOSParity(t *testing.T) {
 		}
 		ligGlyph := firstCoveredGlyph(t, ligFont, ligPayload.LigatureCoverage)
 		ligMark := firstCoveredGlyph(t, ligFont, ligNode.Coverage)
-		firstLig := runGPOS(ConcreteFirst, ligFont, 0, []ot.GlyphIndex{ligGlyph, ligMark}, 1)
-		onlyLig := runGPOS(ConcreteOnly, ligFont, 0, []ot.GlyphIndex{ligGlyph, ligMark}, 1)
-		assertGPOSRunEqual(t, firstLig, onlyLig)
+		run1Lig := runGPOS(ligFont, 0, []ot.GlyphIndex{ligGlyph, ligMark}, 1)
+		run2Lig := runGPOS(ligFont, 0, []ot.GlyphIndex{ligGlyph, ligMark}, 1)
+		assertGPOSRunEqual(t, run1Lig, run2Lig)
 	})
 }
 
@@ -232,22 +182,22 @@ func assertGPOSRunEqual(t *testing.T, a, b struct {
 }) {
 	t.Helper()
 	if a.applied != b.applied {
-		t.Fatalf("applied mismatch: concrete-first=%v concrete-only=%v", a.applied, b.applied)
+		t.Fatalf("applied mismatch: run-1=%v run-2=%v", a.applied, b.applied)
 	}
 	if len(a.glyphs) != len(b.glyphs) {
-		t.Fatalf("glyph length mismatch: concrete-first=%d concrete-only=%d", len(a.glyphs), len(b.glyphs))
+		t.Fatalf("glyph length mismatch: run-1=%d run-2=%d", len(a.glyphs), len(b.glyphs))
 	}
 	for i := range a.glyphs {
 		if a.glyphs[i] != b.glyphs[i] {
-			t.Fatalf("glyph[%d] mismatch: concrete-first=%d concrete-only=%d", i, a.glyphs[i], b.glyphs[i])
+			t.Fatalf("glyph[%d] mismatch: run-1=%d run-2=%d", i, a.glyphs[i], b.glyphs[i])
 		}
 	}
 	if len(a.pos) != len(b.pos) {
-		t.Fatalf("pos length mismatch: concrete-first=%d concrete-only=%d", len(a.pos), len(b.pos))
+		t.Fatalf("pos length mismatch: run-1=%d run-2=%d", len(a.pos), len(b.pos))
 	}
 	for i := range a.pos {
 		if a.pos[i] != b.pos[i] {
-			t.Fatalf("pos[%d] mismatch: concrete-first=%+v concrete-only=%+v", i, a.pos[i], b.pos[i])
+			t.Fatalf("pos[%d] mismatch: run-1=%+v run-2=%+v", i, a.pos[i], b.pos[i])
 		}
 	}
 }

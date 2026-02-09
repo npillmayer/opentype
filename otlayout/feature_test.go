@@ -22,16 +22,15 @@ func (t testGlyphRange) ByteSize() int {
 }
 
 func TestDispatchGSubLookupSingleFmt1Routing(t *testing.T) {
-	sub := ot.LookupSubtable{
+	sub := ot.LookupNode{
 		LookupType: ot.GSubLookupTypeSingle,
 		Format:     1,
 		Coverage: ot.Coverage{
 			GlyphRange: testGlyphRange{glyph: 10},
 		},
-		Support: ot.GlyphIndex(2),
 	}
 	ctx := applyCtx{
-		lookup: &ot.Lookup{},
+		clookup: &ot.LookupTable{},
 		subnode: &ot.LookupNode{
 			GSub: &ot.GSubLookupPayload{
 				SingleFmt1: &ot.GSubSingleFmt1Payload{DeltaGlyphID: 2},

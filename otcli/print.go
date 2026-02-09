@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/npillmayer/opentype/ot"
-	"github.com/npillmayer/opentype/otlayout"
 	"github.com/pterm/pterm"
 )
 
@@ -24,19 +23,25 @@ func printOp(intp *Intp, op *Op) (err error, stop bool) {
 	} else {
 		switch n.kind {
 		case nodeNav:
-			if t, err2 := otlayout.NavAsTagRecordMap(n.nav); err2 == nil {
-				sb.WriteString(fmt.Sprintf("%s@%v", n.nav.Name(), otlayout.KeyTags(t)))
-			} else if l, err2 := otlayout.NavAsList(n.nav); err2 == nil {
-				sb.WriteString(fmt.Sprintf("%s|%d|", n.nav.Name(), l.Len()))
-			} else {
+			if n.nav != nil {
+				if m := n.nav.Map(); m.IsTagRecordMap() {
+					if t := m.AsTagRecordMap(); t != nil && t.Len() > 0 {
+						sb.WriteString(fmt.Sprintf("%s@%v", n.nav.Name(), tagMapKeys(t)))
+						break
+					}
+				}
+				if l := n.nav.List(); l != nil && l.Len() > 0 {
+					sb.WriteString(fmt.Sprintf("%s|%d|", n.nav.Name(), l.Len()))
+					break
+				}
 				sb.WriteString(n.nav.Name())
 			}
 		case nodeTagMap:
-			sb.WriteString(fmt.Sprintf("%s@%v", n.tm.Name(), otlayout.KeyTags(n.tm)))
+			sb.WriteString(fmt.Sprintf("%s@%v", n.tm.Name(), tagMapKeys(n.tm)))
 		case nodeMap:
 			if n.m.IsTagRecordMap() {
 				trm := n.m.AsTagRecordMap()
-				sb.WriteString(fmt.Sprintf("%s@%v", trm.Name(), otlayout.KeyTags(trm)))
+				sb.WriteString(fmt.Sprintf("%s@%v", trm.Name(), tagMapKeys(trm)))
 			} else {
 				sb.WriteString(n.m.Name())
 			}

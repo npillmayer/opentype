@@ -11,7 +11,6 @@ func applyGPOSLookup(t *testing.T, otf *ot.Font, lookupIndex int, input []ot.Gly
 	if otf.Layout.GPos == nil {
 		t.Fatalf("font has no GPOS table")
 	}
-	lookup := otf.Layout.GPos.LookupList.Navigate(lookupIndex)
 	var clookup *ot.LookupTable
 	if graph := otf.Layout.GPos.LookupGraph(); graph != nil {
 		clookup = graph.Lookup(lookupIndex)
@@ -20,7 +19,7 @@ func applyGPOSLookup(t *testing.T, otf *ot.Font, lookupIndex int, input []ot.Gly
 	buf := append(GlyphBuffer(nil), input...)
 	st := NewBufferState(buf, NewPosBuffer(len(buf)))
 	st.Index = pos
-	_, ok, _ := applyLookupConcrete(&lookup, clookup, otf.Layout.GPos.LookupGraph(), feat, st, 0, otf.Layout.GDef, otf.Layout.GPos.LookupList)
+	_, ok, _ := applyLookupConcrete(clookup, otf.Layout.GPos.LookupGraph(), feat, st, 0, otf.Layout.GDef)
 	return st, ok
 }
 

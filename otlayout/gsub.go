@@ -14,9 +14,9 @@ import "github.com/npillmayer/opentype/ot"
 // Format 1 adds a constant delta value to the input glyph index. For the substitutions to
 // occur properly, the glyph indices in the input and output ranges must be in the same order.
 // This format does not use the Coverage index that is returned from the Coverage table.
-func gsubLookupType1Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType1Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, _, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage) // format 1 does not use the Coverage index
+	mpos, _, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage) // format 1 does not use the Coverage index
 	if !ok {
 		return pos, false, buf, nil
 	}
@@ -44,9 +44,9 @@ func gsubLookupType1Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 // The substituteGlyphIDs array must contain the same number of glyph indices as the
 // Coverage table. To locate the corresponding output glyph index in the substituteGlyphIDs
 // array, this format uses the Coverage index returned from the Coverage table.
-func gsubLookupType1Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType1Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
+	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
 	}
@@ -81,9 +81,9 @@ func gsubLookupType1Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 // For each input glyph listed in the Coverage table, a Sequence table defines the output
 // glyphs. Each Sequence table contains a count of the glyphs in the output glyph sequence
 // (glyphCount) and an array of output glyph indices (substituteGlyphIDs).
-func gsubLookupType2Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
+	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
 	}
@@ -123,9 +123,9 @@ func gsubLookupType2Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 // count of the alternative glyphs (glyphCount) and an array of their glyph indices
 // (alternateGlyphIDs). Parameter `alt` selects an alternative glyph from this array.
 // Having `alt` set to -1 will selected the last alternative glyph from the array.
-func gsubLookupType3Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos, alt int) (
+func gsubLookupType3Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos, alt int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
+	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
 	}
@@ -169,9 +169,9 @@ func gsubLookupType3Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 //
 // As this is a multi-lookup algorithm, calling gsubLookupType4Fmt1 will return a
 // NavLocation which is a LigatureSet, i.e. a list of records of unequal lengths.
-func gsubLookupType4Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
+	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
 	}
@@ -223,9 +223,9 @@ func gsubLookupType4Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 // searches for the current glyph in the Coverage table. If found, the corresponding SequenceRuleSet
 // table is retrieved, and the SequenceRule tables for that set are examined to see if the current glyph
 // sequence matches any of the sequence rules. The first matching rule subtable is used.
-func gsubLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
+	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
 	}
@@ -251,10 +251,10 @@ func gsubLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		matchPositions := make([]int, 0, 1+len(restPos))
 		matchPositions = append(matchPositions, mpos)
 		matchPositions = append(matchPositions, restPos...)
-		if len(rule.Records) == 0 || ctx.lookupList == nil {
+		if len(rule.Records) == 0 || ctx.lookupGraph == nil {
 			continue
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return pos, true, out, nil
@@ -263,9 +263,9 @@ func gsubLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	return pos, false, buf, nil
 }
 
-func gsubLookupType5Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType5Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, _, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
+	mpos, _, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
 	}
@@ -292,10 +292,10 @@ func gsubLookupType5Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		matchPositions := make([]int, 0, 1+len(restPos))
 		matchPositions = append(matchPositions, mpos)
 		matchPositions = append(matchPositions, restPos...)
-		if len(rule.Records) == 0 || ctx.lookupList == nil {
+		if len(rule.Records) == 0 || ctx.lookupGraph == nil {
 			continue
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return pos, true, out, nil
@@ -304,7 +304,7 @@ func gsubLookupType5Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	return pos, false, buf, nil
 }
 
-func gsubLookupType5Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType5Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	var payload *ot.GSubContextFmt3Payload
 	if ctx.subnode != nil {
@@ -323,10 +323,10 @@ func gsubLookupType5Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	if len(payload.Records) == 0 || ctx.lookupList == nil {
+	if len(payload.Records) == 0 || ctx.lookupGraph == nil {
 		return pos, false, buf, nil
 	}
-	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, payload.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 	ctx.buf.Pos = outPosBuf
 	if applied {
 		return pos, true, out, nil
@@ -334,9 +334,9 @@ func gsubLookupType5Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	return pos, false, buf, nil
 }
 
-func gsubLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
+	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
 	}
@@ -379,10 +379,10 @@ func gsubLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 				continue
 			}
 		}
-		if len(rule.Records) == 0 || ctx.lookupList == nil {
+		if len(rule.Records) == 0 || ctx.lookupGraph == nil {
 			continue
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return pos, true, out, nil
@@ -391,9 +391,9 @@ func gsubLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	return pos, false, buf, nil
 }
 
-func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType6Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
+	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
 	}
@@ -436,10 +436,10 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 				continue
 			}
 		}
-		if len(rule.Records) == 0 || ctx.lookupList == nil {
+		if len(rule.Records) == 0 || ctx.lookupGraph == nil {
 			continue
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return pos, true, out, nil
@@ -456,7 +456,7 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 // arrays of offsets to coverage tables: one for the input sequence pattern, one for the backtrack
 // sequence pattern, and one for the lookahead sequence pattern. For each array, the offsets correspond,
 // in order, to the positions in the sequence pattern.
-func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType6Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	var payload *ot.GSubChainingContextFmt3Payload
 	if ctx.subnode != nil {
@@ -493,10 +493,10 @@ func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if len(payload.Records) == 0 {
 		return pos, false, buf, nil
 	}
-	if ctx.lookupList == nil {
+	if ctx.lookupGraph == nil {
 		return pos, false, buf, nil
 	}
-	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, payload.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 	ctx.buf.Pos = outPosBuf
 	if applied {
 		return pos, true, out, nil
@@ -505,7 +505,7 @@ func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 }
 
 // GSUB LookupType 8: Reverse Chaining Single Substitution Subtable
-func gsubLookupType8Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
+func gsubLookupType8Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	var payload *ot.GSubReverseChainingFmt1Payload
 	if ctx.subnode != nil {
@@ -527,7 +527,7 @@ func gsubLookupType8Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			break
 		}
 		tracer().Debugf("GSUB 8|1 candidate pos=%d glyph=%d", mpos, buf.At(mpos))
-		inx, ok := lksub.Coverage.Match(buf.At(mpos))
+		inx, ok := sub.Coverage.Match(buf.At(mpos))
 		if !ok {
 			tracer().Debugf("GSUB 8|1 coverage did not match at pos %d", mpos)
 			i = mpos - 1

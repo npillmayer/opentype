@@ -434,7 +434,8 @@ This section records the current behavior in `ot/` for lookup decomposition deta
       4. GPOS payload parity checks across effective payloads (including non-extension nodes on available fonts),
       5. synthetic contextual/chaining parity checks for GPOS format-1/2/3 edge forms against legacy traversal,
       6. negative malformed-input checks for concrete GSUB/GPOS parsing (offset/format truncation and recursive extension guards),
-      7. concurrent access checks for extension-resolved and context-heavy concrete nodes.
+      7. concurrent access checks for extension-resolved and context-heavy concrete nodes,
+      8. `otlayout` runtime golden behavior checks for concrete-first GPOS application (single/pair/chaining forwarding plus mark-base/mark-ligature attachment metadata).
 3. Transitional coexistence remains intact:
    1. parser still populates both legacy `LookupList` and concrete `LookupGraph`.
    2. legacy consumers still call the old API surface, now with lookup-subtable materialization adapter-backed from concrete lookup nodes.
@@ -450,6 +451,23 @@ This section records the current behavior in `ot/` for lookup decomposition deta
 2. Legacy fallback remains intentionally enabled during transition for parity confidence and compatibility safety.
 3. Remaining optional cleanup (post-migration hardening):
    1. collapse duplicate legacy decoding branches in `otlayout/gpos.go` once fallback removal is scheduled.
+4. Runtime golden coverage added in `otlayout`:
+   1. type 1/2 concrete-first value adjustments,
+   2. type 8 chaining-to-single forwarding behavior,
+   3. type 4/5 attachment metadata behavior.
+5. Bug fix applied during runtime-golden pass:
+   1. `gposLookupType1Fmt1` incorrectly rejected covered glyphs by requiring coverage index `== 1`; this guard was removed.
+
+#### Batch 2.0 status (concrete-only switch + parity harness)
+1. Batch 2.0 is complete.
+2. `otlayout` now exposes a runtime execution mode switch:
+   1. `ConcreteFirst` (default): concrete payload path with legacy fallback enabled.
+   2. `ConcreteOnly`: concrete payload path only; legacy `Support`/`Index` fallback is disabled.
+3. Fallback guards are now enforced across GSUB/GPOS lookup execution paths and shared chained-rule helpers.
+4. Mode parity harness is in place:
+   1. GSUB parity checks run concrete-first vs concrete-only on representative alternate/context cases.
+   2. GPOS parity checks run concrete-first vs concrete-only on single/pair/chaining and mark-attachment cases.
+   3. A synthetic negative check verifies legacy-only dispatch no longer applies in concrete-only mode.
 
 #### What remains to finish Phase 2
 1. No open verification gaps are currently tracked for Phase 2.
@@ -471,6 +489,8 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    2. depth guard remains enforced.
 4. Concurrency:
    1. repeated concurrent access to same lookup/subtable index returns canonical cached object.
+5. Runtime behavior goldens (`otlayout`):
+   1. concrete-first GPOS application mutates `PosBuffer` consistently with concrete payload semantics for representative type 1/2/4/5/8 cases.
 
 #### Completion criteria for Phase 2
 1. Concrete lookup graph is parser-integrated and publicly reachable in `ot` in parallel with legacy path.

@@ -215,6 +215,22 @@ type applyCtx struct {
 	subnode     *ot.LookupNode           // effective concrete node for current subtable dispatch
 }
 
+func (ctx *applyCtx) concreteOnly() bool {
+	return LookupMode() == ConcreteOnly
+}
+
+func (ctx *applyCtx) allowLegacyFallback(path string) bool {
+	if !ctx.concreteOnly() {
+		return true
+	}
+	if ctx.subnode == nil {
+		tracer().Errorf("%s: legacy fallback disabled in concrete-only mode (missing concrete node)", path)
+	} else {
+		tracer().Errorf("%s: legacy fallback disabled in concrete-only mode", path)
+	}
+	return false
+}
+
 // EditSpan describes a buffer mutation so contextual/chaining lookups can
 // re-map lookup-record positions after a replacement/insertion.
 type EditSpan struct {
@@ -1083,7 +1099,7 @@ type parsedChainedRule struct {
 	Records   []ot.SequenceLookupRecord
 }
 
-func parseChainedSequenceRules(lksub *ot.LookupSubtable, csub *ot.LookupNode, coverageIndex int) ([]parsedChainedRule, error) {
+func parseChainedSequenceRules(ctx *applyCtx, lksub *ot.LookupSubtable, csub *ot.LookupNode, coverageIndex int) ([]parsedChainedRule, error) {
 	if csub != nil {
 		if p := csub.GSubPayload(); p != nil && p.ChainingContextFmt1 != nil {
 			if coverageIndex < 0 || coverageIndex >= len(p.ChainingContextFmt1.RuleSets) {
@@ -1117,6 +1133,9 @@ func parseChainedSequenceRules(lksub *ot.LookupSubtable, csub *ot.LookupNode, co
 			}
 			return out, nil
 		}
+	}
+	if ctx != nil && !ctx.allowLegacyFallback("chained sequence rules") {
+		return nil, nil
 	}
 	if lksub.Index.Size() == 0 {
 		return nil, nil
@@ -1153,7 +1172,7 @@ type parsedChainedClassRule struct {
 	Records   []ot.SequenceLookupRecord
 }
 
-func parseChainedClassSequenceRules(lksub *ot.LookupSubtable, csub *ot.LookupNode, coverageIndex int) ([]parsedChainedClassRule, error) {
+func parseChainedClassSequenceRules(ctx *applyCtx, lksub *ot.LookupSubtable, csub *ot.LookupNode, coverageIndex int) ([]parsedChainedClassRule, error) {
 	if csub != nil {
 		if p := csub.GSubPayload(); p != nil && p.ChainingContextFmt2 != nil {
 			if coverageIndex < 0 || coverageIndex >= len(p.ChainingContextFmt2.RuleSets) {
@@ -1187,6 +1206,9 @@ func parseChainedClassSequenceRules(lksub *ot.LookupSubtable, csub *ot.LookupNod
 			}
 			return out, nil
 		}
+	}
+	if ctx != nil && !ctx.allowLegacyFallback("chained class rules") {
+		return nil, nil
 	}
 	if lksub.Index.Size() == 0 {
 		return nil, nil

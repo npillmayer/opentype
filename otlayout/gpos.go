@@ -5,13 +5,8 @@ import "github.com/npillmayer/opentype/ot"
 // GPOS Lookup Type 1, Format 1: Single Adjustment (single value for all covered glyphs).
 func gposLookupType1Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
+	mpos, _, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
 	if !ok {
-		return pos, false, buf, nil
-	}
-	// inx should be 1, i.e. next glyph?
-	if inx != 1 {
-		tracer().Errorf("GPOS 1|1 unexpected coverage index")
 		return pos, false, buf, nil
 	}
 	if ctx.subnode != nil {
@@ -23,6 +18,9 @@ func gposLookupType1Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			applyValueRecord(&ctx.buf.Pos[mpos], p.SingleFmt1.Value, p.SingleFmt1.ValueFormat)
 			return mpos + 1, true, buf, nil
 		}
+	}
+	if !ctx.allowLegacyFallback("GPOS 1|1") {
+		return pos, false, buf, nil
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 1|1 missing support data")
@@ -64,6 +62,9 @@ func gposLookupType1Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			return mpos + 1, true, buf, nil
 		}
 	}
+	if !ctx.allowLegacyFallback("GPOS 1|2") {
+		return pos, false, buf, nil
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 1|2 missing support data")
 		return pos, false, buf, nil
@@ -97,18 +98,6 @@ func gposLookupType2Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if ctx.lookupList == nil {
 		return pos, false, buf, nil
 	}
-	if lksub.Support == nil {
-		tracer().Errorf("GPOS 2|1 missing support data")
-		return pos, false, buf, nil
-	}
-	sup, ok := lksub.Support.([2]ot.ValueFormat)
-	if !ok {
-		tracer().Errorf("GPOS 2|1 support type mismatch")
-		return pos, false, buf, nil
-	}
-	if lksub.Index.Size() == 0 {
-		return pos, false, buf, nil
-	}
 	next, ok := nextMatchable(ctx, buf, mpos+1)
 	if !ok {
 		return pos, false, buf, nil
@@ -130,6 +119,21 @@ func gposLookupType2Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			}
 			return pos, false, buf, nil
 		}
+	}
+	if !ctx.allowLegacyFallback("GPOS 2|1") {
+		return pos, false, buf, nil
+	}
+	if lksub.Support == nil {
+		tracer().Errorf("GPOS 2|1 missing support data")
+		return pos, false, buf, nil
+	}
+	sup, ok := lksub.Support.([2]ot.ValueFormat)
+	if !ok {
+		tracer().Errorf("GPOS 2|1 support type mismatch")
+		return pos, false, buf, nil
+	}
+	if lksub.Index.Size() == 0 {
+		return pos, false, buf, nil
 	}
 	pairSetLoc, err := lksub.Index.Get(inx, false)
 	if err != nil || pairSetLoc.Size() < 2 {
@@ -189,6 +193,9 @@ func gposLookupType2Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			applyValueRecordPair(&ctx.buf.Pos[mpos], &ctx.buf.Pos[next], rec.Value1, p.PairFmt2.ValueFormat1, rec.Value2, p.PairFmt2.ValueFormat2)
 			return mpos + 1, true, buf, nil
 		}
+	}
+	if !ctx.allowLegacyFallback("GPOS 2|2") {
+		return pos, false, buf, nil
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 2|2 missing support data")
@@ -296,6 +303,9 @@ func gposLookupType4Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			setMarkAttachment(&ctx.buf.Pos[mpos], basePos, AttachMarkToBase, markRec.Class, ref)
 			return mpos + 1, true, buf, nil
 		}
+	}
+	if !ctx.allowLegacyFallback("GPOS 4|1") {
+		return pos, false, buf, nil
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 4|1 missing support data")
@@ -438,6 +448,9 @@ func gposLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			return mpos + 1, true, buf, nil
 		}
 	}
+	if !ctx.allowLegacyFallback("GPOS 5|1") {
+		return pos, false, buf, nil
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 5|1 missing support data")
 		return pos, false, buf, nil
@@ -576,6 +589,9 @@ func gposLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			return mpos + 1, true, buf, nil
 		}
 	}
+	if !ctx.allowLegacyFallback("GPOS 6|1") {
+		return pos, false, buf, nil
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 6|1 missing support data")
 		return pos, false, buf, nil
@@ -668,6 +684,9 @@ func gposLookupType7Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			return pos, false, buf, nil
 		}
 	}
+	if !ctx.allowLegacyFallback("GPOS 7|1") {
+		return pos, false, buf, nil
+	}
 	if lksub.Index.Size() == 0 {
 		return pos, false, buf, nil
 	}
@@ -759,6 +778,9 @@ func gposLookupType7Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			return pos, false, buf, nil
 		}
 	}
+	if !ctx.allowLegacyFallback("GPOS 7|2") {
+		return pos, false, buf, nil
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 7|2 missing support data")
 		return pos, false, buf, nil
@@ -843,6 +865,9 @@ func gposLookupType7Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			return pos, false, buf, nil
 		}
 	}
+	if !ctx.allowLegacyFallback("GPOS 7|3") {
+		return pos, false, buf, nil
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 7|3 missing support data")
 		return pos, false, buf, nil
@@ -877,7 +902,7 @@ func gposLookupType8Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	rules, err := parseChainedSequenceRules(lksub, ctx.subnode, inx)
+	rules, err := parseChainedSequenceRules(ctx, lksub, ctx.subnode, inx)
 	if err != nil || len(rules) == 0 {
 		return pos, false, buf, nil
 	}
@@ -930,13 +955,16 @@ func gposLookupType8Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		}
 	}
 	if len(classDefs) < 3 {
+		if !ctx.allowLegacyFallback("GPOS 8|2 class definitions") {
+			return pos, false, buf, nil
+		}
 		seqctx, ok := lksub.Support.(*ot.SequenceContext)
 		if !ok || len(seqctx.ClassDefs) < 3 {
 			return pos, false, buf, nil
 		}
 		classDefs = seqctx.ClassDefs
 	}
-	rules, err := parseChainedClassSequenceRules(lksub, ctx.subnode, inx)
+	rules, err := parseChainedClassSequenceRules(ctx, lksub, ctx.subnode, inx)
 	if err != nil || len(rules) == 0 {
 		return pos, false, buf, nil
 	}
@@ -976,6 +1004,11 @@ func gposLookupType8Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	int, bool, GlyphBuffer, *EditSpan) {
 	seqctx, ok := lksub.Support.(*ot.SequenceContext)
 	records := lksub.LookupRecords
+	if ctx.concreteOnly() {
+		seqctx = nil
+		ok = false
+		records = nil
+	}
 	if ctx.subnode != nil {
 		if p := ctx.subnode.GPosPayload(); p != nil && p.ChainingContextFmt3 != nil {
 			seqctx = &ot.SequenceContext{
@@ -1089,6 +1122,9 @@ func gposLookupType3Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			}
 			return pos, false, buf, nil
 		}
+	}
+	if !ctx.allowLegacyFallback("GPOS 3|1") {
+		return pos, false, buf, nil
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 3|1 missing support data")

@@ -33,6 +33,9 @@ func gsubLookupType1Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		}
 	}
 	if !fromConcrete {
+		if !ctx.allowLegacyFallback("GSUB 1|1") {
+			return pos, false, buf, nil
+		}
 		switch v := lksub.Support.(type) {
 		case int16:
 			delta = int(v)
@@ -78,6 +81,9 @@ func gsubLookupType1Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			return pos, false, buf, nil
 		}
 	}
+	if !ctx.allowLegacyFallback("GSUB 1|2") {
+		return pos, false, buf, nil
+	}
 	if glyph := lookupGlyph(lksub.Index, inx, false); glyph != 0 {
 		tracer().Debugf("OT lookup GSUB 1/2: subst %d for %d", glyph, buf.At(mpos))
 		ctx.buf.Set(mpos, glyph)
@@ -119,6 +125,9 @@ func gsubLookupType2Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			}
 			return pos, false, buf, nil
 		}
+	}
+	if !ctx.allowLegacyFallback("GSUB 2|1") {
+		return pos, false, buf, nil
 	}
 	if glyphs := lookupGlyphs(lksub.Index, inx, true); len(glyphs) != 0 {
 		tracer().Debugf("OT lookup GSUB 2/1: subst %v for %d", glyphs, buf.At(mpos))
@@ -169,6 +178,9 @@ func gsubLookupType3Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			}
 			return pos, false, buf, nil
 		}
+	}
+	if !ctx.allowLegacyFallback("GSUB 3|1") {
+		return pos, false, buf, nil
 	}
 	if glyphs := lookupGlyphs(lksub.Index, inx, true); len(glyphs) != 0 {
 		if alt < 0 {
@@ -228,6 +240,9 @@ func gsubLookupType4Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			}
 			return pos, false, buf, nil
 		}
+	}
+	if !ctx.allowLegacyFallback("GSUB 4|1") {
+		return pos, false, buf, nil
 	}
 	ligatureSet, err := lksub.Index.Get(inx, false)
 	if err != nil || ligatureSet.Size() < 2 {
@@ -325,6 +340,9 @@ func gsubLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			}
 			return pos, false, buf, nil
 		}
+	}
+	if !ctx.allowLegacyFallback("GSUB 5|1") {
+		return pos, false, buf, nil
 	}
 	ruleSetLoc, err := lksub.Index.Get(inx, false)
 	if err != nil || ruleSetLoc.Size() < 2 { // extra coverage glyphs or extra sequence rule sets are ignored
@@ -431,6 +449,9 @@ func gsubLookupType5Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			return pos, false, buf, nil
 		}
 	}
+	if !ctx.allowLegacyFallback("GSUB 5|2") {
+		return pos, false, buf, nil
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("expected SequenceContext|ClassDefs in field 'Support', is nil")
 		return pos, false, buf, nil
@@ -523,6 +544,9 @@ func gsubLookupType5Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			return pos, false, buf, nil
 		}
 	}
+	if !ctx.allowLegacyFallback("GSUB 5|3") {
+		return pos, false, buf, nil
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("expected SequenceContext in field 'Support', is nil")
 		return pos, false, buf, nil
@@ -564,7 +588,7 @@ func gsubLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	rules, err := parseChainedSequenceRules(lksub, ctx.subnode, inx)
+	rules, err := parseChainedSequenceRules(ctx, lksub, ctx.subnode, inx)
 	if err != nil || len(rules) == 0 {
 		return pos, false, buf, nil
 	}
@@ -630,6 +654,9 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		}
 	}
 	if len(classDefs) < 3 {
+		if !ctx.allowLegacyFallback("GSUB 6|2 class definitions") {
+			return pos, false, buf, nil
+		}
 		seqctx, ok := lksub.Support.(*ot.SequenceContext)
 		if !ok || seqctx == nil || len(seqctx.ClassDefs) < 3 {
 			tracer().Debugf("GSUB 6|2 missing class definitions")
@@ -637,7 +664,7 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		}
 		classDefs = seqctx.ClassDefs
 	}
-	rules, err := parseChainedClassSequenceRules(lksub, ctx.subnode, inx)
+	rules, err := parseChainedClassSequenceRules(ctx, lksub, ctx.subnode, inx)
 	if err != nil || len(rules) == 0 {
 		return pos, false, buf, nil
 	}
@@ -694,6 +721,11 @@ func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	int, bool, GlyphBuffer, *EditSpan) {
 	seqctx, ok := lksub.Support.(*ot.SequenceContext)
 	records := lksub.LookupRecords
+	if ctx.concreteOnly() {
+		seqctx = nil
+		ok = false
+		records = nil
+	}
 	if ctx.subnode != nil {
 		if p := ctx.subnode.GSubPayload(); p != nil && p.ChainingContextFmt3 != nil {
 			seqctx = &ot.SequenceContext{
@@ -778,6 +810,9 @@ func gsubLookupType8Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		}
 	}
 	if rc == nil {
+		if !ctx.allowLegacyFallback("GSUB 8|1") {
+			return pos, false, buf, nil
+		}
 		var ok bool
 		rc, ok = lksub.Support.(*ot.ReverseChainingSubst)
 		if !ok || rc == nil {

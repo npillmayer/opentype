@@ -20,6 +20,8 @@ type LayoutTable struct {
 	ScriptList Navigator
 	//FeatureList NavList
 	FeatureList  TagRecordMap
+	scriptGraph  *ScriptList
+	featureGraph *FeatureList
 	LookupList   LookupList
 	Requirements LayoutRequirements
 	header       *LayoutHeader
@@ -56,6 +58,24 @@ func (r *LayoutRequirements) Merge(other LayoutRequirements) {
 // Header returns the layout table header for this GSUB table.
 func (t *LayoutTable) Header() LayoutHeader {
 	return *t.header
+}
+
+// ScriptGraph returns the concrete shared-script graph for this layout table.
+// During transition this may be nil when not yet parsed/instantiated.
+func (t *LayoutTable) ScriptGraph() *ScriptList {
+	if t == nil {
+		return nil
+	}
+	return t.scriptGraph
+}
+
+// FeatureGraph returns the concrete shared-feature graph for this layout table.
+// During transition this may be nil when not yet parsed/instantiated.
+func (t *LayoutTable) FeatureGraph() *FeatureList {
+	if t == nil {
+		return nil
+	}
+	return t.featureGraph
 }
 
 // LayoutHeader represents header information common to the layout tables.

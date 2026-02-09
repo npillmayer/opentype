@@ -1214,7 +1214,69 @@ func parseFeatureList(lytt *LayoutTable, b []byte, err error) error {
 		return err
 	}
 	lytt.FeatureList = featureRecords
+	lytt.featureGraph = parseConcreteFeatureList(features.Bytes(), featureRecords)
 	return nil
+}
+
+func parseConcreteFeatureList(features binarySegm, featureRecords tagRecordMap16) *FeatureList {
+	fl := &FeatureList{
+		featureOrder:    make([]Tag, 0, featureRecords.Len()),
+		featuresByIndex: make([]*Feature, 0, featureRecords.Len()),
+		indicesByTag:    make(map[Tag][]int, featureRecords.Len()),
+		raw:             features,
+	}
+	for i := 0; i < featureRecords.Len(); i++ {
+		record := featureRecords.records.Get(i)
+		if record.Size() < 6 {
+			if fl.err == nil {
+				fl.err = errBufferBounds
+			}
+			fl.featureOrder = append(fl.featureOrder, 0)
+			fl.featuresByIndex = append(fl.featuresByIndex, &Feature{err: errBufferBounds})
+			continue
+		}
+		tag := MakeTag(record.Bytes()[:4])
+		offset := int(record.U16(4))
+		fl.featureOrder = append(fl.featureOrder, tag)
+		fl.indicesByTag[tag] = append(fl.indicesByTag[tag], i)
+
+		if offset <= 0 || offset >= len(features) {
+			perr := fmt.Errorf("feature record %s has invalid offset %d (size %d)", tag, offset, len(features))
+			if fl.err == nil {
+				fl.err = perr
+			}
+			fl.featuresByIndex = append(fl.featuresByIndex, &Feature{err: perr})
+			continue
+		}
+		feature := parseConcreteFeature(features[offset:])
+		if feature.err != nil && fl.err == nil {
+			fl.err = feature.err
+		}
+		fl.featuresByIndex = append(fl.featuresByIndex, feature)
+	}
+	return fl
+}
+
+func parseConcreteFeature(b binarySegm) *Feature {
+	f := &Feature{raw: b}
+	if len(b) < 4 {
+		f.err = errBufferBounds
+		return f
+	}
+	f.featureParamsOffset, _ = b.u16(0)
+	lookupArray, err := parseArray16(b, 2, "Feature", "Feature-Lookups")
+	if err != nil {
+		f.err = err
+		return f
+	}
+	if lookupArray.Len() == 0 {
+		return f
+	}
+	f.lookupListIndices = make([]uint16, lookupArray.Len())
+	for i := 0; i < lookupArray.Len(); i++ {
+		f.lookupListIndices[i] = lookupArray.Get(i).U16(0)
+	}
+	return f
 }
 
 // b+offset has to be positioned at the start of the feature index list block, e.g.,

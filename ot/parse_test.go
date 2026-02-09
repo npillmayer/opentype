@@ -73,6 +73,16 @@ func TestParseGPos(t *testing.T) {
 	if gpos.FeatureList.Len() != 27 {
 		t.Errorf("expected 27 GPOS features, have %d", gpos.FeatureList.Len())
 	}
+	if gpos.FeatureGraph() == nil {
+		t.Fatalf("expected concrete GPOS feature graph to be parsed")
+	}
+	if gpos.FeatureGraph().Len() != gpos.FeatureList.Len() {
+		t.Errorf("expected concrete feature graph size %d, have %d",
+			gpos.FeatureList.Len(), gpos.FeatureGraph().Len())
+	}
+	if gpos.FeatureGraph().Error() != nil {
+		t.Errorf("unexpected concrete feature graph parse error: %v", gpos.FeatureGraph().Error())
+	}
 	t.Logf("otf.GPOS: %d scripts:", gpos.ScriptList.Map().AsTagRecordMap().Len())
 	_ = gpos.ScriptList.Map().AsTagRecordMap()
 }
@@ -105,6 +115,16 @@ func TestParseGSub(t *testing.T) {
 	t.Logf("otf.GSUB: %d features:", gsub.FeatureList.Len())
 	if gsub.FeatureList.Len() != 41 {
 		t.Errorf("expected 41 features, have %d", gsub.FeatureList.Len())
+	}
+	if gsub.FeatureGraph() == nil {
+		t.Fatalf("expected concrete GSUB feature graph to be parsed")
+	}
+	if gsub.FeatureGraph().Len() != gsub.FeatureList.Len() {
+		t.Errorf("expected concrete feature graph size %d, have %d",
+			gsub.FeatureList.Len(), gsub.FeatureGraph().Len())
+	}
+	if gsub.FeatureGraph().Error() != nil {
+		t.Errorf("unexpected concrete feature graph parse error: %v", gsub.FeatureGraph().Error())
 	}
 	// t.Logf("otf.GSUB: %d scripts:", len(gsub.scripts))
 	// for i, sc := range gsub.scripts {

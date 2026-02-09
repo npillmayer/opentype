@@ -193,6 +193,8 @@ in Rust:
 */
 
 import (
+	"fmt"
+
 	"github.com/npillmayer/schuko/tracing"
 )
 
@@ -202,4 +204,22 @@ import (
 // tracer writes to trace with key 'font.opentype'
 func tracer() tracing.Trace {
 	return tracing.Select("font.opentype")
+}
+
+func assertEqualInt(name string, a, b int) {
+	if a != b {
+		panic(fmt.Sprintf("assertion [%s] failed: %d != %d", name, a, b))
+	}
+}
+
+func assertEqualUint16(name string, a, b uint16) {
+	if a != b {
+		panic(fmt.Sprintf("assertion [%s] failed: %d != %d", name, a, b))
+	}
+}
+
+func assertIsType[T any](name string, x any) {
+	if _, ok := x.(T); !ok {
+		panic(fmt.Sprintf("assertion [%s] failed: wrong type for %v: %T", name, x, x))
+	}
 }

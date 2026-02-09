@@ -1,6 +1,9 @@
 package ot
 
-import "iter"
+import (
+	"iter"
+	"sync"
+)
 
 // This file contains Phase-1 refactor types for shared GSUB/GPOS layout-graph
 // structures. The types are intentionally semantic API containers, while record-
@@ -9,9 +12,12 @@ import "iter"
 // ScriptList is a semantic container for scripts in a GSUB/GPOS ScriptList.
 // It does not expose record-layout details from the OpenType byte format.
 type ScriptList struct {
-	scriptOrder []Tag
-	offsetByTag map[Tag]uint16
-	scriptByTag map[Tag]*Script
+	scriptOrder  []Tag
+	offsetByTag  map[Tag]uint16
+	scriptByTag  map[Tag]*Script
+	featureGraph *FeatureList
+
+	mu sync.RWMutex
 
 	raw binarySegm
 	err error
@@ -23,7 +29,11 @@ type Script struct {
 	langOrder            []Tag
 	langOffsetsByTag     map[Tag]uint16
 	langByTag            map[Tag]*LangSys
+	featureGraph         *FeatureList
+	defaultOnce          sync.Once
 	defaultLangSys       *LangSys
+
+	mu sync.RWMutex
 
 	raw binarySegm
 	err error
@@ -37,6 +47,8 @@ type LangSys struct {
 
 	// Internal linkage and lazy-resolved semantic list.
 	featureIndices []uint16
+	featureGraph   *FeatureList
+	featuresOnce   sync.Once
 	features       []*Feature
 
 	err error
@@ -45,9 +57,12 @@ type LangSys struct {
 // FeatureList is a semantic container for features in a GSUB/GPOS FeatureList.
 // Duplicate feature tags are preserved via indicesByTag.
 type FeatureList struct {
-	featureOrder    []Tag
-	featuresByIndex []*Feature
-	indicesByTag    map[Tag][]int
+	featureOrder          []Tag
+	featureOffsetsByIndex []uint16
+	featuresByIndex       map[int]*Feature
+	indicesByTag          map[Tag][]int
+
+	mu sync.RWMutex
 
 	raw binarySegm
 	err error
@@ -72,10 +87,37 @@ func (sl *ScriptList) Len() int {
 
 // Script returns a script by tag.
 func (sl *ScriptList) Script(tag Tag) *Script {
-	if sl == nil || sl.scriptByTag == nil {
+	if sl == nil {
 		return nil
 	}
-	return sl.scriptByTag[tag]
+	offset, ok := sl.offsetByTag[tag]
+	if !ok {
+		return nil
+	}
+	sl.mu.RLock()
+	if sl.scriptByTag != nil {
+		if script, ok := sl.scriptByTag[tag]; ok {
+			sl.mu.RUnlock()
+			return script
+		}
+	}
+	sl.mu.RUnlock()
+
+	script := &Script{err: errBufferBounds}
+	if offset > 0 && int(offset) < len(sl.raw) {
+		script = parseConcreteScript(sl.raw[offset:], sl.featureGraph)
+	}
+
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	if sl.scriptByTag == nil {
+		sl.scriptByTag = make(map[Tag]*Script, 8)
+	}
+	if cached, ok := sl.scriptByTag[tag]; ok {
+		return cached
+	}
+	sl.scriptByTag[tag] = script
+	return script
 }
 
 // Range iterates scripts in declaration order.
@@ -85,7 +127,7 @@ func (sl *ScriptList) Range() iter.Seq2[Tag, *Script] {
 			return
 		}
 		for _, tag := range sl.scriptOrder {
-			if !yield(tag, sl.scriptByTag[tag]) {
+			if !yield(tag, sl.Script(tag)) {
 				return
 			}
 		}
@@ -100,18 +142,57 @@ func (sl *ScriptList) Error() error {
 	return sl.err
 }
 
+// DefaultLangSys returns the default language-system for this script, if any.
+func (s *Script) DefaultLangSys() *LangSys {
+	if s == nil {
+		return nil
+	}
+	if s.defaultLangSysOffset == 0 {
+		return nil
+	}
+	s.defaultOnce.Do(func() {
+		if int(s.defaultLangSysOffset) >= len(s.raw) {
+			s.defaultLangSys = &LangSys{err: errBufferBounds}
+			return
+		}
+		s.defaultLangSys = parseConcreteLangSys(s.raw[s.defaultLangSysOffset:], s.featureGraph)
+	})
+	return s.defaultLangSys
+}
+
 // LangSys returns a language system by tag.
 func (s *Script) LangSys(tag Tag) *LangSys {
 	if s == nil {
 		return nil
 	}
-	if tag == DFLT {
-		return s.defaultLangSys
-	}
-	if s.langByTag == nil {
+	offset, ok := s.langOffsetsByTag[tag]
+	if !ok {
 		return nil
 	}
-	return s.langByTag[tag]
+	s.mu.RLock()
+	if s.langByTag != nil {
+		if lsys, ok := s.langByTag[tag]; ok {
+			s.mu.RUnlock()
+			return lsys
+		}
+	}
+	s.mu.RUnlock()
+
+	lsys := &LangSys{err: errBufferBounds}
+	if offset > 0 && int(offset) < len(s.raw) {
+		lsys = parseConcreteLangSys(s.raw[offset:], s.featureGraph)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.langByTag == nil {
+		s.langByTag = make(map[Tag]*LangSys, 8)
+	}
+	if cached, ok := s.langByTag[tag]; ok {
+		return cached
+	}
+	s.langByTag[tag] = lsys
+	return lsys
 }
 
 // Range iterates language-systems in declaration order.
@@ -121,7 +202,7 @@ func (s *Script) Range() iter.Seq2[Tag, *LangSys] {
 			return
 		}
 		for _, tag := range s.langOrder {
-			if !yield(tag, s.langByTag[tag]) {
+			if !yield(tag, s.LangSys(tag)) {
 				return
 			}
 		}
@@ -146,7 +227,11 @@ func (ls *LangSys) RequiredFeatureIndex() (uint16, bool) {
 
 // FeatureAt returns a resolved feature by feature-link position.
 func (ls *LangSys) FeatureAt(i int) *Feature {
-	if ls == nil || i < 0 || i >= len(ls.features) {
+	if ls == nil || i < 0 || i >= len(ls.featureIndices) {
+		return nil
+	}
+	ls.resolveFeatures()
+	if i >= len(ls.features) {
 		return nil
 	}
 	return ls.features[i]
@@ -154,12 +239,28 @@ func (ls *LangSys) FeatureAt(i int) *Feature {
 
 // Features returns resolved features in language-system link order.
 func (ls *LangSys) Features() []*Feature {
-	if ls == nil || len(ls.features) == 0 {
+	if ls == nil || len(ls.featureIndices) == 0 {
 		return nil
 	}
+	ls.resolveFeatures()
 	features := make([]*Feature, len(ls.features))
 	copy(features, ls.features)
 	return features
+}
+
+func (ls *LangSys) resolveFeatures() {
+	ls.featuresOnce.Do(func() {
+		if len(ls.featureIndices) == 0 {
+			return
+		}
+		features := make([]*Feature, len(ls.featureIndices))
+		if ls.featureGraph != nil {
+			for i, inx := range ls.featureIndices {
+				features[i] = ls.featureGraph.featureAtIndex(int(inx))
+			}
+		}
+		ls.features = features
+	})
 }
 
 // Error returns an accumulated error for the language system.
@@ -175,7 +276,7 @@ func (fl *FeatureList) Len() int {
 	if fl == nil {
 		return 0
 	}
-	return len(fl.featuresByIndex)
+	return len(fl.featureOrder)
 }
 
 // Range iterates features in declaration order and preserves duplicate tags.
@@ -185,11 +286,7 @@ func (fl *FeatureList) Range() iter.Seq2[Tag, *Feature] {
 			return
 		}
 		for i, tag := range fl.featureOrder {
-			var feature *Feature
-			if i >= 0 && i < len(fl.featuresByIndex) {
-				feature = fl.featuresByIndex[i]
-			}
-			if !yield(tag, feature) {
+			if !yield(tag, fl.featureAtIndex(i)) {
 				return
 			}
 		}
@@ -220,10 +317,7 @@ func (fl *FeatureList) First(tag Tag) *Feature {
 		return nil
 	}
 	i := indices[0]
-	if i < 0 || i >= len(fl.featuresByIndex) {
-		return nil
-	}
-	return fl.featuresByIndex[i]
+	return fl.featureAtIndex(i)
 }
 
 // All returns all features matching a feature tag.
@@ -237,10 +331,7 @@ func (fl *FeatureList) All(tag Tag) []*Feature {
 	}
 	out := make([]*Feature, 0, len(indices))
 	for _, i := range indices {
-		if i < 0 || i >= len(fl.featuresByIndex) {
-			continue
-		}
-		if f := fl.featuresByIndex[i]; f != nil {
+		if f := fl.featureAtIndex(i); f != nil {
 			out = append(out, f)
 		}
 	}
@@ -272,4 +363,35 @@ func (f *Feature) Error() error {
 		return nil
 	}
 	return f.err
+}
+
+func (fl *FeatureList) featureAtIndex(i int) *Feature {
+	if fl == nil || i < 0 || i >= len(fl.featureOffsetsByIndex) {
+		return nil
+	}
+	fl.mu.RLock()
+	if fl.featuresByIndex != nil {
+		if f, ok := fl.featuresByIndex[i]; ok {
+			fl.mu.RUnlock()
+			return f
+		}
+	}
+	fl.mu.RUnlock()
+
+	offset := fl.featureOffsetsByIndex[i]
+	feature := &Feature{err: errBufferBounds}
+	if offset > 0 && int(offset) < len(fl.raw) {
+		feature = parseConcreteFeature(fl.raw[offset:])
+	}
+
+	fl.mu.Lock()
+	defer fl.mu.Unlock()
+	if fl.featuresByIndex == nil {
+		fl.featuresByIndex = make(map[int]*Feature, 8)
+	}
+	if cached, ok := fl.featuresByIndex[i]; ok {
+		return cached
+	}
+	fl.featuresByIndex[i] = feature
+	return feature
 }

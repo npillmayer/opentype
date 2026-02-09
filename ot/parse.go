@@ -1187,10 +1187,114 @@ func parseScriptList(lytt *LayoutTable, b binarySegm, err error) error {
 	//lytt.ScriptList = tagRecordMap16{}
 	link := link16{base: b, offset: uint16(lytt.header.offsetFor(layoutScriptSection))}
 	scripts := link.Jump() // now we stand at the ScriptList table
+	scriptRecords := parseTagRecordMap16(scripts.Bytes(), 0, scripts.Bytes(), "ScriptList", "Script")
+	lytt.scriptGraph = parseConcreteScriptList(scripts.Bytes(), scriptRecords, lytt.featureGraph)
 	//scriptRecords := parseTagRecordMap16(scripts.Bytes(), 0, scripts.Bytes(), "ScriptList", "Script")
 	//lytt.ScriptList = scriptRecords
 	lytt.ScriptList = NavigatorFactory("ScriptList", scripts, scripts)
 	return nil
+}
+
+func parseConcreteScriptList(scripts binarySegm, scriptRecords tagRecordMap16, featureGraph *FeatureList) *ScriptList {
+	sl := &ScriptList{
+		scriptOrder:  make([]Tag, 0, scriptRecords.Len()),
+		offsetByTag:  make(map[Tag]uint16, scriptRecords.Len()),
+		scriptByTag:  make(map[Tag]*Script, 8),
+		featureGraph: featureGraph,
+		raw:          scripts,
+	}
+	for i := 0; i < scriptRecords.Len(); i++ {
+		record := scriptRecords.records.Get(i)
+		if record.Size() < 6 {
+			if sl.err == nil {
+				sl.err = errBufferBounds
+			}
+			sl.scriptOrder = append(sl.scriptOrder, 0)
+			continue
+		}
+		tag := MakeTag(record.Bytes()[:4])
+		offset := record.U16(4)
+		sl.scriptOrder = append(sl.scriptOrder, tag)
+		sl.offsetByTag[tag] = offset
+		if offset == 0 || int(offset) >= len(scripts) {
+			perr := fmt.Errorf("script record %s has invalid offset %d (size %d)", tag, offset, len(scripts))
+			if sl.err == nil {
+				sl.err = perr
+			}
+			continue
+		}
+		if verr := validateConcreteScript(scripts[offset:], featureGraph, tag == DFLT); verr != nil && sl.err == nil {
+			sl.err = verr
+		}
+	}
+	return sl
+}
+
+func parseConcreteScript(b binarySegm, featureGraph *FeatureList) *Script {
+	s := &Script{
+		raw:              b,
+		featureGraph:     featureGraph,
+		langOffsetsByTag: make(map[Tag]uint16),
+		langByTag:        make(map[Tag]*LangSys, 8),
+	}
+	if len(b) < 4 {
+		s.err = errBufferBounds
+		return s
+	}
+	s.defaultLangSysOffset, _ = b.u16(0)
+	if s.defaultLangSysOffset > 0 && int(s.defaultLangSysOffset) >= len(b) {
+		s.err = fmt.Errorf("default langsys offset out of bounds: %d (size %d)", s.defaultLangSysOffset, len(b))
+	}
+	langRecords := parseTagRecordMap16(b, 2, b, "Script", "LangSys")
+	s.langOrder = make([]Tag, 0, langRecords.Len())
+	for i := 0; i < langRecords.Len(); i++ {
+		record := langRecords.records.Get(i)
+		if record.Size() < 6 {
+			if s.err == nil {
+				s.err = errBufferBounds
+			}
+			continue
+		}
+		tag := MakeTag(record.Bytes()[:4])
+		offset := record.U16(4)
+		s.langOrder = append(s.langOrder, tag)
+		s.langOffsetsByTag[tag] = offset
+		if offset == 0 || int(offset) >= len(b) {
+			perr := fmt.Errorf("langsys record %s has invalid offset %d (size %d)", tag, offset, len(b))
+			if s.err == nil {
+				s.err = perr
+			}
+			continue
+		}
+	}
+	return s
+}
+
+func parseConcreteLangSys(b binarySegm, featureGraph *FeatureList) *LangSys {
+	ls := &LangSys{featureGraph: featureGraph}
+	if len(b) < 6 {
+		ls.err = errBufferBounds
+		return ls
+	}
+	ls.lookupOrderOffset, _ = b.u16(0)
+	ls.requiredFeatureIndex, _ = b.u16(2)
+	featureIndices, err := parseArray16(b, 4, "LangSys", "Feature-Index")
+	if err != nil {
+		ls.err = err
+		return ls
+	}
+	if featureIndices.Len() == 0 {
+		return ls
+	}
+	ls.featureIndices = make([]uint16, featureIndices.Len())
+	for i := 0; i < featureIndices.Len(); i++ {
+		index := featureIndices.Get(i).U16(0)
+		ls.featureIndices[i] = index
+		if featureGraph != nil && int(index) >= featureGraph.Len() && ls.err == nil {
+			ls.err = fmt.Errorf("feature index %d out of bounds (size %d)", index, featureGraph.Len())
+		}
+	}
+	return ls
 }
 
 // --- Feature list ----------------------------------------------------------
@@ -1220,10 +1324,11 @@ func parseFeatureList(lytt *LayoutTable, b []byte, err error) error {
 
 func parseConcreteFeatureList(features binarySegm, featureRecords tagRecordMap16) *FeatureList {
 	fl := &FeatureList{
-		featureOrder:    make([]Tag, 0, featureRecords.Len()),
-		featuresByIndex: make([]*Feature, 0, featureRecords.Len()),
-		indicesByTag:    make(map[Tag][]int, featureRecords.Len()),
-		raw:             features,
+		featureOrder:          make([]Tag, 0, featureRecords.Len()),
+		featureOffsetsByIndex: make([]uint16, 0, featureRecords.Len()),
+		featuresByIndex:       make(map[int]*Feature, 8),
+		indicesByTag:          make(map[Tag][]int, featureRecords.Len()),
+		raw:                   features,
 	}
 	for i := 0; i < featureRecords.Len(); i++ {
 		record := featureRecords.records.Get(i)
@@ -1232,29 +1337,90 @@ func parseConcreteFeatureList(features binarySegm, featureRecords tagRecordMap16
 				fl.err = errBufferBounds
 			}
 			fl.featureOrder = append(fl.featureOrder, 0)
-			fl.featuresByIndex = append(fl.featuresByIndex, &Feature{err: errBufferBounds})
+			fl.featureOffsetsByIndex = append(fl.featureOffsetsByIndex, 0)
 			continue
 		}
 		tag := MakeTag(record.Bytes()[:4])
-		offset := int(record.U16(4))
+		offset := record.U16(4)
 		fl.featureOrder = append(fl.featureOrder, tag)
+		fl.featureOffsetsByIndex = append(fl.featureOffsetsByIndex, offset)
 		fl.indicesByTag[tag] = append(fl.indicesByTag[tag], i)
 
-		if offset <= 0 || offset >= len(features) {
+		if offset == 0 || int(offset) >= len(features) {
 			perr := fmt.Errorf("feature record %s has invalid offset %d (size %d)", tag, offset, len(features))
 			if fl.err == nil {
 				fl.err = perr
 			}
-			fl.featuresByIndex = append(fl.featuresByIndex, &Feature{err: perr})
 			continue
 		}
-		feature := parseConcreteFeature(features[offset:])
-		if feature.err != nil && fl.err == nil {
-			fl.err = feature.err
+		if verr := validateConcreteFeature(features[offset:]); verr != nil && fl.err == nil {
+			fl.err = verr
 		}
-		fl.featuresByIndex = append(fl.featuresByIndex, feature)
 	}
 	return fl
+}
+
+func validateConcreteFeature(b binarySegm) error {
+	if len(b) < 4 {
+		return errBufferBounds
+	}
+	_, err := parseArray16(b, 2, "Feature", "Feature-Lookups")
+	return err
+}
+
+func validateConcreteScript(b binarySegm, featureGraph *FeatureList, requireDefault bool) error {
+	if len(b) < 4 {
+		return errBufferBounds
+	}
+	defaultLangSysOffset, _ := b.u16(0)
+	if requireDefault && defaultLangSysOffset == 0 {
+		return fmt.Errorf("DFLT script requires defaultLangSysOffset")
+	}
+	if defaultLangSysOffset > 0 {
+		if int(defaultLangSysOffset) >= len(b) {
+			return fmt.Errorf("default langsys offset out of bounds: %d (size %d)", defaultLangSysOffset, len(b))
+		}
+		if err := validateConcreteLangSys(b[defaultLangSysOffset:], featureGraph); err != nil {
+			return err
+		}
+	}
+	langRecords := parseTagRecordMap16(b, 2, b, "Script", "LangSys")
+	for i := 0; i < langRecords.Len(); i++ {
+		record := langRecords.records.Get(i)
+		if record.Size() < 6 {
+			return errBufferBounds
+		}
+		offset := record.U16(4)
+		if offset == 0 || int(offset) >= len(b) {
+			tag := MakeTag(record.Bytes()[:4])
+			return fmt.Errorf("langsys record %s has invalid offset %d (size %d)", tag, offset, len(b))
+		}
+		if err := validateConcreteLangSys(b[offset:], featureGraph); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateConcreteLangSys(b binarySegm, featureGraph *FeatureList) error {
+	if len(b) < 6 {
+		return errBufferBounds
+	}
+	featureIndices, err := parseArray16(b, 4, "LangSys", "Feature-Index")
+	if err != nil {
+		return err
+	}
+	if featureGraph == nil {
+		return nil
+	}
+	featureCount := featureGraph.Len()
+	for i := 0; i < featureIndices.Len(); i++ {
+		index := featureIndices.Get(i).U16(0)
+		if int(index) >= featureCount {
+			return fmt.Errorf("feature index %d out of bounds (size %d)", index, featureCount)
+		}
+	}
+	return nil
 }
 
 func parseConcreteFeature(b binarySegm) *Feature {

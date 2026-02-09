@@ -76,57 +76,71 @@ In this plan, “sub-table” means all GSUB/GPOS-internal data structures in th
 3. Mark legacy APIs as transitional in docs and comments.
 4. Plan a deprecation/removal phase once concrete API adoption is complete.
 
-## Phase 1 Inventory: Missing Concrete Shared Types
+## Phase 1 Inventory: Concrete Shared Types
 This inventory is limited to shared GSUB/GPOS layout-graph structures (not lookup-type-specific payloads).
 
-### Structures currently missing as concrete public graph types
+### Structures now present as concrete public graph types
 1. `ScriptList`
-   1. Current status: concrete Phase-1 scaffold now exists in `ot/refactor.go`; parser integration is pending.
-   2. Proposed fields:
+   1. Current status: implemented in `ot/refactor.go`, parser-integrated in `ot/parse.go` (parallel to legacy interface path).
+   2. Current fields:
       1. `scriptOrder []Tag` (stable declaration order)
       2. `offsetByTag map[Tag]uint16`
       3. `scriptByTag map[Tag]*Script`
-      4. `raw binarySegm`
-      5. `err error`
+      4. `featureGraph *FeatureList`
+      5. `mu sync.RWMutex`
+      6. `raw binarySegm`
+      7. `err error`
 2. `Script`
-   1. Current status: concrete Phase-1 scaffold now exists in `ot/refactor.go`; parser integration is pending.
-   2. Proposed fields:
+   1. Current status: implemented in `ot/refactor.go`, parser-integrated in `ot/parse.go` (parallel to legacy interface path).
+   2. Current fields:
       1. `defaultLangSysOffset uint16`
       2. `langOrder []Tag`
       3. `langOffsetsByTag map[Tag]uint16`
       4. `langByTag map[Tag]*LangSys`
-      5. `defaultLangSys *LangSys`
-      6. `raw binarySegm`
-      7. `err error`
+      5. `featureGraph *FeatureList`
+      6. `defaultOnce sync.Once`
+      7. `defaultLangSys *LangSys`
+      8. `mu sync.RWMutex`
+      9. `raw binarySegm`
+      10. `err error`
 3. `LangSys`
-   1. Current status: concrete Phase-1 scaffold now exists in `ot/refactor.go`; parser integration is pending.
-   2. Proposed fields:
+   1. Current status: implemented in `ot/refactor.go`, parser-integrated in `ot/parse.go` (parallel to legacy interface path).
+   2. Current fields:
       1. `lookupOrderOffset uint16`
       2. `requiredFeatureIndex uint16` (`0xFFFF` means no required feature)
       3. `featureIndices []uint16` (internal linkage into `FeatureList`)
-      4. `features []*Feature` (optional semantic list view; avoid incremental lazy writes)
-      5. `err error`
+      4. `featureGraph *FeatureList`
+      5. `featuresOnce sync.Once`
+      6. `features []*Feature` (lazy one-shot resolved semantic list view)
+      7. `err error`
 4. `FeatureList`
-   1. Current status: concrete Phase-1 scaffold now exists in `ot/refactor.go`; parser integration is pending.
-   2. Proposed fields:
+   1. Current status: implemented in `ot/refactor.go`, parser-integrated in `ot/parse.go` (parallel to legacy interface path).
+   2. Current fields:
       1. `featureOrder []Tag`
-      2. `featuresByIndex []*Feature`
-      3. `indicesByTag map[Tag][]int` (feature tags may repeat)
-      4. `raw binarySegm`
-      5. `err error`
+      2. `featureOffsetsByIndex []uint16`
+      3. `featuresByIndex map[int]*Feature` (lazy materialization keyed by record index)
+      4. `indicesByTag map[Tag][]int` (feature tags may repeat)
+      5. `mu sync.RWMutex`
+      6. `raw binarySegm`
+      7. `err error`
 5. `Feature`
-   1. Current status: concrete Phase-1 scaffold now exists in `ot/refactor.go`; parser integration is pending.
-   2. Proposed fields:
+   1. Current status: implemented in `ot/refactor.go`, parser-integrated in `ot/parse.go` (parallel to legacy interface path).
+   2. Current fields:
       1. `featureParamsOffset uint16`
       2. `lookupListIndices []uint16`
       3. `raw binarySegm`
       4. `err error`
 
+### Parser policy status (implemented)
+1. Shared graph objects are validated eagerly during parse of ScriptList/FeatureList links.
+2. Concrete semantic objects are instantiated lazily on accessor calls and cached.
+3. Legacy interface traversal remains active in parallel during transition.
+
 ### Immutability remark
 1. API returns should be immutable by design.
 2. For slices or aggregate values, return defensive copies.
 3. For linked semantic objects, prefer opaque struct types (or equivalent encapsulation) to prevent client mutation through exposed fields.
-4. Final choice (copy-heavy API vs stronger opaque-type boundaries) will be decided during parser integration, but all public returns must preserve immutability guarantees.
+4. Final choice (copy-heavy API vs stronger opaque-type boundaries) remains deferred to API-hardening, but all public returns must preserve immutability guarantees.
 
 ### Record/helper types policy
 1. Record structs (`scriptRecord`, `featureRecord`, language-tag record forms) remain internal parser/linkage details.
@@ -159,13 +173,18 @@ This matrix classifies methods as:
 ### `Script`
 | Method | Status | Notes |
 |---|---|---|
-| `LangSys(tag Tag) *LangSys` | keep | single entry point; `tag==DFLT` resolves default langsys |
+| `DefaultLangSys() *LangSys` | keep | explicit access to script-local default language system |
+| `LangSys(tag Tag) *LangSys` | keep | language-system lookup by language tag only (no `DFLT` overloading) |
 | `Range() iter.Seq2[Tag, *LangSys]` | keep | primary ordered traversal API |
 | `Error() error` | keep | aligns with nil-safe error-tolerant model |
-| `DefaultLangSys() *LangSys` | remove | folded into `LangSys(DFLT)` |
 | `LangTags() []Tag` | remove | superseded by `Range()` |
 | `HasLang(tag Tag) bool` | remove | redundant with `LangSys(tag) != nil` |
 | `LangSysAt(i int) *LangSys` | remove | index accessor not required by minimal API |
+
+DFLT semantics:
+1. `DFLT` is script-selection scope (`ScriptList`), not a `LangSys` feature selector.
+2. If `ScriptList` contains a `DFLT` script record, that script must define `defaultLangSysOffset`.
+3. `requiredFeatureIndex` in `LangSys` is independent of `DFLT`.
 
 ### `LangSys`
 | Method | Status | Notes |
@@ -200,10 +219,46 @@ This matrix classifies methods as:
 | `LookupIndex(i int) (uint16, bool)` | internal-transitional | raw linkage index; adapter/internal concern |
 | `LookupIndices() []uint16` | internal-transitional | raw linkage vector; adapter/internal concern |
 
+### Cache Population Strategies
+
+1. ScriptList:
+   1. Real-world use case is usually for the client to use exactly one script. Mixing of languages is predominately occuring in browsers, but even then at most with two scripts. Pre-instantiating all scripts would be a massive waste. Example: Font "GentiumPlus-R.ttf" (testdata/ directory) has a ScriptList of `[DFLT cyrl grek latn]`. If a user loads the font to typeset Spanish, she will walk the "latn" path and never use any of the other 3, so there is no benefit of loading them.
+   2. We need to load and cache scripts individually and not pre-load the whole structure as soon as one Script link is instantiated.
+   3. `ScriptList` has to be guarded for thread-safety
+2. Script:
+   1. This map is usually small, but will contain entries which are useful for a minority of users only. Example of "GentiumPlus-R.ttf" again: When choosing Script "latn" from the ScriptList, the LangSys entries for are `[IPPH VIT ]`, meaning special "language" phonetic alphabet and Vietnamese. Most users will be using the default LangSys entry. 
+   2. We need to load and cache LangSys links individually and not pre-load all.
+   3. `Script`has to be guarded for thread-safety.
+3. LangSys:
+   1. This is a list of Feature indices which will always be used as a set. No individual use of a single feature entry except for debugging.
+   2. LangSys is essentially doing a subset on the set of features available in the font.
+   3. As soon as a client reads a LangSys, all Feature links may be established at once
+4. FeatureList:
+   1. Features are used as sets: features selected by a LangSys, features selected by the user, features selected by the shaper.
+   2. The main function of features is to create a set of applicable `Lookup`s.
+   3. Features may be many and mutually excluding for different LangSys selected. Instantiating all of them is a waste. 
+
+Synchronization policy for map-like caches:
+1. Use the same synchronization strategy for `ScriptList` and `FeatureList`:
+   1. typed Go maps with `sync.RWMutex` on the owning struct,
+   2. no `sync.Map` for these caches.
+2. Rationale:
+   1. Both structures are OT tag-record maps at wire level (count + tag/offset records),
+   2. typed maps preserve type safety and invariant clarity better than `sync.Map`,
+   3. owner-scoped locking is easier to reason about than global-ish concurrent maps.
+3. Population pattern:
+   1. read path: `RLock` -> cache check -> unlock,
+   2. miss path: build candidate outside lock,
+   3. publish path: `Lock` -> re-check -> store canonical instance -> unlock.
+4. Key-domain nuance (important):
+   1. `ScriptList`: cache key can be script tag (1:1 mapping),
+   2. `FeatureList`: feature tags may repeat; canonical cache key must be record index,
+      while tag-based APIs first resolve to index set(s) and then instantiate/index-cache entries.
+
 ### Current `refactor.go` status check
 1. Methods currently present and aligned with this matrix:
    1. `ScriptList`: `Len`, `Script`, `Range`, `Error`
-   2. `Script`: `LangSys`, `Range`, `Error`
+   2. `Script`: `DefaultLangSys`, `LangSys`, `Range`, `Error`
    3. `LangSys`: `RequiredFeatureIndex`, `FeatureAt`, `Features`, `Error`
    4. `FeatureList`: `Len`, `Range`, `Indices`, `First`, `All`, `Error`
    5. `Feature`: `LookupCount`, `Error`
@@ -211,10 +266,11 @@ This matrix classifies methods as:
    1. Methods classified as `internal-transitional` but not currently present in `refactor.go` are deferred until adapter implementation demands them.
 
 ### Semantics and constraints
-1. Methods are `nil`-safe and side-effect free in Phase 1.
+1. Methods are `nil`-safe in Phase 1.
 2. Slice-returning methods return copies where applicable.
 3. `Range()` is the primary traversal form for map/list-like semantic structures.
-4. Map-like lazy cache population remains synchronization-sensitive and deferred to implementation phases.
+4. Methods may lazily populate internal caches; this is an implementation side-effect but does not change logical API results.
+5. Map-like lazy cache population is synchronization-sensitive and guarded by owner-scoped locking (`sync.RWMutex` + re-check publish).
 
 ## LookupSubtable, Coverage, ClassDef: Instantiation Model
 This section records the current behavior in `ot/` for lookup decomposition details.

@@ -1,10 +1,133 @@
 package ot
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
 )
+
+func assertFeatureGraphLazy(t *testing.T, graph *FeatureList) {
+	t.Helper()
+	if graph == nil {
+		t.Fatalf("expected concrete feature graph to be parsed")
+	}
+	if graph.Len() == 0 {
+		return
+	}
+	if len(graph.featuresByIndex) != 0 {
+		t.Fatalf("feature cache should be empty right after parse, has %d entries", len(graph.featuresByIndex))
+	}
+	f0 := graph.featureAtIndex(0)
+	if f0 == nil {
+		t.Fatalf("lazy feature load for index 0 returned nil")
+	}
+	if len(graph.featuresByIndex) != 1 {
+		t.Fatalf("expected exactly one cached feature after first load, have %d", len(graph.featuresByIndex))
+	}
+	f1 := graph.featureAtIndex(0)
+	if f1 != f0 {
+		t.Fatalf("expected stable cached feature pointer for index 0")
+	}
+	if len(graph.featuresByIndex) != 1 {
+		t.Fatalf("cache size should remain stable on repeated access")
+	}
+}
+
+func assertScriptGraphLazy(t *testing.T, graph *ScriptList) {
+	t.Helper()
+	if graph == nil || graph.Len() == 0 {
+		return
+	}
+	graph.mu.RLock()
+	if len(graph.scriptByTag) != 0 {
+		graph.mu.RUnlock()
+		t.Fatalf("script cache should be empty right after parse, has %d entries", len(graph.scriptByTag))
+	}
+	graph.mu.RUnlock()
+
+	tag := graph.scriptOrder[0]
+	s0 := graph.Script(tag)
+	if s0 == nil {
+		t.Fatalf("lazy script load for tag %s returned nil", tag)
+	}
+	graph.mu.RLock()
+	if len(graph.scriptByTag) != 1 {
+		graph.mu.RUnlock()
+		t.Fatalf("expected exactly one cached script after first load, have %d", len(graph.scriptByTag))
+	}
+	graph.mu.RUnlock()
+	s1 := graph.Script(tag)
+	if s1 != s0 {
+		t.Fatalf("expected stable cached script pointer for tag %s", tag)
+	}
+
+	if len(s0.langOrder) > 0 {
+		s0.mu.RLock()
+		if len(s0.langByTag) != 0 {
+			s0.mu.RUnlock()
+			t.Fatalf("LangSys cache should be empty right after script load, has %d entries", len(s0.langByTag))
+		}
+		s0.mu.RUnlock()
+		langTag := s0.langOrder[0]
+		l0 := s0.LangSys(langTag)
+		if l0 == nil {
+			t.Fatalf("lazy LangSys load for tag %s returned nil", langTag)
+		}
+		s0.mu.RLock()
+		if len(s0.langByTag) != 1 {
+			s0.mu.RUnlock()
+			t.Fatalf("expected exactly one cached LangSys after first load, have %d", len(s0.langByTag))
+		}
+		s0.mu.RUnlock()
+		if s0.LangSys(langTag) != l0 {
+			t.Fatalf("expected stable cached LangSys pointer for tag %s", langTag)
+		}
+	}
+}
+
+func assertScriptGraphParity(t *testing.T, legacyScripts Navigator, graph *ScriptList) {
+	t.Helper()
+	if graph == nil {
+		t.Fatalf("expected concrete script graph to be parsed")
+	}
+	if graph.Error() != nil {
+		t.Fatalf("unexpected concrete script graph parse error: %v", graph.Error())
+	}
+	legacyMap := legacyScripts.Map().AsTagRecordMap()
+	if graph.Len() != legacyMap.Len() {
+		t.Fatalf("expected concrete script graph size %d, have %d", legacyMap.Len(), graph.Len())
+	}
+	for scriptTag, scriptLink := range legacyMap.Range() {
+		script := graph.Script(scriptTag)
+		if script == nil {
+			t.Fatalf("concrete script graph missing script tag %s", scriptTag)
+		}
+		if script.Error() != nil {
+			t.Fatalf("unexpected concrete script parse error for %s: %v", scriptTag, script.Error())
+		}
+		if scriptTag == DFLT && script.DefaultLangSys() == nil {
+			t.Fatalf("DFLT script must provide a default language-system")
+		}
+		legacyLangMap := scriptLink.Navigate().Map().AsTagRecordMap()
+		langCount := 0
+		for langTag, _ := range script.Range() {
+			langCount++
+			if script.LangSys(langTag) == nil {
+				t.Fatalf("concrete script %s missing language-system tag %s", scriptTag, langTag)
+			}
+		}
+		if langCount != legacyLangMap.Len() {
+			t.Fatalf("script %s language-system count mismatch: legacy=%d concrete=%d",
+				scriptTag, legacyLangMap.Len(), langCount)
+		}
+		for langTag, _ := range legacyLangMap.Range() {
+			if script.LangSys(langTag) == nil {
+				t.Fatalf("concrete script %s missing legacy language-system tag %s", scriptTag, langTag)
+			}
+		}
+	}
+}
 
 func TestParseHeader(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
@@ -83,8 +206,10 @@ func TestParseGPos(t *testing.T) {
 	if gpos.FeatureGraph().Error() != nil {
 		t.Errorf("unexpected concrete feature graph parse error: %v", gpos.FeatureGraph().Error())
 	}
+	assertFeatureGraphLazy(t, gpos.FeatureGraph())
+	assertScriptGraphLazy(t, gpos.ScriptGraph())
 	t.Logf("otf.GPOS: %d scripts:", gpos.ScriptList.Map().AsTagRecordMap().Len())
-	_ = gpos.ScriptList.Map().AsTagRecordMap()
+	assertScriptGraphParity(t, gpos.ScriptList, gpos.ScriptGraph())
 }
 
 func TestParseGSub(t *testing.T) {
@@ -126,6 +251,9 @@ func TestParseGSub(t *testing.T) {
 	if gsub.FeatureGraph().Error() != nil {
 		t.Errorf("unexpected concrete feature graph parse error: %v", gsub.FeatureGraph().Error())
 	}
+	assertFeatureGraphLazy(t, gsub.FeatureGraph())
+	assertScriptGraphLazy(t, gsub.ScriptGraph())
+	assertScriptGraphParity(t, gsub.ScriptList, gsub.ScriptGraph())
 	// t.Logf("otf.GSUB: %d scripts:", len(gsub.scripts))
 	// for i, sc := range gsub.scripts {
 	// 	t.Logf("[%d] script '%s'", i, sc.Tag)
@@ -134,6 +262,88 @@ func TestParseGSub(t *testing.T) {
 	// 	gsub.scripts[len(gsub.scripts)-1].Tag.String() != "latn" {
 	// 	t.Errorf("expected scripts[4] to be 'latn', isn't")
 	// }
+}
+
+func TestFeatureGraphLazyConcurrent(t *testing.T) {
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
+	defer teardown()
+	otf := parseFont(t, "Calibri")
+	gpos := otf.tables[T("GPOS")].Self().AsGPos()
+	if gpos == nil || gpos.FeatureGraph() == nil || gpos.FeatureGraph().Len() == 0 {
+		t.Fatalf("expected non-empty GPOS concrete feature graph")
+	}
+	graph := gpos.FeatureGraph()
+	const workers = 16
+	ptrs := make(chan *Feature, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			ptrs <- graph.featureAtIndex(0)
+		}()
+	}
+	wg.Wait()
+	close(ptrs)
+	var first *Feature
+	for p := range ptrs {
+		if p == nil {
+			t.Fatalf("concurrent lazy feature load returned nil")
+		}
+		if first == nil {
+			first = p
+			continue
+		}
+		if p != first {
+			t.Fatalf("concurrent lazy feature loads produced different cached pointers")
+		}
+	}
+	if len(graph.featuresByIndex) != 1 {
+		t.Fatalf("expected exactly one cached feature after concurrent loads, have %d", len(graph.featuresByIndex))
+	}
+}
+
+func TestScriptGraphLazyConcurrent(t *testing.T) {
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
+	defer teardown()
+	otf := parseFont(t, "Calibri")
+	gpos := otf.tables[T("GPOS")].Self().AsGPos()
+	if gpos == nil || gpos.ScriptGraph() == nil || gpos.ScriptGraph().Len() == 0 {
+		t.Fatalf("expected non-empty GPOS concrete script graph")
+	}
+	graph := gpos.ScriptGraph()
+	tag := graph.scriptOrder[0]
+	const workers = 16
+	ptrs := make(chan *Script, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			ptrs <- graph.Script(tag)
+		}()
+	}
+	wg.Wait()
+	close(ptrs)
+	var first *Script
+	for p := range ptrs {
+		if p == nil {
+			t.Fatalf("concurrent lazy script load returned nil")
+		}
+		if first == nil {
+			first = p
+			continue
+		}
+		if p != first {
+			t.Fatalf("concurrent lazy script loads produced different cached pointers")
+		}
+	}
+	graph.mu.RLock()
+	cachedScripts := len(graph.scriptByTag)
+	graph.mu.RUnlock()
+	if cachedScripts != 1 {
+		t.Fatalf("expected exactly one cached script after concurrent loads, have %d", cachedScripts)
+	}
 }
 
 func TestParseKern(t *testing.T) {

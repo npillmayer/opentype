@@ -440,17 +440,17 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    1. parser still populates both legacy `LookupList` and concrete `LookupGraph`.
    2. legacy consumers still call the old API surface, now with lookup-subtable materialization adapter-backed from concrete lookup nodes.
    3. transitional helper parsing (`parseLookupSubtable`) is also adapter-backed from concrete lookup parsing.
-   4. `otlayout` GSUB runtime (lookup types 1–8, with type 7 unwrapped) is now concrete-first end-to-end, with legacy fallback retained during transition.
-   5. `otlayout` GPOS runtime (lookup types 1–8, with type 9 unwrapped) is now concrete-first end-to-end, with legacy fallback retained during transition.
+   4. `otlayout` GSUB runtime (lookup types 1–8, with type 7 unwrapped) now executes concrete payloads only.
+   5. `otlayout` GPOS runtime (lookup types 1–8, with type 9 unwrapped) executes concrete payloads for lookup behavior; legacy `Support` is still consulted only for unresolved anchor-reference bookkeeping in mark-attachment paths.
 
 #### GPOS runtime migration status
 1. Concrete-first runtime consumption is complete for all GPOS lookup families used by `otlayout`:
    1. non-context: types 1/2/3/4/5/6,
    2. context/chaining: types 7/8,
    3. extension: type 9 unwrapping to effective payload.
-2. Legacy fallback remains intentionally enabled during transition for parity confidence and compatibility safety.
+2. Legacy fallback for lookup behavior has been removed from runtime application paths.
 3. Remaining optional cleanup (post-migration hardening):
-   1. collapse duplicate legacy decoding branches in `otlayout/gpos.go` once fallback removal is scheduled.
+   1. replace remaining `lksub.Support` reads in GPOS 4/5/6 with anchor-reference data sourced directly from concrete payloads.
 4. Runtime golden coverage added in `otlayout`:
    1. type 1/2 concrete-first value adjustments,
    2. type 8 chaining-to-single forwarding behavior,
@@ -461,13 +461,27 @@ This section records the current behavior in `ot/` for lookup decomposition deta
 #### Batch 2.0 status (concrete-only switch + parity harness)
 1. Batch 2.0 is complete.
 2. `otlayout` now exposes a runtime execution mode switch:
-   1. `ConcreteFirst` (default): concrete payload path with legacy fallback enabled.
-   2. `ConcreteOnly`: concrete payload path only; legacy `Support`/`Index` fallback is disabled.
-3. Fallback guards are now enforced across GSUB/GPOS lookup execution paths and shared chained-rule helpers.
+   1. `ConcreteFirst` (default): concrete payload path.
+   2. `ConcreteOnly`: concrete payload path, intended to reject legacy fallback.
+3. As of Batch 2.1 runtime fallback removal, lookup execution paths no longer rely on `Support`/`Index` fallback; the mode switch remains as a transition/testing control surface.
 4. Mode parity harness is in place:
    1. GSUB parity checks run concrete-first vs concrete-only on representative alternate/context cases.
    2. GPOS parity checks run concrete-first vs concrete-only on single/pair/chaining and mark-attachment cases.
    3. A synthetic negative check verifies legacy-only dispatch no longer applies in concrete-only mode.
+
+#### Batch 2.1 status (fallback removal by lookup family)
+1. Batch 2.1 is complete for lookup-behavior fallback removal.
+2. Slice 2.1-A is complete:
+   1. GPOS non-context runtime families (types 1/2/3/4/5/6) no longer execute legacy fallback branches.
+   2. These families now require concrete payloads in both `ConcreteFirst` and `ConcreteOnly` modes.
+3. Slice 2.1-B is complete:
+   1. GPOS context/chaining runtime families (types 7/8) no longer execute legacy fallback branches.
+   2. These families now require concrete payloads in both `ConcreteFirst` and `ConcreteOnly` modes.
+4. Slice 2.1-C is complete:
+   1. GSUB runtime families (types 1/2/3/4/5/6/8, with type 7 unwrapped at parse-time) no longer execute legacy fallback branches.
+   2. Synthetic GSUB dispatch tests now require explicit concrete payload nodes and no longer assume legacy fallback in `ConcreteFirst`.
+5. Residual non-behavioral legacy dependency (tracked separately from fallback removal):
+   1. GPOS mark-attachment paths (types 4/5/6) still read legacy `lksub.Support` to populate unresolved `AnchorRef` offsets for downstream attachment metadata.
 
 #### What remains to finish Phase 2
 1. No open verification gaps are currently tracked for Phase 2.

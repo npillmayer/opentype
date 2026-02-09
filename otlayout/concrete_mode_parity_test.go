@@ -12,7 +12,7 @@ func runWithLookupMode[T any](mode LookupExecutionMode, fn func() T) T {
 	return fn()
 }
 
-func TestConcreteOnlyDisablesLegacyFallback(t *testing.T) {
+func TestMissingConcretePayloadDoesNotApply(t *testing.T) {
 	sub := ot.LookupSubtable{
 		LookupType: ot.GSubLookupTypeSingle,
 		Format:     1,
@@ -31,8 +31,8 @@ func TestConcreteOnlyDisablesLegacyFallback(t *testing.T) {
 		_, ok, _, _, _ := dispatchGSubLookup(&ctx, &sub)
 		return ok
 	})
-	if !concreteFirstApplied {
-		t.Fatalf("expected legacy fallback to apply in ConcreteFirst mode")
+	if concreteFirstApplied {
+		t.Fatalf("expected missing concrete payload to skip lookup in ConcreteFirst mode")
 	}
 
 	concreteOnlyApplied := runWithLookupMode(ConcreteOnly, func() bool {
@@ -45,7 +45,7 @@ func TestConcreteOnlyDisablesLegacyFallback(t *testing.T) {
 		return ok
 	})
 	if concreteOnlyApplied {
-		t.Fatalf("expected legacy fallback to be disabled in ConcreteOnly mode")
+		t.Fatalf("expected missing concrete payload to skip lookup in ConcreteOnly mode")
 	}
 }
 

@@ -32,8 +32,13 @@ func TestDispatchGSubLookupSingleFmt1Routing(t *testing.T) {
 	}
 	ctx := applyCtx{
 		lookup: &ot.Lookup{},
-		buf:    &BufferState{Glyphs: GlyphBuffer{10}},
-		pos:    0,
+		subnode: &ot.LookupNode{
+			GSub: &ot.GSubLookupPayload{
+				SingleFmt1: &ot.GSubSingleFmt1Payload{DeltaGlyphID: 2},
+			},
+		},
+		buf: &BufferState{Glyphs: GlyphBuffer{10}},
+		pos: 0,
 	}
 
 	pos, ok, buf, _, edit := dispatchGSubLookup(&ctx, &sub)

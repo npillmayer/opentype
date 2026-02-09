@@ -413,6 +413,12 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    1. `otlayout` lookup dispatch now threads concrete lookup table/node context in parallel with legacy lookup structs.
    2. GSUB contextual/chaining paths (types 5/6/8) and GPOS contextual/chaining paths (types 7/8) now consume concrete payloads first, with legacy fallback retained.
    3. Nested sequence-lookup application now resolves concrete nested lookups through `LookupGraph` when available.
+5. Slice E: Switch `otlayout` GSUB non-context runtime to concrete-first lookup payloads. (`Status: complete`)
+   1. GSUB simple/multi/alternate/ligature execution (types 1/2/3/4) now consumes concrete payloads first.
+   2. Transitional legacy fallback remains in place for compatibility and parity checking.
+6. Slice F: Switch `otlayout` GPOS non-context runtime to concrete-first lookup payloads. (`Status: complete`)
+   1. GPOS single/pair/cursive/mark-attachment execution (types 1/2/3/4/5/6) now consumes concrete payloads first.
+   2. Transitional legacy fallback remains in place for compatibility and parity checking.
 
 #### Current status snapshot (2026-02-09)
 1. `Phase 1` is complete for the shared graph migration track:
@@ -433,6 +439,17 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    1. parser still populates both legacy `LookupList` and concrete `LookupGraph`.
    2. legacy consumers still call the old API surface, now with lookup-subtable materialization adapter-backed from concrete lookup nodes.
    3. transitional helper parsing (`parseLookupSubtable`) is also adapter-backed from concrete lookup parsing.
+   4. `otlayout` GSUB runtime (lookup types 1–8, with type 7 unwrapped) is now concrete-first end-to-end, with legacy fallback retained during transition.
+   5. `otlayout` GPOS runtime (lookup types 1–8, with type 9 unwrapped) is now concrete-first end-to-end, with legacy fallback retained during transition.
+
+#### GPOS runtime migration status
+1. Concrete-first runtime consumption is complete for all GPOS lookup families used by `otlayout`:
+   1. non-context: types 1/2/3/4/5/6,
+   2. context/chaining: types 7/8,
+   3. extension: type 9 unwrapping to effective payload.
+2. Legacy fallback remains intentionally enabled during transition for parity confidence and compatibility safety.
+3. Remaining optional cleanup (post-migration hardening):
+   1. collapse duplicate legacy decoding branches in `otlayout/gpos.go` once fallback removal is scheduled.
 
 #### What remains to finish Phase 2
 1. No open verification gaps are currently tracked for Phase 2.

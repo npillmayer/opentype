@@ -14,6 +14,16 @@ func gposLookupType1Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		tracer().Errorf("GPOS 1|1 unexpected coverage index")
 		return pos, false, buf, nil
 	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.SingleFmt1 != nil {
+			ctx.buf.EnsurePos()
+			if ctx.buf.Pos == nil || mpos < 0 || mpos >= len(ctx.buf.Pos) {
+				return pos, false, buf, nil
+			}
+			applyValueRecord(&ctx.buf.Pos[mpos], p.SingleFmt1.Value, p.SingleFmt1.ValueFormat)
+			return mpos + 1, true, buf, nil
+		}
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 1|1 missing support data")
 		return pos, false, buf, nil
@@ -40,6 +50,19 @@ func gposLookupType1Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.SingleFmt2 != nil {
+			if inx < 0 || inx >= len(p.SingleFmt2.Values) {
+				return pos, false, buf, nil
+			}
+			ctx.buf.EnsurePos()
+			if ctx.buf.Pos == nil || mpos < 0 || mpos >= len(ctx.buf.Pos) {
+				return pos, false, buf, nil
+			}
+			applyValueRecord(&ctx.buf.Pos[mpos], p.SingleFmt2.Values[inx], p.SingleFmt2.ValueFormat)
+			return mpos + 1, true, buf, nil
+		}
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 1|2 missing support data")
@@ -90,6 +113,24 @@ func gposLookupType2Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.PairFmt1 != nil {
+			if inx < 0 || inx >= len(p.PairFmt1.PairSets) {
+				return pos, false, buf, nil
+			}
+			for _, rec := range p.PairFmt1.PairSets[inx] {
+				if ot.GlyphIndex(rec.SecondGlyph) == buf.At(next) {
+					ctx.buf.EnsurePos()
+					if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) || next >= len(ctx.buf.Pos) {
+						return pos, false, buf, nil
+					}
+					applyValueRecordPair(&ctx.buf.Pos[mpos], &ctx.buf.Pos[next], rec.Value1, p.PairFmt1.ValueFormat1, rec.Value2, p.PairFmt1.ValueFormat2)
+					return mpos + 1, true, buf, nil
+				}
+			}
+			return pos, false, buf, nil
+		}
+	}
 	pairSetLoc, err := lksub.Index.Get(inx, false)
 	if err != nil || pairSetLoc.Size() < 2 {
 		return pos, false, buf, nil
@@ -126,6 +167,29 @@ func gposLookupType2Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
+	next, ok := nextMatchable(ctx, buf, mpos+1)
+	if !ok {
+		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.PairFmt2 != nil {
+			c1 := p.PairFmt2.ClassDef1.Lookup(buf.At(mpos))
+			c2 := p.PairFmt2.ClassDef2.Lookup(buf.At(next))
+			if c1 < 0 || c2 < 0 || c1 >= int(p.PairFmt2.Class1Count) || c2 >= int(p.PairFmt2.Class2Count) {
+				return pos, false, buf, nil
+			}
+			if c1 >= len(p.PairFmt2.ClassRecords) || c2 >= len(p.PairFmt2.ClassRecords[c1]) {
+				return pos, false, buf, nil
+			}
+			rec := p.PairFmt2.ClassRecords[c1][c2]
+			ctx.buf.EnsurePos()
+			if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) || next >= len(ctx.buf.Pos) {
+				return pos, false, buf, nil
+			}
+			applyValueRecordPair(&ctx.buf.Pos[mpos], &ctx.buf.Pos[next], rec.Value1, p.PairFmt2.ValueFormat1, rec.Value2, p.PairFmt2.ValueFormat2)
+			return mpos + 1, true, buf, nil
+		}
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 2|2 missing support data")
 		return pos, false, buf, nil
@@ -144,10 +208,6 @@ func gposLookupType2Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	})
 	if !ok {
 		tracer().Errorf("GPOS 2|2 support type mismatch")
-		return pos, false, buf, nil
-	}
-	next, ok := nextMatchable(ctx, buf, mpos+1)
-	if !ok {
 		return pos, false, buf, nil
 	}
 	c1 := sup.ClassDef1.Lookup(buf.At(mpos))
@@ -173,6 +233,69 @@ func gposLookupType4Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	mpos, markInx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.MarkToBaseFmt1 != nil {
+			if markInx < 0 || markInx >= len(p.MarkToBaseFmt1.MarkRecords) {
+				return pos, false, buf, nil
+			}
+			// find base glyph before mark
+			basePos := -1
+			baseInx := -1
+			for i := mpos - 1; i >= 0; {
+				prev, ok := prevMatchable(ctx, buf, i)
+				if !ok {
+					break
+				}
+				if inx, ok := p.MarkToBaseFmt1.BaseCoverage.Match(buf.At(prev)); ok {
+					basePos = prev
+					baseInx = inx
+					break
+				}
+				i = prev - 1
+			}
+			if basePos < 0 || baseInx < 0 || baseInx >= len(p.MarkToBaseFmt1.BaseRecords) {
+				return pos, false, buf, nil
+			}
+			markRec := p.MarkToBaseFmt1.MarkRecords[markInx]
+			class := int(markRec.Class)
+			if class < 0 || class >= int(p.MarkToBaseFmt1.MarkClassCount) {
+				return pos, false, buf, nil
+			}
+			baseRec := p.MarkToBaseFmt1.BaseRecords[baseInx]
+			if class >= len(baseRec.Anchors) || markRec.Anchor == nil || baseRec.Anchors[class] == nil {
+				return pos, false, buf, nil
+			}
+			ctx.buf.EnsurePos()
+			if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) {
+				return pos, false, buf, nil
+			}
+
+			// Keep unresolved anchor reference behavior aligned with legacy path when possible.
+			var markAnchor uint16
+			var baseAnchor uint16
+			if lksup, ok := lksub.Support.(struct {
+				BaseCoverage   ot.Coverage
+				MarkClassCount uint16
+				MarkArray      ot.MarkArray
+				BaseArray      []ot.BaseRecord
+			}); ok {
+				if markInx >= 0 && markInx < len(lksup.MarkArray.MarkRecords) {
+					markAnchor = lksup.MarkArray.MarkRecords[markInx].MarkAnchor
+				}
+				if baseInx >= 0 && baseInx < len(lksup.BaseArray) {
+					if class >= 0 && class < len(lksup.BaseArray[baseInx].BaseAnchors) {
+						baseAnchor = lksup.BaseArray[baseInx].BaseAnchors[class]
+					}
+				}
+			}
+			ref := AnchorRef{
+				MarkAnchor: markAnchor,
+				BaseAnchor: baseAnchor,
+			}
+			setMarkAttachment(&ctx.buf.Pos[mpos], basePos, AttachMarkToBase, markRec.Class, ref)
+			return mpos + 1, true, buf, nil
+		}
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 4|1 missing support data")
@@ -239,6 +362,81 @@ func gposLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	mpos, markInx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.MarkToLigatureFmt1 != nil {
+			if markInx < 0 || markInx >= len(p.MarkToLigatureFmt1.MarkRecords) {
+				return pos, false, buf, nil
+			}
+			// find ligature glyph before mark
+			ligPos := -1
+			ligInx := -1
+			for i := mpos - 1; i >= 0; {
+				prev, ok := prevMatchable(ctx, buf, i)
+				if !ok {
+					break
+				}
+				if inx, ok := p.MarkToLigatureFmt1.LigatureCoverage.Match(buf.At(prev)); ok {
+					ligPos = prev
+					ligInx = inx
+					break
+				}
+				i = prev - 1
+			}
+			if ligPos < 0 || ligInx < 0 || ligInx >= len(p.MarkToLigatureFmt1.LigatureRecords) {
+				return pos, false, buf, nil
+			}
+			markRec := p.MarkToLigatureFmt1.MarkRecords[markInx]
+			class := int(markRec.Class)
+			if class < 0 || class >= int(p.MarkToLigatureFmt1.MarkClassCount) {
+				return pos, false, buf, nil
+			}
+			lig := p.MarkToLigatureFmt1.LigatureRecords[ligInx]
+			if len(lig.ComponentAnchors) == 0 {
+				return pos, false, buf, nil
+			}
+			// Select last component by default (TODO: refine with caret/anchor logic)
+			compIndex := len(lig.ComponentAnchors) - 1
+			if compIndex < 0 || compIndex >= len(lig.ComponentAnchors) {
+				return pos, false, buf, nil
+			}
+			if class >= len(lig.ComponentAnchors[compIndex]) || markRec.Anchor == nil || lig.ComponentAnchors[compIndex][class] == nil {
+				return pos, false, buf, nil
+			}
+			ctx.buf.EnsurePos()
+			if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) {
+				return pos, false, buf, nil
+			}
+
+			// Keep unresolved anchor reference behavior aligned with legacy path when possible.
+			var markAnchor uint16
+			var baseAnchor uint16
+			if lksup, ok := lksub.Support.(struct {
+				LigatureCoverage ot.Coverage
+				MarkClassCount   uint16
+				MarkArray        ot.MarkArray
+				LigatureArray    []ot.LigatureAttach
+			}); ok {
+				if markInx >= 0 && markInx < len(lksup.MarkArray.MarkRecords) {
+					markAnchor = lksup.MarkArray.MarkRecords[markInx].MarkAnchor
+				}
+				if ligInx >= 0 && ligInx < len(lksup.LigatureArray) {
+					la := lksup.LigatureArray[ligInx]
+					if compIndex >= 0 && compIndex < len(la.ComponentAnchors) {
+						if class >= 0 && class < len(la.ComponentAnchors[compIndex]) {
+							baseAnchor = la.ComponentAnchors[compIndex][class]
+						}
+					}
+				}
+			}
+			ref := AnchorRef{
+				MarkAnchor:   markAnchor,
+				BaseAnchor:   baseAnchor,
+				LigatureComp: uint16(compIndex),
+			}
+			setMarkAttachment(&ctx.buf.Pos[mpos], ligPos, AttachMarkToLigature, markRec.Class, ref)
+			return mpos + 1, true, buf, nil
+		}
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 5|1 missing support data")
@@ -314,6 +512,69 @@ func gposLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	mpos, markInx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.MarkToMarkFmt1 != nil {
+			if markInx < 0 || markInx >= len(p.MarkToMarkFmt1.Mark1Records) {
+				return pos, false, buf, nil
+			}
+			// find mark2 glyph before mark1
+			mark2Pos := -1
+			mark2Inx := -1
+			for i := mpos - 1; i >= 0; {
+				prev, ok := prevMatchable(ctx, buf, i)
+				if !ok {
+					break
+				}
+				if inx, ok := p.MarkToMarkFmt1.Mark2Coverage.Match(buf.At(prev)); ok {
+					mark2Pos = prev
+					mark2Inx = inx
+					break
+				}
+				i = prev - 1
+			}
+			if mark2Pos < 0 || mark2Inx < 0 || mark2Inx >= len(p.MarkToMarkFmt1.Mark2Records) {
+				return pos, false, buf, nil
+			}
+			markRec := p.MarkToMarkFmt1.Mark1Records[markInx]
+			class := int(markRec.Class)
+			if class < 0 || class >= int(p.MarkToMarkFmt1.MarkClassCount) {
+				return pos, false, buf, nil
+			}
+			mark2Rec := p.MarkToMarkFmt1.Mark2Records[mark2Inx]
+			if class >= len(mark2Rec.Anchors) || markRec.Anchor == nil || mark2Rec.Anchors[class] == nil {
+				return pos, false, buf, nil
+			}
+			ctx.buf.EnsurePos()
+			if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) {
+				return pos, false, buf, nil
+			}
+
+			// Keep unresolved anchor reference behavior aligned with legacy path when possible.
+			var markAnchor uint16
+			var baseAnchor uint16
+			if lksup, ok := lksub.Support.(struct {
+				Mark2Coverage  ot.Coverage
+				MarkClassCount uint16
+				Mark1Array     ot.MarkArray
+				Mark2Array     []ot.BaseRecord
+			}); ok {
+				if markInx >= 0 && markInx < len(lksup.Mark1Array.MarkRecords) {
+					markAnchor = lksup.Mark1Array.MarkRecords[markInx].MarkAnchor
+				}
+				if mark2Inx >= 0 && mark2Inx < len(lksup.Mark2Array) {
+					if class >= 0 && class < len(lksup.Mark2Array[mark2Inx].BaseAnchors) {
+						baseAnchor = lksup.Mark2Array[mark2Inx].BaseAnchors[class]
+					}
+				}
+			}
+			ref := AnchorRef{
+				MarkAnchor: markAnchor,
+				BaseAnchor: baseAnchor,
+			}
+			setMarkAttachment(&ctx.buf.Pos[mpos], mark2Pos, AttachMarkToMark, markRec.Class, ref)
+			return mpos + 1, true, buf, nil
+		}
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 6|1 missing support data")
@@ -768,6 +1029,66 @@ func gposLookupType3Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.CursiveFmt1 != nil {
+			if inx < 0 || inx >= len(p.CursiveFmt1.Entries) {
+				return pos, false, buf, nil
+			}
+			if lksub.Index.Size() == 0 {
+				return pos, false, buf, nil
+			}
+			entryExitLoc, err := lksub.Index.Get(inx, false)
+			if err != nil || entryExitLoc.Size() < 4 {
+				return pos, false, buf, nil
+			}
+			entryAnchor := entryExitLoc.U16(0)
+			exitAnchor := entryExitLoc.U16(2)
+			hasEntry := p.CursiveFmt1.Entries[inx].Entry != nil
+			hasExit := p.CursiveFmt1.Entries[inx].Exit != nil
+
+			next, ok := nextMatchable(ctx, buf, mpos+1)
+			if !ok {
+				return pos, false, buf, nil
+			}
+			if hasExit {
+				ctx.buf.EnsurePos()
+				if ctx.buf.Pos == nil || next >= len(ctx.buf.Pos) {
+					return pos, false, buf, nil
+				}
+				ref := AnchorRef{
+					CursiveExit:  exitAnchor,
+					CursiveEntry: entryAnchor,
+				}
+				setCursiveAttachment(&ctx.buf.Pos[next], mpos, ref)
+				return mpos + 1, true, buf, nil
+			}
+			if hasEntry {
+				prev, ok := prevMatchable(ctx, buf, mpos-1)
+				if ok {
+					prevInx, ok := lksub.Coverage.Match(buf.At(prev))
+					if ok && prevInx >= 0 && prevInx < len(p.CursiveFmt1.Entries) && p.CursiveFmt1.Entries[prevInx].Exit != nil {
+						prevLoc, err := lksub.Index.Get(prevInx, false)
+						if err == nil && prevLoc.Size() >= 4 {
+							prevExit := prevLoc.U16(2)
+							if prevExit != 0 {
+								ctx.buf.EnsurePos()
+								if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) {
+									return pos, false, buf, nil
+								}
+								ref := AnchorRef{
+									CursiveExit:  prevExit,
+									CursiveEntry: entryAnchor,
+								}
+								setCursiveAttachment(&ctx.buf.Pos[mpos], prev, ref)
+								return mpos + 1, true, buf, nil
+							}
+						}
+					}
+				}
+			}
+			return pos, false, buf, nil
+		}
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 3|1 missing support data")

@@ -43,8 +43,19 @@ func TestTableNav(t *testing.T) {
 	if name != "name" {
 		t.Errorf("expected table to have name 'name', have %s", name)
 	}
-	key := MakeTag([]byte{3, 1, 0, 1}) // Windows 1-encoded field 1 = Font Family Name
-	x := table.Fields().Map().AsTagRecordMap().LookupTag(key).Navigate().Name()
+	nameRecs, ok := AsNameRecords(table.Fields())
+	if !ok {
+		t.Fatal("name table does not provide NameRecords view")
+	}
+	x := ""
+	for k, link := range nameRecs.Range() {
+		if k.PlatformID == 3 && k.EncodingID == 1 && k.NameID == 1 {
+			x = link.Navigate().Name()
+			if x != "" {
+				break
+			}
+		}
+	}
 	if x != "Calibri" {
 		t.Errorf("expected Windows/1 encoded field 1 to be 'Calibri', is %s", x)
 	}

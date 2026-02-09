@@ -32,43 +32,47 @@ func NameInfo(otf *ot.Font, lang ot.Tag) map[string]string {
 		tracer().Debugf("no name table found in font %s", otf.F.Fontname)
 		return names
 	}
-	m := table.Fields().Map().AsTagRecordMap()
+	nameRecs, ok := ot.AsNameRecords(table.Fields())
+	if !ok {
+		tracer().Debugf("name table does not provide NameRecords view")
+		return names
+	}
 	tracer().Debugf("table name = %q", table.Fields().Name())
-	for tag, _ := range m.Range() {
-		tracer().Debugf("names tag %q", tag.String())
+	for k, _ := range nameRecs.Range() {
+		tracer().Debugf("name key p=%d e=%d l=%d id=%d", k.PlatformID, k.EncodingID, k.LanguageID, k.NameID)
 	}
 	// font family
-	familyKeys := [][]byte{
-		{3, 1, 0, 1}, // Windows platform, encoding BMP
-		{1, 0, 0, 1}, // Mac platform, encoding Roman
+	familyKeys := []ot.NameKey{
+		{PlatformID: 3, EncodingID: 1, NameID: 1}, // Windows platform, encoding BMP
+		{PlatformID: 0, EncodingID: 3, NameID: 1}, // Unicode platform, encoding BMP
 	}
-	findKey(table, names, "family", familyKeys)
+	findKey(nameRecs, names, "family", familyKeys)
 	// font sub-family
-	subFamKeys := [][]byte{
-		{3, 1, 0, 2},
-		{1, 0, 0, 2},
+	subFamKeys := []ot.NameKey{
+		{PlatformID: 3, EncodingID: 1, NameID: 2},
+		{PlatformID: 0, EncodingID: 3, NameID: 2},
 	}
-	findKey(table, names, "subfamily", subFamKeys)
+	findKey(nameRecs, names, "subfamily", subFamKeys)
 	// font version
-	versionKeys := [][]byte{
-		{3, 1, 0, 5},
-		{1, 0, 0, 5},
+	versionKeys := []ot.NameKey{
+		{PlatformID: 3, EncodingID: 1, NameID: 5},
+		{PlatformID: 0, EncodingID: 3, NameID: 5},
 	}
-	findKey(table, names, "version", versionKeys)
+	findKey(nameRecs, names, "version", versionKeys)
 	return names
 }
 
-func findKey(table ot.Table, m map[string]string, fieldname string, keys [][]byte) {
+func findKey(nameRecs ot.NameRecords, m map[string]string, fieldname string, keys []ot.NameKey) {
 	for _, key := range keys {
-		key := ot.MakeTag(key)
-		tm := table.Fields().Map()
-		if !tm.IsTagRecordMap() {
-			return
-		}
-		val := tm.AsTagRecordMap().LookupTag(key).Navigate().Name()
-		if val != "" {
-			m[fieldname] = val
-			break
+		for k, link := range nameRecs.Range() {
+			if k.PlatformID != key.PlatformID || k.EncodingID != key.EncodingID || k.NameID != key.NameID {
+				continue
+			}
+			val := link.Navigate().Name()
+			if val != "" {
+				m[fieldname] = val
+				return
+			}
 		}
 	}
 }

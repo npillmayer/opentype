@@ -17,37 +17,21 @@ func FontSupportsScript(otf *ot.Font, scr ot.Tag, lang ot.Tag) (ot.Tag, ot.Tag) 
 		return 0, 0
 	}
 	gsub := otf.Layout.GSub
+	if gsub == nil {
+		return ot.DFLT, ot.DFLT
+	}
 	sg := gsub.ScriptGraph()
-	if sg != nil {
-		script := sg.Script(scr)
-		if script == nil {
-			tracer().Infof("cannot find script %s in font", scr.String())
-			return ot.DFLT, ot.DFLT
-		}
-		tracer().Debugf("script %s is contained in GSUB", scr.String())
-		if script.LangSys(lang) != nil {
-			return scr, lang
-		}
-		return scr, ot.DFLT
+	if sg == nil {
+		return ot.DFLT, ot.DFLT
 	}
-
-	// Transitional fallback until all clients have fully moved off legacy navigation.
-	m := gsub.ScriptList.Map()
-	if !m.IsTagRecordMap() {
-		return 0, 0
-	}
-
-	rec := m.AsTagRecordMap().LookupTag(scr)
-	if rec.IsNull() {
+	script := sg.Script(scr)
+	if script == nil {
 		tracer().Infof("cannot find script %s in font", scr.String())
 		return ot.DFLT, ot.DFLT
 	}
 	tracer().Debugf("script %s is contained in GSUB", scr.String())
-	s := rec.Navigate() // now we are at start of ScriptList
-	for tag, _ := range s.Map().AsTagRecordMap().Range() {
-		if tag.String() == lang.String() {
-			return scr, lang
-		}
+	if script.LangSys(lang) != nil {
+		return scr, lang
 	}
 	return scr, ot.DFLT
 }

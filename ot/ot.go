@@ -2,6 +2,7 @@ package ot
 
 import (
 	"fmt"
+	"iter"
 
 	"github.com/npillmayer/opentype"
 	"golang.org/x/text/encoding/unicode"
@@ -595,29 +596,63 @@ func (n nameNames) Name() string {
 	return "name" // name of 'name' OT table
 }
 
-func (n nameNames) Map() NavMap {
-	namesMap := make(map[Tag]link16)
-	//for i := 0; i < n.nameRecs.length; i++ {
-	for i := range n.nameRecs.length {
-		nameRecord := n.nameRecs.Get(i)
-		pltf := nameRecord.U16(0)
-		enc := nameRecord.U16(2)
-		if !((pltf == 0 && enc == 3) || (pltf == 3 && enc == 1)) {
-			//trace().Debugf("unsupported platform/encoding combination for name-table")
+func (n nameNames) IsVoid() bool {
+	return false
+}
+
+func (n nameNames) Len() int {
+	return n.nameRecs.Len()
+}
+
+func (n nameNames) LookupName(key NameKey) NavLink {
+	for i := 0; i < n.nameRecs.Len(); i++ {
+		rk, link, ok := n.record(i)
+		if !ok {
 			continue
 		}
-		id := nameRecord.U16(6)
-		strlen := nameRecord.U16(8)
-		offset := nameRecord.U16(10)
-		str := n.strbuf[offset : offset+strlen] // UTF-16 encoded string
-		//trace().Debugf("utf16 string = '%v'", decodeUtf16(str))
-		link := makeLink16(0, str, "NameRecord")
-		tag := MakeTag([]byte{byte(pltf), byte(enc), 0, byte(id)})
-		//trace().Debugf("copying names[0x%x] = %d", tag, nameRecord)
-		namesMap[tag] = link.(link16)
+		if rk == key {
+			return link
+		}
 	}
-	//return mapWrapper{m: namesMap, names: n, name: n.Name()}
-	return mapWrapper{m: namesMap, name: n.Name()}
+	return nullLink(fmt.Sprintf("no name for key %+v", key))
+}
+
+func (n nameNames) Range() iter.Seq2[NameKey, NavLink] {
+	return func(yield func(NameKey, NavLink) bool) {
+		for i := 0; i < n.nameRecs.Len(); i++ {
+			k, link, ok := n.record(i)
+			if !ok {
+				continue
+			}
+			if !yield(k, link) {
+				return
+			}
+		}
+	}
+}
+
+func (n nameNames) record(i int) (NameKey, NavLink, bool) {
+	var key NameKey
+	if i < 0 || i >= n.nameRecs.Len() {
+		return key, nil, false
+	}
+	nameRecord := n.nameRecs.Get(i)
+	key.PlatformID = nameRecord.U16(0)
+	key.EncodingID = nameRecord.U16(2)
+	key.LanguageID = nameRecord.U16(4)
+	key.NameID = nameRecord.U16(6)
+	// Keep current UTF-16-only behavior for name decoding.
+	if !((key.PlatformID == 0 && key.EncodingID == 3) || (key.PlatformID == 3 && key.EncodingID == 1)) {
+		return key, nil, false
+	}
+	strlen := int(nameRecord.U16(8))
+	offset := int(nameRecord.U16(10))
+	if offset < 0 || strlen < 0 || offset+strlen > len(n.strbuf) {
+		return key, nil, false
+	}
+	str := n.strbuf[offset : offset+strlen] // UTF-16 encoded string
+	link := makeLink16(0, str, "NameRecord")
+	return key, link, true
 }
 
 func decodeUtf16(str []byte) (string, error) {

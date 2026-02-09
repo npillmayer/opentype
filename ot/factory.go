@@ -66,6 +66,33 @@ type TagRecordMap interface {
 	Range() iter.Seq2[Tag, NavLink] // range over sequence of tag-record pairs
 }
 
+// NameKey identifies a NameRecord entry in OpenType table 'name'.
+// The key follows the OpenType NameRecord fields directly.
+type NameKey struct {
+	PlatformID uint16
+	EncodingID uint16
+	LanguageID uint16
+	NameID     uint16
+}
+
+// NameRecords is a lightweight view over OpenType table 'name'.
+// Implementations may parse records lazily on-demand.
+type NameRecords interface {
+	Name() string
+	Len() int
+	LookupName(NameKey) NavLink
+	Range() iter.Seq2[NameKey, NavLink]
+}
+
+// AsNameRecords returns nav as NameRecords if supported.
+func AsNameRecords(nav Navigator) (NameRecords, bool) {
+	if nav == nil || nav.IsVoid() {
+		return nil, false
+	}
+	nr, ok := nav.(NameRecords)
+	return nr, ok
+}
+
 // RootTagMap is a TagRecordMap which can be subsetted by index, producing another RootTagMap.
 type RootTagMap interface {
 	TagRecordMap

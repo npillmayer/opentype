@@ -454,6 +454,9 @@ This section records the current behavior in `ot/` for lookup decomposition deta
 #### What remains to finish Phase 2
 1. No open verification gaps are currently tracked for Phase 2.
 2. Remaining work shifts to transition planning/execution for later phases (compatibility adapters and consumer migration).
+3. Deferred cleanup note (non-GSUB/GPOS):
+   1. `name` table access is still map/navigation-driven (currently in `otquery/info.go`) and not modeled as a concrete semantic type.
+   2. We plan a later cleanup pass introducing a lightweight hybrid `name` representation (semantic API + compact raw-backed internals) to replace map-style traversal for this table.
 
 #### Test plan for Phase 2
 1. Parse and count parity:

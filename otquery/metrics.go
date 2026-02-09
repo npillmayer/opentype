@@ -13,11 +13,30 @@ import (
 // font, DFLT will be returned. If the script has no support in the font,
 // DFLT will be returned for the script.
 func FontSupportsScript(otf *ot.Font, scr ot.Tag, lang ot.Tag) (ot.Tag, ot.Tag) {
+	if otf == nil {
+		return 0, 0
+	}
 	gsub := otf.Layout.GSub
+	sg := gsub.ScriptGraph()
+	if sg != nil {
+		script := sg.Script(scr)
+		if script == nil {
+			tracer().Infof("cannot find script %s in font", scr.String())
+			return ot.DFLT, ot.DFLT
+		}
+		tracer().Debugf("script %s is contained in GSUB", scr.String())
+		if script.LangSys(lang) != nil {
+			return scr, lang
+		}
+		return scr, ot.DFLT
+	}
+
+	// Transitional fallback until all clients have fully moved off legacy navigation.
 	m := gsub.ScriptList.Map()
 	if !m.IsTagRecordMap() {
 		return 0, 0
 	}
+
 	rec := m.AsTagRecordMap().LookupTag(scr)
 	if rec.IsNull() {
 		tracer().Infof("cannot find script %s in font", scr.String())

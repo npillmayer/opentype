@@ -15,7 +15,6 @@ type testFeature struct {
 
 func (f testFeature) Tag() ot.Tag          { return f.tag }
 func (f testFeature) Type() LayoutTagType  { return f.typ }
-func (f testFeature) Params() ot.Navigator { return nil }
 func (f testFeature) LookupCount() int     { return 0 }
 func (f testFeature) LookupIndex(int) int  { return 0 }
 

@@ -855,50 +855,6 @@ func (m tagRecordMap16) Get(i int) (Tag, NavLink) {
 	return tag, link
 }
 
-func (m tagRecordMap16) IsTagRecordMap() bool {
-	return true
-}
-
-func (m tagRecordMap16) AsTagRecordMap() TagRecordMap {
-	return m
-}
-
-// Interface TagRecordMap: `Subset` subsets a tag record map with the indices given by a NavList.
-//
-// Example map:
-// | Tag      | Target   |
-// |----------|----------|
-// | tag 1    | link 1   |
-// | tag 2    | link 2   |
-// | tag 3    | link 3   |
-// | tag 4    | link 4   |
-//
-// Example list: [1,  3]
-//
-// Subset:
-// | Tag      | Target   |
-// |----------|----------|
-// | tag 1    | link 1   |
-// | tag 3    | link 3   |
-//
-// Usually the source map is a projection onto the font's bytes. The subset map has to
-// allocate a new byte array for the subset.
-func (m tagRecordMap16) Subset(indices []int) RootTagMap {
-	if len(indices) == 0 {
-		return tagRecordMap16{}
-	}
-	N := len(indices) // will allocate space for N records
-	subset := makeTagRecordMap16(m.name, m.target, nil, m.base, 0, N)
-	for i, index := range indices {
-		if index < 0 || index >= m.records.length {
-			panic("subset of tag record map: cannot apply link > |record array|")
-		}
-		bytes := m.records.Get(index)
-		copy(subset.records.loc[i*6:(i+1)*6], bytes.Bytes())
-	}
-	return subset
-}
-
 func (m tagRecordMap16) Range() iter.Seq2[Tag, NavLink] {
 	return func(yield func(Tag, NavLink) bool) {
 		for i := range m.Len() {

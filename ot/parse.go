@@ -322,13 +322,17 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 	}
 	// GSUB/GPOS must have ScriptList, FeatureList, and LookupList
 	if gsub := otf.Layout.GSub; gsub != nil {
-		if gsub.ScriptList.IsVoid() || gsub.FeatureList.Len() == 0 {
+		sg := gsub.ScriptGraph()
+		fg := gsub.FeatureGraph()
+		if sg == nil || fg == nil || sg.Len() == 0 || fg.Len() == 0 {
 			ec.addError(T("GSUB"), "Structure", "GSUB table missing required lists", SeverityCritical, 0)
 			return errFontFormat("GSUB table missing required lists")
 		}
 	}
 	if gpos := otf.Layout.GPos; gpos != nil {
-		if gpos.ScriptList.IsVoid() || gpos.FeatureList.Len() == 0 {
+		sg := gpos.ScriptGraph()
+		fg := gpos.FeatureGraph()
+		if sg == nil || fg == nil || sg.Len() == 0 || fg.Len() == 0 {
 			ec.addError(T("GPOS"), "Structure", "GPOS table missing required lists", SeverityCritical, 0)
 			return errFontFormat("GPOS table missing required lists")
 		}
@@ -1184,18 +1188,22 @@ func parseScriptList(lytt *LayoutTable, b binarySegm, err error) error {
 	if err != nil {
 		return err
 	}
-	//lytt.ScriptList = tagRecordMap16{}
 	link := link16{base: b, offset: uint16(lytt.header.offsetFor(layoutScriptSection))}
 	scripts := link.Jump() // now we stand at the ScriptList table
-	scriptRecords := parseTagRecordMap16(scripts.Bytes(), 0, scripts.Bytes(), "ScriptList", "Script")
+	scriptRecords, perr := parseArray(scripts.Bytes(), 0, 6, "ScriptList", "Script")
+	if perr != nil {
+		lytt.scriptGraph = &ScriptList{
+			featureGraph: lytt.featureGraph,
+			raw:          binarySegm(scripts.Bytes()),
+			err:          perr,
+		}
+		return nil
+	}
 	lytt.scriptGraph = parseConcreteScriptList(scripts.Bytes(), scriptRecords, lytt.featureGraph)
-	//scriptRecords := parseTagRecordMap16(scripts.Bytes(), 0, scripts.Bytes(), "ScriptList", "Script")
-	//lytt.ScriptList = scriptRecords
-	lytt.ScriptList = NavigatorFactory("ScriptList", scripts, scripts)
 	return nil
 }
 
-func parseConcreteScriptList(scripts binarySegm, scriptRecords tagRecordMap16, featureGraph *FeatureList) *ScriptList {
+func parseConcreteScriptList(scripts binarySegm, scriptRecords array, featureGraph *FeatureList) *ScriptList {
 	sl := &ScriptList{
 		scriptOrder:  make([]Tag, 0, scriptRecords.Len()),
 		offsetByTag:  make(map[Tag]uint16, scriptRecords.Len()),
@@ -1204,7 +1212,7 @@ func parseConcreteScriptList(scripts binarySegm, scriptRecords tagRecordMap16, f
 		raw:          scripts,
 	}
 	for i := 0; i < scriptRecords.Len(); i++ {
-		record := scriptRecords.records.Get(i)
+		record := scriptRecords.Get(i)
 		if record.Size() < 6 {
 			if sl.err == nil {
 				sl.err = errBufferBounds
@@ -1245,10 +1253,16 @@ func parseConcreteScript(b binarySegm, featureGraph *FeatureList) *Script {
 	if s.defaultLangSysOffset > 0 && int(s.defaultLangSysOffset) >= len(b) {
 		s.err = fmt.Errorf("default langsys offset out of bounds: %d (size %d)", s.defaultLangSysOffset, len(b))
 	}
-	langRecords := parseTagRecordMap16(b, 2, b, "Script", "LangSys")
+	langRecords, err := parseArray(b, 2, 6, "Script", "LangSys")
+	if err != nil {
+		if s.err == nil {
+			s.err = err
+		}
+		return s
+	}
 	s.langOrder = make([]Tag, 0, langRecords.Len())
 	for i := 0; i < langRecords.Len(); i++ {
-		record := langRecords.records.Get(i)
+		record := langRecords.Get(i)
 		if record.Size() < 6 {
 			if s.err == nil {
 				s.err = errBufferBounds
@@ -1308,21 +1322,21 @@ func parseFeatureList(lytt *LayoutTable, b []byte, err error) error {
 	if err != nil {
 		return err
 	}
-	//lytt.FeatureList = array{}
-	lytt.FeatureList = tagRecordMap16{}
 	link := link16{base: b, offset: uint16(lytt.header.offsetFor(layoutFeatureSection))}
 	features := link.Jump() // now we stand at the FeatureList table
-	featureRecords := parseTagRecordMap16(features.Bytes(), 0, features.Bytes(), "FeatureList", "Feature")
-	//featureRecords, err := parseArray(features.Bytes(), 0, 6, "FeatureList", "Feature")
-	if err != nil {
-		return err
+	featureRecords, perr := parseArray(features.Bytes(), 0, 6, "FeatureList", "Feature")
+	if perr != nil {
+		lytt.featureGraph = &FeatureList{
+			raw: binarySegm(features.Bytes()),
+			err: perr,
+		}
+		return nil
 	}
-	lytt.FeatureList = featureRecords
 	lytt.featureGraph = parseConcreteFeatureList(features.Bytes(), featureRecords)
 	return nil
 }
 
-func parseConcreteFeatureList(features binarySegm, featureRecords tagRecordMap16) *FeatureList {
+func parseConcreteFeatureList(features binarySegm, featureRecords array) *FeatureList {
 	fl := &FeatureList{
 		featureOrder:          make([]Tag, 0, featureRecords.Len()),
 		featureOffsetsByIndex: make([]uint16, 0, featureRecords.Len()),
@@ -1331,7 +1345,7 @@ func parseConcreteFeatureList(features binarySegm, featureRecords tagRecordMap16
 		raw:                   features,
 	}
 	for i := 0; i < featureRecords.Len(); i++ {
-		record := featureRecords.records.Get(i)
+		record := featureRecords.Get(i)
 		if record.Size() < 6 {
 			if fl.err == nil {
 				fl.err = errBufferBounds
@@ -1384,9 +1398,12 @@ func validateConcreteScript(b binarySegm, featureGraph *FeatureList, requireDefa
 			return err
 		}
 	}
-	langRecords := parseTagRecordMap16(b, 2, b, "Script", "LangSys")
+	langRecords, err := parseArray(b, 2, 6, "Script", "LangSys")
+	if err != nil {
+		return err
+	}
 	for i := 0; i < langRecords.Len(); i++ {
-		record := langRecords.records.Get(i)
+		record := langRecords.Get(i)
 		if record.Size() < 6 {
 			return errBufferBounds
 		}
@@ -1443,30 +1460,6 @@ func parseConcreteFeature(b binarySegm) *Feature {
 		f.lookupListIndices[i] = lookupArray.Get(i).U16(0)
 	}
 	return f
-}
-
-// b+offset has to be positioned at the start of the feature index list block, e.g.,
-// the second uint16 of a LangSys table:
-// https://docs.microsoft.com/en-us/typography/opentype/spec/chapter2#language-system-table
-//
-// uint16  requiredFeatureIndex               Index of a feature required for this language system
-// uint16  featureIndexCount                  Number of feature index values for this language system
-// uint16  featureIndices[featureIndexCount]  Array of indices into the FeatureList, in arbitrary order
-func parseLangSys(b binarySegm, offset int, target string) (langSys, error) {
-	lsys := langSys{}
-	if len(b) < offset+4 {
-		return lsys, errBufferBounds
-	}
-	tracer().Debugf("parsing LangSys (%s)", target)
-	b = b[offset:]
-	lsys.mandatory, _ = b.u16(0)
-	features, err := parseArray16(b, 2, "LangSys", target)
-	if err != nil {
-		return lsys, err
-	}
-	lsys.featureIndices = features
-	tracer().Debugf("LangSys points to %d features", features.length)
-	return lsys, nil
 }
 
 // --- Layout table lookup list ----------------------------------------------

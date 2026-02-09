@@ -26,7 +26,6 @@ import (
 type Feature interface {
 	Tag() ot.Tag          // e.g., 'liga'
 	Type() LayoutTagType  // GSUB or GPOS ?
-	Params() ot.Navigator // parameters for this feature
 	LookupCount() int     // number of Lookups for this feature
 	LookupIndex(int) int  // get index of lookup #i
 }
@@ -155,11 +154,6 @@ func (f feature) Tag() ot.Tag {
 // Type returns wether this is a GSUB-feature or a GPOS-feature.
 func (f feature) Type() LayoutTagType {
 	return f.typ
-}
-
-// Params returns the parameters for this feature.
-func (f feature) Params() ot.Navigator {
-	return nil
 }
 
 // LookupCount returns the number of lookup entries for a feature.

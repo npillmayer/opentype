@@ -86,7 +86,7 @@ func assertScriptGraphLazy(t *testing.T, graph *ScriptList) {
 	}
 }
 
-func assertScriptGraphParity(t *testing.T, legacyScripts Navigator, graph *ScriptList) {
+func assertScriptGraphParity(t *testing.T, graph *ScriptList) {
 	t.Helper()
 	if graph == nil {
 		t.Fatalf("expected concrete script graph to be parsed")
@@ -94,14 +94,11 @@ func assertScriptGraphParity(t *testing.T, legacyScripts Navigator, graph *Scrip
 	if graph.Error() != nil {
 		t.Fatalf("unexpected concrete script graph parse error: %v", graph.Error())
 	}
-	legacyMap := legacyScripts.Map().AsTagRecordMap()
-	if graph.Len() != legacyMap.Len() {
-		t.Fatalf("expected concrete script graph size %d, have %d", legacyMap.Len(), graph.Len())
-	}
-	for scriptTag, scriptLink := range legacyMap.Range() {
-		script := graph.Script(scriptTag)
+	scriptCount := 0
+	for scriptTag, script := range graph.Range() {
+		scriptCount++
 		if script == nil {
-			t.Fatalf("concrete script graph missing script tag %s", scriptTag)
+			t.Fatalf("concrete script graph returned nil script for tag %s", scriptTag)
 		}
 		if script.Error() != nil {
 			t.Fatalf("unexpected concrete script parse error for %s: %v", scriptTag, script.Error())
@@ -109,23 +106,23 @@ func assertScriptGraphParity(t *testing.T, legacyScripts Navigator, graph *Scrip
 		if scriptTag == DFLT && script.DefaultLangSys() == nil {
 			t.Fatalf("DFLT script must provide a default language-system")
 		}
-		legacyLangMap := scriptLink.Navigate().Map().AsTagRecordMap()
 		langCount := 0
-		for langTag, _ := range script.Range() {
+		for langTag, lsys := range script.Range() {
 			langCount++
+			if lsys == nil {
+				t.Fatalf("concrete script %s returned nil language-system for tag %s", scriptTag, langTag)
+			}
 			if script.LangSys(langTag) == nil {
 				t.Fatalf("concrete script %s missing language-system tag %s", scriptTag, langTag)
 			}
 		}
-		if langCount != legacyLangMap.Len() {
-			t.Fatalf("script %s language-system count mismatch: legacy=%d concrete=%d",
-				scriptTag, legacyLangMap.Len(), langCount)
+		if langCount != len(script.langOrder) {
+			t.Fatalf("script %s language-system count mismatch: declared=%d concrete=%d",
+				scriptTag, len(script.langOrder), langCount)
 		}
-		for langTag, _ := range legacyLangMap.Range() {
-			if script.LangSys(langTag) == nil {
-				t.Fatalf("concrete script %s missing legacy language-system tag %s", scriptTag, langTag)
-			}
-		}
+	}
+	if scriptCount != graph.Len() {
+		t.Fatalf("concrete script graph count mismatch: len()=%d range=%d", graph.Len(), scriptCount)
 	}
 }
 
@@ -388,16 +385,12 @@ func TestParseGPos(t *testing.T) {
 	if gpos == nil {
 		t.Fatalf("cannot find a GPOS table")
 	}
-	t.Logf("otf.GPOS: %d features:", gpos.FeatureList.Len())
-	if gpos.FeatureList.Len() != 27 {
-		t.Errorf("expected 27 GPOS features, have %d", gpos.FeatureList.Len())
-	}
 	if gpos.FeatureGraph() == nil {
 		t.Fatalf("expected concrete GPOS feature graph to be parsed")
 	}
-	if gpos.FeatureGraph().Len() != gpos.FeatureList.Len() {
-		t.Errorf("expected concrete feature graph size %d, have %d",
-			gpos.FeatureList.Len(), gpos.FeatureGraph().Len())
+	t.Logf("otf.GPOS: %d concrete features:", gpos.FeatureGraph().Len())
+	if gpos.FeatureGraph().Len() != 27 {
+		t.Errorf("expected 27 GPOS features, have %d", gpos.FeatureGraph().Len())
 	}
 	if gpos.FeatureGraph().Error() != nil {
 		t.Errorf("unexpected concrete feature graph parse error: %v", gpos.FeatureGraph().Error())
@@ -406,8 +399,8 @@ func TestParseGPos(t *testing.T) {
 	assertScriptGraphLazy(t, gpos.ScriptGraph())
 	assertLookupGraphBaseline(t, gpos.LookupList, gpos.LookupGraph())
 	assertLookupGraphGPosScaffold(t, gpos.LookupGraph())
-	t.Logf("otf.GPOS: %d scripts:", gpos.ScriptList.Map().AsTagRecordMap().Len())
-	assertScriptGraphParity(t, gpos.ScriptList, gpos.ScriptGraph())
+	t.Logf("otf.GPOS: %d concrete scripts:", gpos.ScriptGraph().Len())
+	assertScriptGraphParity(t, gpos.ScriptGraph())
 }
 
 func TestParseGSub(t *testing.T) {
@@ -435,16 +428,12 @@ func TestParseGSub(t *testing.T) {
 	if gsub == nil {
 		t.Fatalf("cannot find a GSUB table")
 	}
-	t.Logf("otf.GSUB: %d features:", gsub.FeatureList.Len())
-	if gsub.FeatureList.Len() != 41 {
-		t.Errorf("expected 41 features, have %d", gsub.FeatureList.Len())
-	}
 	if gsub.FeatureGraph() == nil {
 		t.Fatalf("expected concrete GSUB feature graph to be parsed")
 	}
-	if gsub.FeatureGraph().Len() != gsub.FeatureList.Len() {
-		t.Errorf("expected concrete feature graph size %d, have %d",
-			gsub.FeatureList.Len(), gsub.FeatureGraph().Len())
+	t.Logf("otf.GSUB: %d concrete features:", gsub.FeatureGraph().Len())
+	if gsub.FeatureGraph().Len() != 41 {
+		t.Errorf("expected 41 features, have %d", gsub.FeatureGraph().Len())
 	}
 	if gsub.FeatureGraph().Error() != nil {
 		t.Errorf("unexpected concrete feature graph parse error: %v", gsub.FeatureGraph().Error())
@@ -453,7 +442,7 @@ func TestParseGSub(t *testing.T) {
 	assertScriptGraphLazy(t, gsub.ScriptGraph())
 	assertLookupGraphBaseline(t, gsub.LookupList, gsub.LookupGraph())
 	assertLookupGraphGSubScaffold(t, gsub.LookupGraph())
-	assertScriptGraphParity(t, gsub.ScriptList, gsub.ScriptGraph())
+	assertScriptGraphParity(t, gsub.ScriptGraph())
 	// t.Logf("otf.GSUB: %d scripts:", len(gsub.scripts))
 	// for i, sc := range gsub.scripts {
 	// 	t.Logf("[%d] script '%s'", i, sc.Tag)

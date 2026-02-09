@@ -663,3 +663,82 @@ This section defines the minimum semantic payload contract needed by `otlayout`,
 1. Use a transitional compatibility strategy (not a hard break in one step).
 2. This document focuses on `ot/` only.
 3. Downstream package migration is intentionally deferred to separate documents/tasks.
+
+## Filtered Legacy-Navigation Cleanup Matrix (Code Only)
+Scope of this matrix:
+1. Include code in `ot/`, `otlayout/`, `otquery/`, and their tests.
+2. Exclude documentation references, examples, and `otcli/`.
+3. Keep `Table.Fields()` / `tableBase.Fields()` decision deferred for now.
+
+### Production code matrix
+| Area | Location | Legacy dependency | Decision | Planned action |
+|---|---|---|---|---|
+| Generic table fields API | `ot/ot.go` (`Table.Fields`, `tableBase.Fields`) | `Fields() Navigator` and `NavigatorFactory` routing | defer | Keep unchanged for now; revisit after layout migration settles (`head`, `bhea`, `OS/2` use case). |
+| Layout table surface | `ot/layout.go` (`LayoutTable.ScriptList`, `LayoutTable.FeatureList`) | legacy `Navigator`/`TagRecordMap` fields in parallel with concrete graphs | migrate | Remove legacy fields after all non-test callsites are concrete-only. |
+| BASE internals | `ot/layout.go` (`AxisTable.baseScriptRecords`) | `TagRecordMap` field | keep (out of GSUB/GPOS scope) | Leave unchanged in current refactor scope. |
+| Script parser wiring | `ot/parse.go` (`lytt.ScriptList = NavigatorFactory(...)`) | legacy script traversal population | drop | Stop assigning legacy `ScriptList`; keep concrete `scriptGraph` only. |
+| Feature parser wiring | `ot/parse.go` (`lytt.FeatureList = ...`) | legacy feature-map population | drop | Stop assigning legacy `FeatureList`; keep concrete `featureGraph` only. |
+| GSUB/GPOS structural validation | `ot/parse.go` (checks on `ScriptList.IsVoid`, `FeatureList.Len`) | validation through legacy fields | migrate | Validate against concrete graph accessors and concrete error state only. |
+| Legacy layout wrappers | `ot/layout.go` (`langSys`, `feature` navigator wrappers) | wrapper types implementing `Navigator` | drop | Delete wrapper types and their nav methods after parser cutover. |
+| Legacy lookup list nav coupling | `ot/layout.go` (`LookupList.Subset` as `RootList`, interface asserts) | `NavList`/`RootList` conformance | migrate/drop | Remove nav-interface conformance and keep concrete lookup graph/list API only. |
+| Legacy lookup map coupling | `ot/layout.go` (`Lookup.LookupTag`, `IsTagRecordMap`, `AsTagRecordMap`, assert `NavMap`) | `NavMap` compatibility on `Lookup` | drop | Delete compatibility methods/asserts once no callsites remain. |
+| Navigation interface hub | `ot/factory.go` (`Navigator`, `NavList`, `NavMap`, `TagRecordMap`, `Root*`) | public legacy navigation interfaces | migrate | Shrink to minimal non-layout needs or remove entirely after dependent APIs migrate. |
+| Factory routing | `ot/factory.go` (`NavigatorFactory` cases for `ScriptList`/`Script`/`LangSys`/`Feature`) | legacy GSUB/GPOS object materialization | drop (layout cases) | Remove layout cases once parser and consumers are concrete-only. |
+| Link->Navigator coupling | `ot/bytes.go` (`NavLink.Navigate`, `link16/32.Navigate`) | navigation dispatch via links | migrate | Decouple layout traversal from `Navigate`; keep only non-layout/deferred paths as needed. |
+| Tag-record legacy helpers | `ot/bytes.go` (`IsTagRecordMap`, `AsTagRecordMap`, `Subset` returning `RootTagMap`) | nav-era map polymorphism | migrate/drop | Remove when all production code paths stop requiring nav map polymorphism. |
+| `otlayout` feature API | `otlayout/feature.go` (`Feature.Params() ot.Navigator`) | legacy method in public interface | drop/migrate | Remove method or replace with concrete/opaque params API. |
+| `otquery` name-table read path | `otquery/info.go` (`AsNameRecords(table.Fields())`, `link.Navigate().Name()`) | dependency on nav bridge for `name` | migrate later | Replace with lightweight direct `name` reader API (no nav chain). |
+| Name bridge types | `ot/factory.go` (`NameRecords`, `AsNameRecords`) and `ot/ot.go` (`nameNames` returning `NavLink`) | transitional nav-based `name` API | migrate later | Remove after `otquery` and other consumers switch to direct `name` API. |
+
+### Test code matrix
+| File | Legacy dependency | Decision | Planned action |
+|---|---|---|---|
+| `ot/nav_test.go` | direct Navigator-chain behavior and `AsNameRecords(table.Fields())` | migrate/split | Keep only deferred `Fields()`-related tests; remove GSUB/GPOS nav-chain assertions. |
+| `ot/parse_test.go` | `assertScriptGraphParity` and legacy traversal checks | migrate | Convert to concrete-only assertions for script/feature/lookup graphs. |
+| `ot/parse_refactor_parity_test.go` | legacy-vs-concrete parity via `LookupList.Navigate` | drop | Remove after legacy lookup adapter track is retired. |
+| `ot/refactor_lookup_legacy_adapter_test.go` | adapter projection from concrete to legacy | drop | Remove with adapter deletion. |
+| `ot/lookup_list_subset_test.go` | `RootList` subset contract | migrate/drop | Replace with concrete lookup selection tests or remove if no public subset API remains. |
+| `ot/ttx_gsub_compare_test.go` | legacy lookup traversal via `Navigate` | migrate | Repoint to concrete lookup graph traversal. |
+| `ot/ttx_gpos_compare_test.go` | legacy lookup traversal via `Navigate` | migrate | Repoint to concrete lookup graph traversal. |
+| `ot/parse_gsub_type8_test.go` | legacy lookup traversal via `Navigate` | migrate | Repoint to concrete lookup graph traversal. |
+| `otlayout/feature_functional_test.go` | fixture implements `Params() ot.Navigator` | migrate | Update fixture/API once `Feature.Params` is removed/replaced. |
+
+## Ordered Cleanup Checklist (Code Only)
+This checklist follows a low-risk cut order: remove production dependencies first, then delete legacy API scaffolding, then retire test scaffolding.
+
+### Stage 0: Guardrails and scope lock
+- [ ] Freeze scope: no changes to docs/examples/`otcli` in this track.
+- [ ] Keep `Table.Fields()` / `tableBase.Fields()` marked deferred.
+- [ ] Capture baseline green runs for `go test ./ot ./otlayout ./otquery`.
+
+### Stage 1: Remove remaining production callsites to layout navigation
+- [ ] Remove/replace `otlayout.Feature.Params() ot.Navigator` and all non-test callsites.
+- [ ] Switch `ot/parse.go` GSUB/GPOS structure validation to concrete graph checks only.
+- [ ] Stop populating `LayoutTable.ScriptList` and `LayoutTable.FeatureList` in parser wiring.
+- [ ] Ensure `otquery` remains green with current deferred `name` bridge.
+
+### Stage 2: Remove legacy GSUB/GPOS fields and wrappers in `ot/layout.go`
+- [ ] Delete `LayoutTable.ScriptList` and `LayoutTable.FeatureList` fields.
+- [ ] Delete legacy `langSys` and `feature` navigator wrapper types.
+- [ ] Delete `Lookup` nav-compat methods (`LookupTag`, `IsTagRecordMap`, `AsTagRecordMap`) if no callsites remain.
+- [ ] Remove `LookupList` nav-interface conformance (`RootList`/`NavList`) where no longer needed.
+
+### Stage 3: Shrink/retire navigation factory paths for layout
+- [ ] Remove `NavigatorFactory` routing cases for `ScriptList`/`Script`/`LangSys`/`Feature`.
+- [ ] Remove layout-only link navigation dependencies on `NavLink.Navigate()`.
+- [ ] Keep only deferred/non-layout paths required by `Fields()` and current `name` handling.
+
+### Stage 4: Retire nav-era map/list polymorphism used only by layout
+- [ ] Remove `tagRecordMap16` nav-polymorphic helpers not needed outside deferred/non-layout use.
+- [ ] Remove unused nav interface fragments from `factory.go` once compilation proves no dependents.
+- [ ] Re-run full package tests and static grep for leftover GSUB/GPOS nav calls.
+
+### Stage 5: Test migration and deletion
+- [ ] Convert remaining parity tests to concrete-only behavior checks.
+- [ ] Delete legacy adapter tests tied to removed code paths.
+- [ ] Keep/adjust only tests that exercise deferred `Fields()` behavior.
+
+### Stage 6: Deferred follow-up track (`name` + `Fields`)
+- [ ] Design lightweight direct `name` table API (raw-backed, on-demand).
+- [ ] Migrate `otquery.NameInfo` from `AsNameRecords(table.Fields())` to direct API.
+- [ ] Re-evaluate `Table.Fields()` retention/removal after `name` migration.

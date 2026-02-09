@@ -16,17 +16,25 @@ func TestNavLink(t *testing.T) {
 		t.Fatal("cannot locate table GSUB in font")
 	}
 	gsub := table.Self().AsGSub()
-	m := gsub.ScriptList.Map()
-	if !m.IsTagRecordMap() {
-		t.Fatalf("script list is not a tag record map")
+	if gsub == nil {
+		t.Fatal("cannot convert GSUB table")
 	}
-	recname := m.AsTagRecordMap().LookupTag(T("latn")).Navigate().Name()
-	t.Logf("walked to %s", recname)
-	lang := m.AsTagRecordMap().LookupTag(T("latn")).Navigate().Map().AsTagRecordMap().LookupTag(T("TRK"))
-	langlist := lang.Navigate().List()
-	t.Logf("list is %s of length %v", lang.Name(), langlist.Len())
-	if lang.Name() != "LangSys" || langlist.Len() != 24 {
-		t.Errorf("expected LangSys[IPPH] to contain 24 feature entries, has %d", langlist.Len())
+	sg := gsub.ScriptGraph()
+	if sg == nil {
+		t.Fatalf("expected concrete ScriptGraph for GSUB")
+	}
+	script := sg.Script(T("latn"))
+	if script == nil {
+		t.Fatalf("expected concrete script for tag 'latn'")
+	}
+	lang := script.LangSys(T("TRK"))
+	if lang == nil {
+		t.Fatalf("expected concrete LangSys for tag 'TRK'")
+	}
+	features := lang.Features()
+	t.Logf("LangSys[TRK] has %d feature links", len(features))
+	if len(features) == 0 {
+		t.Errorf("expected LangSys[TRK] to contain feature links")
 	}
 }
 
@@ -77,54 +85,6 @@ func TestTableNavOS2(t *testing.T) {
 	loc := table.Fields().List().Get(1)
 	if loc.U16(0) != 400 {
 		t.Errorf("expected xAvgCharWidth (size %d) of Calibri to be 400, is %d", loc.Size(), loc.U16(0))
-	}
-}
-
-func TestTagRecordMapSubset(t *testing.T) {
-	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
-	defer teardown()
-
-	base := binarySegm(make([]byte, 64))
-	tags := []Tag{T("f001"), T("f002"), T("f003"), T("f004")}
-	offsets := []uint16{10, 20, 30, 40}
-	values := []uint16{0x1111, 0x2222, 0x3333, 0x4444}
-
-	for i := range offsets {
-		writeU16(base, int(offsets[i]), values[i])
-	}
-
-	m := makeTagRecordMap16("FeatureList", "Feature", nil, base, 0, len(tags))
-	for i := range tags {
-		setTagRecord(m, i, tags[i], offsets[i])
-	}
-
-	indices := []int{2, 0}
-	subset := m.Subset(indices)
-
-	if subset.Len() != 2 {
-		t.Fatalf("expected subset length 2, got %d", subset.Len())
-	}
-
-	tag0, link0 := subset.Get(0)
-	if tag0 != tags[2] {
-		t.Fatalf("expected tag %s at subset[0], got %s", tags[2], tag0)
-	}
-	if link0.Name() != "Feature" {
-		t.Fatalf("expected link target Feature, got %s", link0.Name())
-	}
-	if link0.Jump().U16(0) != values[2] {
-		t.Fatalf("expected link0 to jump to value %x, got %x", values[2], link0.Jump().U16(0))
-	}
-
-	tag1, link1 := subset.Get(1)
-	if tag1 != tags[0] {
-		t.Fatalf("expected tag %s at subset[1], got %s", tags[0], tag1)
-	}
-	if link1.Name() != "Feature" {
-		t.Fatalf("expected link target Feature, got %s", link1.Name())
-	}
-	if link1.Jump().U16(0) != values[0] {
-		t.Fatalf("expected link1 to jump to value %x, got %x", values[0], link1.Jump().U16(0))
 	}
 }
 

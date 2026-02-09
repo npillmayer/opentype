@@ -17,9 +17,6 @@ import "iter"
 // OpenType specifies two such tables–GPOS and GSUB–which share some of their
 // structure.
 type LayoutTable struct {
-	ScriptList Navigator
-	//FeatureList NavList
-	FeatureList  TagRecordMap
 	scriptGraph  *ScriptList
 	featureGraph *FeatureList
 	lookupGraph  *LookupListGraph
@@ -489,53 +486,6 @@ func (cdef *ClassDefinitions) Class(glyph GlyphIndex) int {
 	return cdef.Lookup(glyph)
 }
 
-// --- LangSys table ---------------------------------------------------------
-
-type langSys struct {
-	err            error
-	mandatory      uint16 // 0xffff if unused
-	featureIndices array  // list of uint16 indices
-}
-
-func (lsys langSys) Link() NavLink {
-	return nullLink("LangSys records not linkable")
-}
-
-func (lsys langSys) Map() NavMap {
-	return tagRecordMap16{}
-}
-
-// List will return the LangSys as a NavList.
-// The entries will be copied to a new array.
-// Entry 0 will be the mandatory feature (0xffff = unset).
-func (lsys langSys) List() NavList {
-	r := make([]uint16, lsys.featureIndices.length+1)
-	r[0] = lsys.mandatory
-	for i := 0; i < lsys.featureIndices.length; i++ {
-		if i < 0 || (i+1)*lsys.featureIndices.recordSize > len(lsys.featureIndices.loc.Bytes()) {
-			i = 0
-		}
-		b, _ := lsys.featureIndices.loc.view(i*lsys.featureIndices.recordSize, lsys.featureIndices.recordSize)
-		//trace().Debugf("r.i+1[%d] = %d", i+1, u16(b))
-		r[i+1] = u16(b)
-	}
-	return u16List(r)
-}
-
-func (lsys langSys) IsVoid() bool {
-	return lsys.featureIndices.length == 0
-}
-
-func (lsys langSys) Error() error {
-	return lsys.err
-}
-
-func (lsys langSys) Name() string {
-	return "LangSys"
-}
-
-var _ Navigator = langSys{}
-
 // --- Attachment point list -------------------------------------------------
 
 // An AttachmentPointList consists of a count of the attachment points on a single
@@ -546,53 +496,6 @@ type AttachmentPointList struct {
 	Count              int
 	attachPointOffsets binarySegm
 }
-
-// --- Feature ---------------------------------------------------------------
-
-// Features define the functionality of an OpenType Layout font and they are named to convey
-// meaning to the text-processing client. Consider a feature named 'liga' to create ligatures.
-// Because of its name, the client knows what the feature does and can decide whether to
-// apply it. Font developers can use these features, as well as create their own.
-type feature struct {
-	err     error
-	params  NavLink
-	lookups array
-}
-
-// Link links to the feature's parameters buffer.
-func (f feature) Link() NavLink {
-	return f.params
-}
-
-func (f feature) Map() NavMap {
-	return tagRecordMap16{}
-}
-
-func (f feature) List() NavList {
-	r := make([]uint16, f.lookups.length)
-	for i := 0; i < f.lookups.length; i++ {
-		if i < 0 || (i+1)*f.lookups.recordSize > len(f.lookups.loc.Bytes()) {
-			i = 0
-		}
-		b, _ := f.lookups.loc.view(i*f.lookups.recordSize, f.lookups.recordSize)
-		r[i] = u16(b)
-	}
-	return u16List(r)
-}
-
-func (f feature) IsVoid() bool {
-	return f.lookups.length == 0
-}
-
-func (f feature) Error() error {
-	return f.err
-}
-
-func (f feature) Name() string {
-	return "Feature"
-}
-
-var _ Navigator = feature{}
 
 // --- Lookup tables ---------------------------------------------------------
 
@@ -616,7 +519,7 @@ var _ Navigator = feature{}
 // in terms of OT features, hiding altogether the existence of lookup lists and lookups from
 // clients.
 //
-// LookupList implements the NavList interface.
+// LookupList is a concrete list of layout lookups.
 type LookupList struct {
 	array
 	base          binarySegm
@@ -633,7 +536,7 @@ func (ll LookupList) Name() string {
 
 // Subset creates a new LookupList with entries selected by indices.
 // It copies the selected offset records into a new backing buffer.
-func (ll LookupList) Subset(indices []int) RootList {
+func (ll LookupList) Subset(indices []int) LookupList {
 	if len(indices) == 0 {
 		return LookupList{name: ll.name, base: ll.base, isGPos: ll.isGPos}
 	}
@@ -701,9 +604,6 @@ func (ll LookupList) Range() iter.Seq2[int, NavLocation] {
 		}
 	}
 }
-
-var _ NavList = LookupList{}
-var _ RootList = LookupList{}
 
 func GSubLookupType(ltype LayoutTableLookupType) LayoutTableLookupType {
 	return ltype & 0x00ff
@@ -834,23 +734,6 @@ func (l Lookup) Name() string {
 func (l Lookup) MarkFilteringSet() uint16 {
 	return l.markFilteringSet
 }
-
-// LookupTag is not defined for Lookup and will return a void link.
-func (l Lookup) LookupTag(tag Tag) NavLink {
-	return nullLink("cannot lookup tag in Lookup")
-}
-
-// IsTagRecordMap returns false
-func (l Lookup) IsTagRecordMap() bool {
-	return false
-}
-
-// AsTagRecordMap returns an empty TagRecordMap
-func (l Lookup) AsTagRecordMap() TagRecordMap {
-	return tagRecordMap16{}
-}
-
-var _ NavMap = Lookup{}
 
 // LookupSubtable is a type for OpenType Lookup Subtables, which are the basis for Lookup operations
 // (see https://docs.microsoft.com/en-us/typography/opentype/spec/chapter2#lookup-table).

@@ -33,22 +33,12 @@ type NavList interface {
 	Range() iter.Seq2[int, NavLocation]
 }
 
-// RootList is a NavList which can be subsetted by index, producing another RootList.
-type RootList interface {
-	NavList
-	Subset(indices []int) RootList
-}
-
 // NavMap wraps OpenType structures which are map-like. Lookup is always done on
 // 32-bit values, even if the map's keys are 16-bit (will be shortened to low
 // bytes in such cases).
-//
-// TagRecordMap is a special kind of NavMap.
 type NavMap interface {
 	Name() string
 	Lookup(uint32) NavLocation
-	IsTagRecordMap() bool
-	AsTagRecordMap() TagRecordMap
 }
 
 // A TagRecordMap is a dict-type (map) to receive a data record (returned as a link)
@@ -93,12 +83,6 @@ func AsNameRecords(nav Navigator) (NameRecords, bool) {
 	return nr, ok
 }
 
-// RootTagMap is a TagRecordMap which can be subsetted by index, producing another RootTagMap.
-type RootTagMap interface {
-	TagRecordMap
-	Subset(indices []int) RootTagMap
-}
-
 // ----------------------------------------------------------------------
 
 // NavigatorFactory creates a Navigator for a given OpenType object `obj` at location
@@ -106,43 +90,10 @@ type RootTagMap interface {
 func NavigatorFactory(obj string, loc NavLocation, base NavLocation) Navigator {
 	tracer().Debugf("navigator factory for %s", obj)
 	switch obj {
-	case "ScriptList":
-		scriptRecords := parseTagRecordMap16(loc.Bytes(), 0, loc.Bytes(), "ScriptList", "Script")
-		return linkAndMap{
-			tmap: scriptRecords,
-		}
-	case "Script":
-		l, err := parseLink16(loc.Bytes(), 0, loc.Bytes(), "LangSys")
-		if err != nil {
-			//return null(err)
-			l = nullLink("no default script->langsys link")
-		}
-		tracer().Debugf("script table default langsys entry: %s", l.Name())
-		return linkAndMap{
-			link: l,
-			tmap: parseTagRecordMap16(loc.Bytes(), 2, loc.Bytes(), "Script", "LangSys"),
-		}
 	case "LangSys":
-		tracer().Debugf("%s[0] = %x", obj, u16(loc.Bytes()))
-		tracer().Debugf("%s[2] = %x", obj, u16(loc.Bytes()[2:]))
-		lsys, err := parseLangSys(loc.Bytes(), 2, "Feature-Index")
-		if err != nil {
-			return null(err)
-		}
-		return lsys
+		return null(errDanglingLink(obj))
 	case "Feature":
-		l, err := parseLink16(loc.Bytes(), 0, loc.Bytes(), "Feature-Params")
-		if err != nil {
-			return null(err)
-		}
-		lookups, err := parseArray16(loc.Bytes(), 2, "Feature", "Feature-Lookups")
-		if err != nil {
-			return null(err)
-		}
-		return feature{
-			params:  l,
-			lookups: lookups,
-		}
+		return null(errDanglingLink(obj))
 	case "name":
 		names, err := parseNames(loc.Bytes())
 		if err != nil {

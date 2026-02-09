@@ -26,7 +26,7 @@ func TestLookupListSubset(t *testing.T) {
 	}
 
 	indices := []int{2, 0, 2}
-	var sub RootList = ll.Subset(indices)
+	sub := ll.Subset(indices)
 	if sub.Len() != 3 {
 		t.Fatalf("expected subset length 3, got %d", sub.Len())
 	}

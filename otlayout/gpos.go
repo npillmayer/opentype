@@ -381,6 +381,32 @@ func gposLookupType7Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.ContextFmt1 != nil {
+			if inx < 0 || inx >= len(p.ContextFmt1.RuleSets) {
+				return pos, false, buf, nil
+			}
+			rules := p.ContextFmt1.RuleSets[inx]
+			for _, rule := range rules {
+				restPos, ok := matchGlyphSequenceForward(ctx, buf, mpos+1, rule.InputGlyphs)
+				if !ok {
+					continue
+				}
+				matchPositions := make([]int, 0, 1+len(restPos))
+				matchPositions = append(matchPositions, mpos)
+				matchPositions = append(matchPositions, restPos...)
+				if len(rule.Records) == 0 || ctx.lookupList == nil {
+					continue
+				}
+				out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+				ctx.buf.Pos = outPosBuf
+				if applied {
+					return mpos, true, out, nil
+				}
+			}
+			return pos, false, buf, nil
+		}
+	}
 	if lksub.Index.Size() == 0 {
 		return pos, false, buf, nil
 	}
@@ -429,7 +455,7 @@ func gposLookupType7Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		if ctx.lookupList == nil {
 			return pos, false, buf, nil
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return mpos, true, out, nil
@@ -444,6 +470,33 @@ func gposLookupType7Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	mpos, _, ok := matchCoverageForward(ctx, buf, pos, lksub.Coverage)
 	if !ok {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.ContextFmt2 != nil {
+			firstClass := p.ContextFmt2.ClassDef.Lookup(buf.At(mpos))
+			if firstClass < 0 || firstClass >= len(p.ContextFmt2.RuleSets) {
+				return pos, false, buf, nil
+			}
+			rules := p.ContextFmt2.RuleSets[firstClass]
+			for _, rule := range rules {
+				restPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, p.ContextFmt2.ClassDef, rule.InputClasses)
+				if !ok {
+					continue
+				}
+				matchPositions := make([]int, 0, 1+len(restPos))
+				matchPositions = append(matchPositions, mpos)
+				matchPositions = append(matchPositions, restPos...)
+				if len(rule.Records) == 0 || ctx.lookupList == nil {
+					continue
+				}
+				out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+				ctx.buf.Pos = outPosBuf
+				if applied {
+					return mpos, true, out, nil
+				}
+			}
+			return pos, false, buf, nil
+		}
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 7|2 missing support data")
@@ -500,7 +553,7 @@ func gposLookupType7Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		if ctx.lookupList == nil {
 			return pos, false, buf, nil
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return mpos, true, out, nil
@@ -512,6 +565,23 @@ func gposLookupType7Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 // GPOS Lookup Type 7, Format 3: Contextual Positioning (coverage-based).
 func gposLookupType7Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.ContextFmt3 != nil {
+			if len(p.ContextFmt3.InputCoverages) == 0 {
+				return pos, false, buf, nil
+			}
+			inputPos, ok := matchCoverageSequenceForward(ctx, buf, pos, p.ContextFmt3.InputCoverages)
+			if !ok || len(p.ContextFmt3.Records) == 0 || ctx.lookupList == nil {
+				return pos, false, buf, nil
+			}
+			out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, p.ContextFmt3.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+			ctx.buf.Pos = outPosBuf
+			if applied {
+				return pos, true, out, nil
+			}
+			return pos, false, buf, nil
+		}
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("GPOS 7|3 missing support data")
 		return pos, false, buf, nil
@@ -531,7 +601,7 @@ func gposLookupType7Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if ctx.lookupList == nil {
 		return pos, false, buf, nil
 	}
-	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 	ctx.buf.Pos = outPosBuf
 	if applied {
 		return pos, true, out, nil
@@ -546,7 +616,7 @@ func gposLookupType8Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	rules, err := parseChainedSequenceRules(lksub, inx)
+	rules, err := parseChainedSequenceRules(lksub, ctx.subnode, inx)
 	if err != nil || len(rules) == 0 {
 		return pos, false, buf, nil
 	}
@@ -572,7 +642,7 @@ func gposLookupType8Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		if ctx.lookupList == nil {
 			return pos, false, buf, nil
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return mpos, true, out, nil
@@ -588,16 +658,29 @@ func gposLookupType8Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	seqctx, ok := lksub.Support.(*ot.SequenceContext)
-	if !ok || len(seqctx.ClassDefs) < 3 {
-		return pos, false, buf, nil
+	var classDefs []ot.ClassDefinitions
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.ChainingContextFmt2 != nil {
+			classDefs = []ot.ClassDefinitions{
+				p.ChainingContextFmt2.BacktrackClassDef,
+				p.ChainingContextFmt2.InputClassDef,
+				p.ChainingContextFmt2.LookaheadClassDef,
+			}
+		}
 	}
-	rules, err := parseChainedClassSequenceRules(lksub, inx)
+	if len(classDefs) < 3 {
+		seqctx, ok := lksub.Support.(*ot.SequenceContext)
+		if !ok || len(seqctx.ClassDefs) < 3 {
+			return pos, false, buf, nil
+		}
+		classDefs = seqctx.ClassDefs
+	}
+	rules, err := parseChainedClassSequenceRules(lksub, ctx.subnode, inx)
 	if err != nil || len(rules) == 0 {
 		return pos, false, buf, nil
 	}
 	for _, rule := range rules {
-		inputPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, seqctx.ClassDefs[1], rule.Input)
+		inputPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, classDefs[1], rule.Input)
 		if !ok {
 			continue
 		}
@@ -605,20 +688,20 @@ func gposLookupType8Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		matchPositions = append(matchPositions, mpos)
 		matchPositions = append(matchPositions, inputPos...)
 		if len(rule.Backtrack) > 0 {
-			if _, ok := matchClassSequenceBackward(ctx, buf, mpos, seqctx.ClassDefs[0], rule.Backtrack); !ok {
+			if _, ok := matchClassSequenceBackward(ctx, buf, mpos, classDefs[0], rule.Backtrack); !ok {
 				continue
 			}
 		}
 		if len(rule.Lookahead) > 0 {
 			last := matchPositions[len(matchPositions)-1]
-			if _, ok := matchClassSequenceForward(ctx, buf, last+1, seqctx.ClassDefs[2], rule.Lookahead); !ok {
+			if _, ok := matchClassSequenceForward(ctx, buf, last+1, classDefs[2], rule.Lookahead); !ok {
 				continue
 			}
 		}
 		if ctx.lookupList == nil {
 			return pos, false, buf, nil
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return mpos, true, out, nil
@@ -631,6 +714,18 @@ func gposLookupType8Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 func gposLookupType8Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	seqctx, ok := lksub.Support.(*ot.SequenceContext)
+	records := lksub.LookupRecords
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GPosPayload(); p != nil && p.ChainingContextFmt3 != nil {
+			seqctx = &ot.SequenceContext{
+				BacktrackCoverage: p.ChainingContextFmt3.BacktrackCoverages,
+				InputCoverage:     p.ChainingContextFmt3.InputCoverages,
+				LookaheadCoverage: p.ChainingContextFmt3.LookaheadCoverages,
+			}
+			records = p.ChainingContextFmt3.Records
+			ok = true
+		}
+	}
 	if !ok || len(seqctx.InputCoverage) == 0 {
 		return pos, false, buf, nil
 	}
@@ -653,13 +748,13 @@ func gposLookupType8Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	if len(lksub.LookupRecords) == 0 {
+	if len(records) == 0 {
 		return pos, false, buf, nil
 	}
 	if ctx.lookupList == nil {
 		return pos, false, buf, nil
 	}
-	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 	ctx.buf.Pos = outPosBuf
 	if applied {
 		return pos, true, out, nil

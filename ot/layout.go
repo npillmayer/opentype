@@ -805,7 +805,8 @@ func (l Lookup) Subtable(i int) *LookupSubtable {
 		link := makeLink16(n, l.loc.Bytes(), "LookupSubtable") // wrap offset into link
 		loc := link.Jump()
 		b := binarySegm(loc.Bytes())
-		l.subTablesCache[i] = parseLookupSubtable(b, l.Type)
+		node := parseConcreteLookupNode(b, l.Type)
+		l.subTablesCache[i] = legacyLookupSubtableFromConcrete(node)
 		l.subTablesParsed[i] = true
 	}
 	return &l.subTablesCache[i]

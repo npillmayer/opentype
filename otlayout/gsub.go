@@ -25,16 +25,25 @@ func gsubLookupType1Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	}
 	// support is deltaGlyphID: add to original glyph ID to get substitute glyph ID
 	var delta int
-	switch v := lksub.Support.(type) {
-	case int16:
-		delta = int(v)
-	case ot.GlyphIndex:
-		delta = int(v)
-	case int:
-		delta = v
-	default:
-		tracer().Errorf("GSUB 1/1: unexpected delta type %T", lksub.Support)
-		return pos, false, buf, nil
+	fromConcrete := false
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.SingleFmt1 != nil {
+			delta = int(p.SingleFmt1.DeltaGlyphID)
+			fromConcrete = true
+		}
+	}
+	if !fromConcrete {
+		switch v := lksub.Support.(type) {
+		case int16:
+			delta = int(v)
+		case ot.GlyphIndex:
+			delta = int(v)
+		case int:
+			delta = v
+		default:
+			tracer().Errorf("GSUB 1/1: unexpected delta type %T", lksub.Support)
+			return pos, false, buf, nil
+		}
 	}
 	newGlyph := int(buf.At(mpos)) + delta
 	tracer().Debugf("OT lookup GSUB 1/1: subst %d for %d", newGlyph, buf.At(mpos))
@@ -57,6 +66,17 @@ func gsubLookupType1Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(mpos), inx, ok)
 	} else {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.SingleFmt2 != nil {
+			if inx >= 0 && inx < len(p.SingleFmt2.SubstituteGlyphIDs) {
+				glyph := p.SingleFmt2.SubstituteGlyphIDs[inx]
+				tracer().Debugf("OT lookup GSUB 1/2 (concrete): subst %d for %d", glyph, buf.At(mpos))
+				ctx.buf.Set(mpos, glyph)
+				return mpos + 1, true, ctx.buf.Glyphs, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
+			}
+			return pos, false, buf, nil
+		}
 	}
 	if glyph := lookupGlyph(lksub.Index, inx, false); glyph != 0 {
 		tracer().Debugf("OT lookup GSUB 1/2: subst %d for %d", glyph, buf.At(mpos))
@@ -86,6 +106,19 @@ func gsubLookupType2Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(mpos), inx, ok)
 	} else {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.MultipleFmt1 != nil {
+			if inx >= 0 && inx < len(p.MultipleFmt1.Sequences) {
+				glyphs := p.MultipleFmt1.Sequences[inx]
+				if len(glyphs) != 0 {
+					tracer().Debugf("OT lookup GSUB 2/1 (concrete): subst %v for %d", glyphs, buf.At(mpos))
+					edit := ctx.buf.ReplaceGlyphs(mpos, mpos+1, glyphs)
+					return mpos + len(glyphs), true, ctx.buf.Glyphs, edit
+				}
+			}
+			return pos, false, buf, nil
+		}
 	}
 	if glyphs := lookupGlyphs(lksub.Index, inx, true); len(glyphs) != 0 {
 		tracer().Debugf("OT lookup GSUB 2/1: subst %v for %d", glyphs, buf.At(mpos))
@@ -117,6 +150,25 @@ func gsubLookupType3Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(mpos), inx, ok)
 	} else {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.AlternateFmt1 != nil {
+			if inx >= 0 && inx < len(p.AlternateFmt1.Alternates) {
+				glyphs := p.AlternateFmt1.Alternates[inx]
+				if len(glyphs) == 0 {
+					return pos, false, buf, nil
+				}
+				if alt < 0 {
+					alt = len(glyphs) - 1
+				}
+				if alt < len(glyphs) {
+					tracer().Debugf("OT lookup GSUB 3/1 (concrete): subst %v for %d", glyphs[alt], buf.At(mpos))
+					ctx.buf.Set(mpos, glyphs[alt])
+					return mpos + 1, true, ctx.buf.Glyphs, &EditSpan{From: mpos, To: mpos + 1, Len: 1}
+				}
+			}
+			return pos, false, buf, nil
+		}
 	}
 	if glyphs := lookupGlyphs(lksub.Index, inx, true); len(glyphs) != 0 {
 		if alt < 0 {
@@ -151,6 +203,31 @@ func gsubLookupType4Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		tracer().Debugf("coverage of glyph ID %d is %d/%v", buf.At(mpos), inx, ok)
 	} else {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.LigatureFmt1 != nil {
+			if inx < 0 || inx >= len(p.LigatureFmt1.LigatureSets) {
+				return pos, false, buf, nil
+			}
+			for _, rule := range p.LigatureFmt1.LigatureSets[inx] {
+				match := true
+				cur := mpos
+				for _, g := range rule.Components {
+					next, ok := nextMatchable(ctx, buf, cur+1)
+					if !ok || g != buf.At(next) {
+						match = false
+						break
+					}
+					cur = next
+				}
+				if match {
+					edit := ctx.buf.ReplaceGlyphs(mpos, cur+1, []ot.GlyphIndex{rule.Ligature})
+					tracer().Debugf("OT lookup GSUB 4/1 (concrete): subst %d for %d", rule.Ligature, buf.At(mpos))
+					return mpos + 1, true, ctx.buf.Glyphs, edit
+				}
+			}
+			return pos, false, buf, nil
+		}
 	}
 	ligatureSet, err := lksub.Index.Get(inx, false)
 	if err != nil || ligatureSet.Size() < 2 {
@@ -221,6 +298,34 @@ func gsubLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	} else {
 		return pos, false, buf, nil
 	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.ContextFmt1 != nil {
+			if inx < 0 || inx >= len(p.ContextFmt1.RuleSets) {
+				return pos, false, buf, nil
+			}
+			rules := p.ContextFmt1.RuleSets[inx]
+			tracer().Debugf("GSUB 5|1 concrete rule set has %d rules", len(rules))
+			for i, rule := range rules {
+				restPos, ok := matchGlyphSequenceForward(ctx, buf, mpos+1, rule.InputGlyphs)
+				if !ok {
+					continue
+				}
+				tracer().Debugf("GSUB 5|1 concrete rule #%d matched at positions %v", i, append([]int{mpos}, restPos...))
+				matchPositions := make([]int, 0, 1+len(restPos))
+				matchPositions = append(matchPositions, mpos)
+				matchPositions = append(matchPositions, restPos...)
+				if len(rule.Records) == 0 || ctx.lookupList == nil {
+					continue
+				}
+				out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+				ctx.buf.Pos = outPosBuf
+				if applied {
+					return pos, true, out, nil
+				}
+			}
+			return pos, false, buf, nil
+		}
+	}
 	ruleSetLoc, err := lksub.Index.Get(inx, false)
 	if err != nil || ruleSetLoc.Size() < 2 { // extra coverage glyphs or extra sequence rule sets are ignored
 		return pos, false, buf, nil
@@ -278,7 +383,7 @@ func gsubLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		if ctx.lookupList == nil {
 			return pos, false, buf, nil
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		tracer().Debugf("GSUB 5|1 rule #%d applied = %v", i, applied)
 		if applied {
@@ -296,6 +401,35 @@ func gsubLookupType5Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	}
 	if !ok {
 		return pos, false, buf, nil
+	}
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.ContextFmt2 != nil {
+			firstClass := p.ContextFmt2.ClassDef.Lookup(buf.At(mpos))
+			if firstClass < 0 || firstClass >= len(p.ContextFmt2.RuleSets) {
+				return pos, false, buf, nil
+			}
+			rules := p.ContextFmt2.RuleSets[firstClass]
+			tracer().Debugf("GSUB 5|2 concrete rule set has %d rules", len(rules))
+			for i, rule := range rules {
+				restPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, p.ContextFmt2.ClassDef, rule.InputClasses)
+				if !ok {
+					continue
+				}
+				tracer().Debugf("GSUB 5|2 concrete rule #%d matched at positions %v", i, append([]int{mpos}, restPos...))
+				matchPositions := make([]int, 0, 1+len(restPos))
+				matchPositions = append(matchPositions, mpos)
+				matchPositions = append(matchPositions, restPos...)
+				if len(rule.Records) == 0 || ctx.lookupList == nil {
+					continue
+				}
+				out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+				ctx.buf.Pos = outPosBuf
+				if applied {
+					return pos, true, out, nil
+				}
+			}
+			return pos, false, buf, nil
+		}
 	}
 	if lksub.Support == nil {
 		tracer().Errorf("expected SequenceContext|ClassDefs in field 'Support', is nil")
@@ -360,7 +494,7 @@ func gsubLookupType5Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		if ctx.lookupList == nil {
 			return pos, false, buf, nil
 		}
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		tracer().Debugf("GSUB 5|2 rule #%d applied = %v", i, applied)
 		if applied {
@@ -372,6 +506,23 @@ func gsubLookupType5Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 
 func gsubLookupType5Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.ContextFmt3 != nil {
+			if len(p.ContextFmt3.InputCoverages) == 0 {
+				return pos, false, buf, nil
+			}
+			inputPos, ok := matchCoverageSequenceForward(ctx, buf, pos, p.ContextFmt3.InputCoverages)
+			if !ok || len(p.ContextFmt3.Records) == 0 || ctx.lookupList == nil {
+				return pos, false, buf, nil
+			}
+			out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, p.ContextFmt3.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
+			ctx.buf.Pos = outPosBuf
+			if applied {
+				return pos, true, out, nil
+			}
+			return pos, false, buf, nil
+		}
+	}
 	if lksub.Support == nil {
 		tracer().Errorf("expected SequenceContext in field 'Support', is nil")
 		return pos, false, buf, nil
@@ -395,7 +546,7 @@ func gsubLookupType5Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if ctx.lookupList == nil {
 		return pos, false, buf, nil
 	}
-	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 	ctx.buf.Pos = outPosBuf
 	if applied {
 		return pos, true, out, nil
@@ -413,7 +564,7 @@ func gsubLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	rules, err := parseChainedSequenceRules(lksub, inx)
+	rules, err := parseChainedSequenceRules(lksub, ctx.subnode, inx)
 	if err != nil || len(rules) == 0 {
 		return pos, false, buf, nil
 	}
@@ -449,7 +600,7 @@ func gsubLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			continue
 		}
 		tracer().Debugf("GSUB 6|1 matched at positions %v", matchPositions)
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return pos, true, out, nil
@@ -468,12 +619,25 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	if !ok {
 		return pos, false, buf, nil
 	}
-	seqctx, ok := lksub.Support.(*ot.SequenceContext)
-	if !ok || seqctx == nil || len(seqctx.ClassDefs) < 3 {
-		tracer().Debugf("GSUB 6|2 missing class definitions")
-		return pos, false, buf, nil
+	var classDefs []ot.ClassDefinitions
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.ChainingContextFmt2 != nil {
+			classDefs = []ot.ClassDefinitions{
+				p.ChainingContextFmt2.BacktrackClassDef,
+				p.ChainingContextFmt2.InputClassDef,
+				p.ChainingContextFmt2.LookaheadClassDef,
+			}
+		}
 	}
-	rules, err := parseChainedClassSequenceRules(lksub, inx)
+	if len(classDefs) < 3 {
+		seqctx, ok := lksub.Support.(*ot.SequenceContext)
+		if !ok || seqctx == nil || len(seqctx.ClassDefs) < 3 {
+			tracer().Debugf("GSUB 6|2 missing class definitions")
+			return pos, false, buf, nil
+		}
+		classDefs = seqctx.ClassDefs
+	}
+	rules, err := parseChainedClassSequenceRules(lksub, ctx.subnode, inx)
 	if err != nil || len(rules) == 0 {
 		return pos, false, buf, nil
 	}
@@ -481,7 +645,7 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 	for _, rule := range rules {
 		tracer().Debugf("GSUB 6|2 rule: backtrack=%d input=%d lookahead=%d records=%d",
 			len(rule.Backtrack), len(rule.Input), len(rule.Lookahead), len(rule.Records))
-		inputPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, seqctx.ClassDefs[1], rule.Input)
+		inputPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, classDefs[1], rule.Input)
 		if !ok {
 			tracer().Debugf("GSUB 6|2 input classes did not match at pos %d", mpos+1)
 			continue
@@ -490,7 +654,7 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		matchPositions = append(matchPositions, mpos)
 		matchPositions = append(matchPositions, inputPos...)
 		if len(rule.Backtrack) > 0 {
-			if _, ok := matchClassSequenceBackward(ctx, buf, mpos, seqctx.ClassDefs[0], rule.Backtrack); !ok {
+			if _, ok := matchClassSequenceBackward(ctx, buf, mpos, classDefs[0], rule.Backtrack); !ok {
 				tracer().Debugf("GSUB 6|2 backtrack did not match at pos %d", mpos)
 				continue
 			}
@@ -500,7 +664,7 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			if len(inputPos) > 0 {
 				last = inputPos[len(inputPos)-1]
 			}
-			if _, ok := matchClassSequenceForward(ctx, buf, last+1, seqctx.ClassDefs[2], rule.Lookahead); !ok {
+			if _, ok := matchClassSequenceForward(ctx, buf, last+1, classDefs[2], rule.Lookahead); !ok {
 				tracer().Debugf("GSUB 6|2 lookahead did not match at pos %d", last+1)
 				continue
 			}
@@ -509,7 +673,7 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			continue
 		}
 		tracer().Debugf("GSUB 6|2 matched at positions %v", matchPositions)
-		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+		out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 		ctx.buf.Pos = outPosBuf
 		if applied {
 			return pos, true, out, nil
@@ -528,13 +692,24 @@ func gsubLookupType6Fmt2(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 // in order, to the positions in the sequence pattern.
 func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
-	//
 	seqctx, ok := lksub.Support.(*ot.SequenceContext)
+	records := lksub.LookupRecords
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.ChainingContextFmt3 != nil {
+			seqctx = &ot.SequenceContext{
+				BacktrackCoverage: p.ChainingContextFmt3.BacktrackCoverages,
+				InputCoverage:     p.ChainingContextFmt3.InputCoverages,
+				LookaheadCoverage: p.ChainingContextFmt3.LookaheadCoverages,
+			}
+			records = p.ChainingContextFmt3.Records
+			ok = true
+		}
+	}
 	if !ok || len(seqctx.InputCoverage) == 0 {
 		return pos, false, buf, nil
 	}
 	tracer().Debugf("GSUB 6|3 coverages: backtrack=%d input=%d lookahead=%d records=%d",
-		len(seqctx.BacktrackCoverage), len(seqctx.InputCoverage), len(seqctx.LookaheadCoverage), len(lksub.LookupRecords))
+		len(seqctx.BacktrackCoverage), len(seqctx.InputCoverage), len(seqctx.LookaheadCoverage), len(records))
 	tracer().Debugf("GSUB 6|3 pos=%d glyph=%d", pos, buf.At(pos))
 	if len(seqctx.InputCoverage) > 0 {
 		tracer().Debugf("GSUB 6|3 input[0] contains glyph %d = %v", buf.At(pos), seqctx.InputCoverage[0].Contains(buf.At(pos)))
@@ -571,7 +746,7 @@ func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		return pos, false, buf, nil
 	}
 	tracer().Debugf("GSUB 6|3 matched at positions %v", inputPos)
-	if len(lksub.LookupRecords) == 0 {
+	if len(records) == 0 {
 		tracer().Debugf("GSUB 6|3 has no lookup records")
 		return pos, false, buf, nil
 	}
@@ -579,7 +754,7 @@ func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 		tracer().Debugf("GSUB 6|3 missing lookup list")
 		return pos, false, buf, nil
 	}
-	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, lksub.LookupRecords, ctx.lookupList, ctx.feat, ctx.alt, ctx.gdef)
+	out, outPosBuf, applied := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, records, ctx.lookupList, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef)
 	ctx.buf.Pos = outPosBuf
 	tracer().Debugf("GSUB 6|3 applied = %v", applied)
 	if applied {
@@ -592,10 +767,23 @@ func gsubLookupType6Fmt3(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 func gsubLookupType8Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan) {
 	//
-	rc, ok := lksub.Support.(*ot.ReverseChainingSubst)
-	if !ok || rc == nil {
-		tracer().Debugf("GSUB 8|1 missing ReverseChainingSubst support")
-		return pos, false, buf, nil
+	var rc *ot.ReverseChainingSubst
+	if ctx.subnode != nil {
+		if p := ctx.subnode.GSubPayload(); p != nil && p.ReverseChainingFmt1 != nil {
+			rc = &ot.ReverseChainingSubst{
+				BacktrackCoverage:  p.ReverseChainingFmt1.BacktrackCoverages,
+				LookaheadCoverage:  p.ReverseChainingFmt1.LookaheadCoverages,
+				SubstituteGlyphIDs: p.ReverseChainingFmt1.SubstituteGlyphIDs,
+			}
+		}
+	}
+	if rc == nil {
+		var ok bool
+		rc, ok = lksub.Support.(*ot.ReverseChainingSubst)
+		if !ok || rc == nil {
+			tracer().Debugf("GSUB 8|1 missing ReverseChainingSubst support")
+			return pos, false, buf, nil
+		}
 	}
 	tracer().Debugf("GSUB 8|1 pos=%d backtrack=%d lookahead=%d subst=%d",
 		pos, len(rc.BacktrackCoverage), len(rc.LookaheadCoverage), len(rc.SubstituteGlyphIDs))

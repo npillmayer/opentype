@@ -399,6 +399,21 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    1. Add concrete-vs-legacy parity tests for GSUB/GPOS lookup traversal and payload summaries.
    2. Add concurrent lazy-load tests for lookup and subtable pointer stability.
 
+#### Phase 3 kickoff slices (lookup compatibility adapter track)
+1. Slice A: Add legacy adapter projection for lookup subtables. (`Status: complete`)
+   1. Implement internal adapter `legacyLookupSubtableFromConcrete(*LookupNode) LookupSubtable`.
+   2. Cover GSUB/GPOS type+format projections, including extension unwrapping.
+2. Slice B: Wire legacy lookup-subtable traversal through concrete path. (`Status: complete`)
+   1. `Lookup.Subtable(i)` now parses `LookupNode` and projects via the adapter into cached legacy `LookupSubtable`.
+   2. Legacy external API shape remains unchanged.
+3. Slice C: Route transitional `parseLookupSubtable` through concrete parser + adapter. (`Status: complete`)
+   1. `parseLookupSubtableWithDepth` now parses a concrete `LookupNode` and projects to legacy via adapter.
+   2. This removes the remaining internal dual-parser behavior from the transitional entrypoint while preserving legacy return shape.
+4. Slice D: Switch `otlayout` contextual/chaining runtime to concrete-first lookup payloads. (`Status: complete`)
+   1. `otlayout` lookup dispatch now threads concrete lookup table/node context in parallel with legacy lookup structs.
+   2. GSUB contextual/chaining paths (types 5/6/8) and GPOS contextual/chaining paths (types 7/8) now consume concrete payloads first, with legacy fallback retained.
+   3. Nested sequence-lookup application now resolves concrete nested lookups through `LookupGraph` when available.
+
 #### Current status snapshot (2026-02-09)
 1. `Phase 1` is complete for the shared graph migration track:
    1. concrete `ScriptList` / `Script` / `LangSys` / `FeatureList` / `Feature` and lazy graph access are present in parallel with legacy interfaces.
@@ -416,7 +431,8 @@ This section records the current behavior in `ot/` for lookup decomposition deta
       7. concurrent access checks for extension-resolved and context-heavy concrete nodes.
 3. Transitional coexistence remains intact:
    1. parser still populates both legacy `LookupList` and concrete `LookupGraph`.
-   2. legacy consumers remain on old path.
+   2. legacy consumers still call the old API surface, now with lookup-subtable materialization adapter-backed from concrete lookup nodes.
+   3. transitional helper parsing (`parseLookupSubtable`) is also adapter-backed from concrete lookup parsing.
 
 #### What remains to finish Phase 2
 1. No open verification gaps are currently tracked for Phase 2.

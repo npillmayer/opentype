@@ -1527,7 +1527,15 @@ func parseLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) LookupS
 }
 
 func parseLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookupType, depth int) LookupSubtable {
-	tracer().Debugf("parse lookup subtable b = %v", asU16Slice(b[:20]))
+	n := min(20, len(b))
+	if n%2 == 1 {
+		n--
+	}
+	if n > 0 {
+		tracer().Debugf("parse lookup subtable b = %v", asU16Slice(b[:n]))
+	} else {
+		tracer().Debugf("parse lookup subtable b = []")
+	}
 	if len(b) < 4 {
 		return LookupSubtable{}
 	}
@@ -1535,10 +1543,8 @@ func parseLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookupType
 		tracer().Errorf("lookup subtable exceeds maximum extension depth %d", MaxExtensionDepth)
 		return LookupSubtable{}
 	}
-	if IsGPosLookupType(lookupType) {
-		return parseGPosLookupSubtableWithDepth(b, GPosLookupType(lookupType), depth)
-	}
-	return parseGSubLookupSubtableWithDepth(b, GSubLookupType(lookupType), depth)
+	node := parseConcreteLookupNodeWithDepth(b, lookupType, depth)
+	return legacyLookupSubtableFromConcrete(node)
 }
 
 // --- parse class def table -------------------------------------------------

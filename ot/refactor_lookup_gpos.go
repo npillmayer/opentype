@@ -56,17 +56,35 @@ type GPosEntryExitAnchor struct {
 	Exit  *Anchor
 }
 
+type gposEntryExitOffsets struct {
+	entry uint16
+	exit  uint16
+}
+
 type GPosCursiveFmt1Payload struct {
-	Entries []GPosEntryExitAnchor
+	Entries          []GPosEntryExitAnchor
+	entryExitOffsets []gposEntryExitOffsets
+}
+
+// EntryExitOffsets returns raw subtable-relative offsets for one cursive
+// entry/exit record. These offsets are used for unresolved attachment metadata.
+func (p *GPosCursiveFmt1Payload) EntryExitOffsets(i int) (entry uint16, exit uint16, ok bool) {
+	if p == nil || i < 0 || i >= len(p.entryExitOffsets) {
+		return 0, 0, false
+	}
+	off := p.entryExitOffsets[i]
+	return off.entry, off.exit, true
 }
 
 type GPosMarkAttachRecord struct {
-	Class  uint16
-	Anchor *Anchor
+	Class        uint16
+	Anchor       *Anchor
+	anchorOffset uint16
 }
 
 type GPosBaseAttachRecord struct {
-	Anchors []*Anchor
+	Anchors       []*Anchor
+	anchorOffsets []uint16
 }
 
 type GPosMarkToBaseFmt1Payload struct {
@@ -77,7 +95,8 @@ type GPosMarkToBaseFmt1Payload struct {
 }
 
 type GPosLigatureAttachRecord struct {
-	ComponentAnchors [][]*Anchor
+	ComponentAnchors       [][]*Anchor
+	componentAnchorOffsets [][]uint16
 }
 
 type GPosMarkToLigatureFmt1Payload struct {
@@ -92,6 +111,47 @@ type GPosMarkToMarkFmt1Payload struct {
 	MarkClassCount uint16
 	Mark1Records   []GPosMarkAttachRecord
 	Mark2Records   []GPosBaseAttachRecord
+}
+
+// AnchorOffsets returns unresolved mark/base anchor offsets for one mark-to-base
+// match tuple (mark record index, base record index, mark class).
+func (p *GPosMarkToBaseFmt1Payload) AnchorOffsets(markInx, baseInx, class int) (markAnchor uint16, baseAnchor uint16, ok bool) {
+	if p == nil || markInx < 0 || markInx >= len(p.MarkRecords) || baseInx < 0 || baseInx >= len(p.BaseRecords) {
+		return 0, 0, false
+	}
+	if class < 0 || class >= int(p.MarkClassCount) || class >= len(p.BaseRecords[baseInx].anchorOffsets) {
+		return 0, 0, false
+	}
+	return p.MarkRecords[markInx].anchorOffset, p.BaseRecords[baseInx].anchorOffsets[class], true
+}
+
+// AnchorOffsets returns unresolved mark/base anchor offsets for one
+// mark-to-ligature match tuple (mark record index, ligature record index,
+// component index, mark class).
+func (p *GPosMarkToLigatureFmt1Payload) AnchorOffsets(markInx, ligInx, comp, class int) (markAnchor uint16, baseAnchor uint16, ok bool) {
+	if p == nil || markInx < 0 || markInx >= len(p.MarkRecords) || ligInx < 0 || ligInx >= len(p.LigatureRecords) {
+		return 0, 0, false
+	}
+	if class < 0 || class >= int(p.MarkClassCount) {
+		return 0, 0, false
+	}
+	lig := p.LigatureRecords[ligInx]
+	if comp < 0 || comp >= len(lig.componentAnchorOffsets) || class >= len(lig.componentAnchorOffsets[comp]) {
+		return 0, 0, false
+	}
+	return p.MarkRecords[markInx].anchorOffset, lig.componentAnchorOffsets[comp][class], true
+}
+
+// AnchorOffsets returns unresolved mark/base anchor offsets for one mark-to-mark
+// match tuple (mark1 record index, mark2 record index, mark class).
+func (p *GPosMarkToMarkFmt1Payload) AnchorOffsets(mark1Inx, mark2Inx, class int) (markAnchor uint16, baseAnchor uint16, ok bool) {
+	if p == nil || mark1Inx < 0 || mark1Inx >= len(p.Mark1Records) || mark2Inx < 0 || mark2Inx >= len(p.Mark2Records) {
+		return 0, 0, false
+	}
+	if class < 0 || class >= int(p.MarkClassCount) || class >= len(p.Mark2Records[mark2Inx].anchorOffsets) {
+		return 0, 0, false
+	}
+	return p.Mark1Records[mark1Inx].anchorOffset, p.Mark2Records[mark2Inx].anchorOffsets[class], true
 }
 
 type GPosSequenceRule struct {

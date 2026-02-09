@@ -176,24 +176,9 @@ func gposLookupType4Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) {
 				return pos, false, buf, nil
 			}
-
-			// Keep unresolved anchor reference behavior aligned with legacy path when possible.
-			var markAnchor uint16
-			var baseAnchor uint16
-			if lksup, ok := lksub.Support.(struct {
-				BaseCoverage   ot.Coverage
-				MarkClassCount uint16
-				MarkArray      ot.MarkArray
-				BaseArray      []ot.BaseRecord
-			}); ok {
-				if markInx >= 0 && markInx < len(lksup.MarkArray.MarkRecords) {
-					markAnchor = lksup.MarkArray.MarkRecords[markInx].MarkAnchor
-				}
-				if baseInx >= 0 && baseInx < len(lksup.BaseArray) {
-					if class >= 0 && class < len(lksup.BaseArray[baseInx].BaseAnchors) {
-						baseAnchor = lksup.BaseArray[baseInx].BaseAnchors[class]
-					}
-				}
+			markAnchor, baseAnchor, ok := p.MarkToBaseFmt1.AnchorOffsets(markInx, baseInx, class)
+			if !ok {
+				return pos, false, buf, nil
 			}
 			ref := AnchorRef{
 				MarkAnchor: markAnchor,
@@ -258,27 +243,9 @@ func gposLookupType5Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) {
 				return pos, false, buf, nil
 			}
-
-			// Keep unresolved anchor reference behavior aligned with legacy path when possible.
-			var markAnchor uint16
-			var baseAnchor uint16
-			if lksup, ok := lksub.Support.(struct {
-				LigatureCoverage ot.Coverage
-				MarkClassCount   uint16
-				MarkArray        ot.MarkArray
-				LigatureArray    []ot.LigatureAttach
-			}); ok {
-				if markInx >= 0 && markInx < len(lksup.MarkArray.MarkRecords) {
-					markAnchor = lksup.MarkArray.MarkRecords[markInx].MarkAnchor
-				}
-				if ligInx >= 0 && ligInx < len(lksup.LigatureArray) {
-					la := lksup.LigatureArray[ligInx]
-					if compIndex >= 0 && compIndex < len(la.ComponentAnchors) {
-						if class >= 0 && class < len(la.ComponentAnchors[compIndex]) {
-							baseAnchor = la.ComponentAnchors[compIndex][class]
-						}
-					}
-				}
+			markAnchor, baseAnchor, ok := p.MarkToLigatureFmt1.AnchorOffsets(markInx, ligInx, compIndex, class)
+			if !ok {
+				return pos, false, buf, nil
 			}
 			ref := AnchorRef{
 				MarkAnchor:   markAnchor,
@@ -336,24 +303,9 @@ func gposLookupType6Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) {
 				return pos, false, buf, nil
 			}
-
-			// Keep unresolved anchor reference behavior aligned with legacy path when possible.
-			var markAnchor uint16
-			var baseAnchor uint16
-			if lksup, ok := lksub.Support.(struct {
-				Mark2Coverage  ot.Coverage
-				MarkClassCount uint16
-				Mark1Array     ot.MarkArray
-				Mark2Array     []ot.BaseRecord
-			}); ok {
-				if markInx >= 0 && markInx < len(lksup.Mark1Array.MarkRecords) {
-					markAnchor = lksup.Mark1Array.MarkRecords[markInx].MarkAnchor
-				}
-				if mark2Inx >= 0 && mark2Inx < len(lksup.Mark2Array) {
-					if class >= 0 && class < len(lksup.Mark2Array[mark2Inx].BaseAnchors) {
-						baseAnchor = lksup.Mark2Array[mark2Inx].BaseAnchors[class]
-					}
-				}
+			markAnchor, baseAnchor, ok := p.MarkToMarkFmt1.AnchorOffsets(markInx, mark2Inx, class)
+			if !ok {
+				return pos, false, buf, nil
 			}
 			ref := AnchorRef{
 				MarkAnchor: markAnchor,
@@ -652,15 +604,10 @@ func gposLookupType3Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 			if inx < 0 || inx >= len(p.CursiveFmt1.Entries) {
 				return pos, false, buf, nil
 			}
-			if lksub.Index.Size() == 0 {
+			entryAnchor, exitAnchor, ok := p.CursiveFmt1.EntryExitOffsets(inx)
+			if !ok {
 				return pos, false, buf, nil
 			}
-			entryExitLoc, err := lksub.Index.Get(inx, false)
-			if err != nil || entryExitLoc.Size() < 4 {
-				return pos, false, buf, nil
-			}
-			entryAnchor := entryExitLoc.U16(0)
-			exitAnchor := entryExitLoc.U16(2)
 			hasEntry := p.CursiveFmt1.Entries[inx].Entry != nil
 			hasExit := p.CursiveFmt1.Entries[inx].Exit != nil
 
@@ -685,21 +632,18 @@ func gposLookupType3Fmt1(ctx *applyCtx, lksub *ot.LookupSubtable, buf GlyphBuffe
 				if ok {
 					prevInx, ok := lksub.Coverage.Match(buf.At(prev))
 					if ok && prevInx >= 0 && prevInx < len(p.CursiveFmt1.Entries) && p.CursiveFmt1.Entries[prevInx].Exit != nil {
-						prevLoc, err := lksub.Index.Get(prevInx, false)
-						if err == nil && prevLoc.Size() >= 4 {
-							prevExit := prevLoc.U16(2)
-							if prevExit != 0 {
-								ctx.buf.EnsurePos()
-								if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) {
-									return pos, false, buf, nil
-								}
-								ref := AnchorRef{
-									CursiveExit:  prevExit,
-									CursiveEntry: entryAnchor,
-								}
-								setCursiveAttachment(&ctx.buf.Pos[mpos], prev, ref)
-								return mpos + 1, true, buf, nil
+						_, prevExit, ok := p.CursiveFmt1.EntryExitOffsets(prevInx)
+						if ok && prevExit != 0 {
+							ctx.buf.EnsurePos()
+							if ctx.buf.Pos == nil || mpos >= len(ctx.buf.Pos) {
+								return pos, false, buf, nil
 							}
+							ref := AnchorRef{
+								CursiveExit:  prevExit,
+								CursiveEntry: entryAnchor,
+							}
+							setCursiveAttachment(&ctx.buf.Pos[mpos], prev, ref)
+							return mpos + 1, true, buf, nil
 						}
 					}
 				}

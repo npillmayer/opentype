@@ -197,10 +197,12 @@ func parseConcreteGPosType3(node *LookupNode) {
 		return
 	}
 	entries := make([]GPosEntryExitAnchor, entryExitCount)
+	offsets := make([]gposEntryExitOffsets, entryExitCount)
 	for i := 0; i < entryExitCount; i++ {
 		base := 6 + i*4
 		entryOff := node.raw.U16(base)
 		exitOff := node.raw.U16(base + 2)
+		offsets[i] = gposEntryExitOffsets{entry: entryOff, exit: exitOff}
 		if entryOff != 0 {
 			if int(entryOff) >= len(node.raw) {
 				setLookupNodeError(node, errBufferBounds)
@@ -219,6 +221,7 @@ func parseConcreteGPosType3(node *LookupNode) {
 		}
 	}
 	node.GPos.CursiveFmt1.Entries = entries
+	node.GPos.CursiveFmt1.entryExitOffsets = offsets
 }
 
 func parseConcreteGPosType4(node *LookupNode) {
@@ -630,6 +633,7 @@ func parseGPosMarkAttachRecords(markArray binarySegm) ([]GPosMarkAttachRecord, e
 	records := make([]GPosMarkAttachRecord, len(markArrayRec.MarkRecords))
 	for i, rec := range markArrayRec.MarkRecords {
 		out := GPosMarkAttachRecord{Class: rec.Class}
+		out.anchorOffset = rec.MarkAnchor
 		if rec.MarkAnchor != 0 {
 			if int(rec.MarkAnchor) >= len(markArray) {
 				return nil, errBufferBounds
@@ -649,7 +653,11 @@ func parseGPosBaseAttachRecords(baseArray binarySegm, classCount int) ([]GPosBas
 	baseRecords := parseBaseArray(baseArray, classCount)
 	records := make([]GPosBaseAttachRecord, len(baseRecords))
 	for i, rec := range baseRecords {
-		out := GPosBaseAttachRecord{Anchors: make([]*Anchor, len(rec.BaseAnchors))}
+		out := GPosBaseAttachRecord{
+			Anchors:       make([]*Anchor, len(rec.BaseAnchors)),
+			anchorOffsets: make([]uint16, len(rec.BaseAnchors)),
+		}
+		copy(out.anchorOffsets, rec.BaseAnchors)
 		for j, off := range rec.BaseAnchors {
 			if off == 0 {
 				continue
@@ -692,14 +700,17 @@ func parseGPosLigatureAttachRecords(ligArray binarySegm, classCount int) ([]GPos
 			return nil, errBufferBounds
 		}
 		record := GPosLigatureAttachRecord{
-			ComponentAnchors: make([][]*Anchor, componentCount),
+			ComponentAnchors:       make([][]*Anchor, componentCount),
+			componentAnchorOffsets: make([][]uint16, componentCount),
 		}
 		offset := 2
 		for c := 0; c < componentCount; c++ {
 			componentAnchors := make([]*Anchor, classCount)
+			componentAnchorOffsets := make([]uint16, classCount)
 			for clz := 0; clz < classCount; clz++ {
 				aoff := ligAttach.U16(offset)
 				offset += 2
+				componentAnchorOffsets[clz] = aoff
 				if aoff == 0 {
 					continue
 				}
@@ -710,6 +721,7 @@ func parseGPosLigatureAttachRecords(ligArray binarySegm, classCount int) ([]GPos
 				componentAnchors[clz] = &anchor
 			}
 			record.ComponentAnchors[c] = componentAnchors
+			record.componentAnchorOffsets[c] = componentAnchorOffsets
 		}
 		records = append(records, record)
 	}

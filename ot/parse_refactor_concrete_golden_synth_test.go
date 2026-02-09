@@ -257,6 +257,14 @@ func TestConcreteGoldenSyntheticGPOSMatrix(t *testing.T) {
 		if p.Entries[0].Entry == nil || p.Entries[1].Exit == nil {
 			t.Fatalf("expected concrete entry/exit anchors")
 		}
+		entryOff, exitOff, ok := p.EntryExitOffsets(0)
+		if !ok || entryOff != 14 || exitOff != 0 {
+			t.Fatalf("unexpected first entry/exit offsets: entry=%d exit=%d ok=%v", entryOff, exitOff, ok)
+		}
+		entryOff, exitOff, ok = p.EntryExitOffsets(1)
+		if !ok || entryOff != 0 || exitOff != 20 {
+			t.Fatalf("unexpected second entry/exit offsets: entry=%d exit=%d ok=%v", entryOff, exitOff, ok)
+		}
 	})
 
 	t.Run("GPOS4/1 MarkToBaseFmt1", func(t *testing.T) {
@@ -294,6 +302,10 @@ func TestConcreteGoldenSyntheticGPOSMatrix(t *testing.T) {
 		}
 		if p.MarkRecords[0].Anchor == nil || p.BaseRecords[0].Anchors[0] == nil {
 			t.Fatalf("expected concrete mark/base anchors")
+		}
+		markOff, baseOff, ok := p.AnchorOffsets(0, 0, 0)
+		if !ok || markOff != 6 || baseOff != 4 {
+			t.Fatalf("unexpected mark/base offsets: mark=%d base=%d ok=%v", markOff, baseOff, ok)
 		}
 	})
 

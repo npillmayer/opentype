@@ -441,7 +441,7 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    2. legacy consumers still call the old API surface, now with lookup-subtable materialization adapter-backed from concrete lookup nodes.
    3. transitional helper parsing (`parseLookupSubtable`) is also adapter-backed from concrete lookup parsing.
    4. `otlayout` GSUB runtime (lookup types 1–8, with type 7 unwrapped) now executes concrete payloads only.
-   5. `otlayout` GPOS runtime (lookup types 1–8, with type 9 unwrapped) executes concrete payloads for lookup behavior; legacy `Support` is still consulted only for unresolved anchor-reference bookkeeping in mark-attachment paths.
+   5. `otlayout` GPOS runtime (lookup types 1–8, with type 9 unwrapped) now executes concrete payloads only, including unresolved anchor-reference bookkeeping for cursive/mark-attachment paths.
 
 #### GPOS runtime migration status
 1. Concrete-first runtime consumption is complete for all GPOS lookup families used by `otlayout`:
@@ -449,8 +449,7 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    2. context/chaining: types 7/8,
    3. extension: type 9 unwrapping to effective payload.
 2. Legacy fallback for lookup behavior has been removed from runtime application paths.
-3. Remaining optional cleanup (post-migration hardening):
-   1. replace remaining `lksub.Support` reads in GPOS 4/5/6 with anchor-reference data sourced directly from concrete payloads.
+3. Dead legacy helper paths for GPOS support-shape parsing have been removed from `otlayout/gpos_helpers.go`.
 4. Runtime golden coverage added in `otlayout`:
    1. type 1/2 concrete-first value adjustments,
    2. type 8 chaining-to-single forwarding behavior,
@@ -480,8 +479,12 @@ This section records the current behavior in `ot/` for lookup decomposition deta
 4. Slice 2.1-C is complete:
    1. GSUB runtime families (types 1/2/3/4/5/6/8, with type 7 unwrapped at parse-time) no longer execute legacy fallback branches.
    2. Synthetic GSUB dispatch tests now require explicit concrete payload nodes and no longer assume legacy fallback in `ConcreteFirst`.
-5. Residual non-behavioral legacy dependency (tracked separately from fallback removal):
-   1. GPOS mark-attachment paths (types 4/5/6) still read legacy `lksub.Support` to populate unresolved `AnchorRef` offsets for downstream attachment metadata.
+5. Slice 2.1-D is complete:
+   1. GPOS cursive/mark-attachment runtime (types 3/4/5/6) now sources unresolved `AnchorRef` offsets from concrete payload metadata, not from legacy `lksub.Index`/`lksub.Support`.
+   2. Added concrete payload accessor coverage for anchor-offset metadata in `ot` parser tests and `otlayout` runtime golden tests.
+6. Slice 2.1-E is complete:
+   1. removed dead legacy helper code in `otlayout/gpos_helpers.go` that parsed legacy `Support` shapes.
+   2. validated `otlayout` and `ot` test suites after cleanup.
 
 #### What remains to finish Phase 2
 1. No open verification gaps are currently tracked for Phase 2.

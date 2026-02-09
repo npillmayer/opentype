@@ -229,6 +229,15 @@ func TestGPOSMarkAttachmentRuntimeGolden(t *testing.T) {
 		if !ok || markInx < 0 || markInx >= len(p.MarkRecords) {
 			t.Fatalf("invalid mark index")
 		}
+		baseInx, ok := p.BaseCoverage.Match(base)
+		if !ok || baseInx < 0 || baseInx >= len(p.BaseRecords) {
+			t.Fatalf("invalid base index")
+		}
+		class := int(p.MarkRecords[markInx].Class)
+		wantMarkOff, wantBaseOff, ok := p.AnchorOffsets(markInx, baseInx, class)
+		if !ok {
+			t.Fatalf("invalid mark-to-base anchor offsets")
+		}
 		st, applied := applyGPOSLookup(t, otf, 0, []ot.GlyphIndex{base, mark}, 1)
 		if !applied {
 			t.Fatalf("expected lookup to apply")
@@ -242,6 +251,10 @@ func TestGPOSMarkAttachmentRuntimeGolden(t *testing.T) {
 		}
 		if want := p.MarkRecords[markInx].Class; markPos.AttachClass != want {
 			t.Fatalf("expected AttachClass=%d, got %d", want, markPos.AttachClass)
+		}
+		if markPos.AnchorRef.MarkAnchor != wantMarkOff || markPos.AnchorRef.BaseAnchor != wantBaseOff {
+			t.Fatalf("unexpected AnchorRef offsets: got mark=%d base=%d, want mark=%d base=%d",
+				markPos.AnchorRef.MarkAnchor, markPos.AnchorRef.BaseAnchor, wantMarkOff, wantBaseOff)
 		}
 	})
 
@@ -278,6 +291,11 @@ func TestGPOSMarkAttachmentRuntimeGolden(t *testing.T) {
 			t.Fatalf("invalid ligature index")
 		}
 		comp := len(p.LigatureRecords[ligInx].ComponentAnchors) - 1
+		class := int(p.MarkRecords[markInx].Class)
+		wantMarkOff, wantBaseOff, ok := p.AnchorOffsets(markInx, ligInx, comp, class)
+		if !ok {
+			t.Fatalf("invalid mark-to-ligature anchor offsets")
+		}
 		st, applied := applyGPOSLookup(t, otf, 0, []ot.GlyphIndex{lig, mark}, 1)
 		if !applied {
 			t.Fatalf("expected lookup to apply")
@@ -294,6 +312,10 @@ func TestGPOSMarkAttachmentRuntimeGolden(t *testing.T) {
 		}
 		if markPos.AnchorRef.LigatureComp != uint16(comp) {
 			t.Fatalf("expected LigatureComp=%d, got %d", comp, markPos.AnchorRef.LigatureComp)
+		}
+		if markPos.AnchorRef.MarkAnchor != wantMarkOff || markPos.AnchorRef.BaseAnchor != wantBaseOff {
+			t.Fatalf("unexpected AnchorRef offsets: got mark=%d base=%d, want mark=%d base=%d",
+				markPos.AnchorRef.MarkAnchor, markPos.AnchorRef.BaseAnchor, wantMarkOff, wantBaseOff)
 		}
 	})
 

@@ -141,6 +141,14 @@ func TestParseConcreteGPosType3And4(t *testing.T) {
 	if p3.Entries[1].Exit == nil || p3.Entries[1].Exit.YCoordinate != 40 {
 		t.Fatalf("unexpected second exit anchor: %+v", p3.Entries[1].Exit)
 	}
+	entryOff, exitOff, ok := p3.EntryExitOffsets(0)
+	if !ok || entryOff != 14 || exitOff != 0 {
+		t.Fatalf("unexpected first entry/exit offsets: entry=%d exit=%d ok=%v", entryOff, exitOff, ok)
+	}
+	entryOff, exitOff, ok = p3.EntryExitOffsets(1)
+	if !ok || entryOff != 0 || exitOff != 20 {
+		t.Fatalf("unexpected second entry/exit offsets: entry=%d exit=%d ok=%v", entryOff, exitOff, ok)
+	}
 
 	// GPOS4/1: one mark class, one mark, one base; coverage mark=[50], base=[60]
 	b4 := make([]byte, 46)
@@ -177,6 +185,10 @@ func TestParseConcreteGPosType3And4(t *testing.T) {
 	}
 	if p4.MarkRecords[0].Anchor == nil || p4.BaseRecords[0].Anchors[0] == nil {
 		t.Fatalf("expected resolved anchors for mark/base records")
+	}
+	markOff, baseOff, ok := p4.AnchorOffsets(0, 0, 0)
+	if !ok || markOff != 6 || baseOff != 4 {
+		t.Fatalf("unexpected mark/base offsets: mark=%d base=%d ok=%v", markOff, baseOff, ok)
 	}
 }
 

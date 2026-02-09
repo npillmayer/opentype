@@ -314,6 +314,187 @@ This section records the current behavior in `ot/` for lookup decomposition deta
 4. Phase 4: Convert internal `ot/` consumers to concrete types.
 5. Phase 5: Deprecate and later remove legacy interface-heavy surface.
 
+### Phase 2 Implementation Plan (detailed)
+
+#### Scope and intent
+1. Introduce a concrete typed lookup graph for GSUB/GPOS in parallel with existing `LookupList`/`LookupSubtable`.
+2. Remove `VarArray`/`any` from the new concrete API path while keeping legacy path functional during transition.
+3. Preserve lazy-instantiation behavior with eager parse-time validation.
+
+#### Public/concrete additions in `ot/`
+1. Add a concrete lookup graph field on `LayoutTable`:
+   1. `lookupGraph *LookupListGraph`
+   2. accessor `LookupGraph() *LookupListGraph` (nil-safe, parallel to `ScriptGraph()`/`FeatureGraph()`).
+2. Add new concrete lookup graph types (in dedicated refactor file(s)):
+   1. `LookupListGraph`
+   2. `LookupTable`
+   3. `LookupNode` (common metadata + concrete typed payload fields, no `any` payload).
+3. Keep existing legacy fields during transition:
+   1. `LayoutTable.LookupList`
+   2. `LookupSubtable` with `Index`/`Support` (transitional only).
+
+#### Concrete type model for Phase 2
+1. `LookupListGraph`:
+   1. lookup offsets and declaration order.
+   2. lazy cache for `LookupTable` by lookup index.
+   3. parse root bytes and parse error state.
+2. `LookupTable`:
+   1. `Type`, `Flag`, `SubTableCount`, `markFilteringSet`.
+   2. subtable offsets.
+   3. lazy cache for concrete subtables by subtable index.
+   4. local parse error state.
+3. `LookupNode`:
+   1. common fields: lookup type, format, coverage, parse error.
+   2. concrete payload fields for GSUB/GPOS type+format variants (explicit structs, no polymorphic payload interface).
+4. Shared helper payload structs:
+   1. sequence/chaining context payloads (glyph/class/coverage forms),
+   2. sequence lookup records,
+   3. reverse-chaining payload,
+   4. GPOS value/anchor/class payload groups where needed.
+
+#### Parsing and instantiation policy
+1. Eager validation at parse wiring time:
+   1. lookup count/offset bounds,
+   2. subtable offset bounds,
+   3. type+format legality,
+   4. extension depth guards.
+2. Lazy concrete instantiation at accessor time:
+   1. `LookupListGraph.Lookup(i)` resolves a single lookup lazily.
+   2. `LookupTable.Subtable(i)` resolves a single typed subtable lazily.
+3. Cache synchronization strategy:
+   1. list-index caches use typed slices + one-shot guards (`sync.Once` per slot),
+   2. canonical-object publication must be thread-safe and pointer-stable.
+4. Extension handling:
+   1. normalize extension subtables to effective underlying type payload while preserving extension-origin metadata for diagnostics.
+
+#### Transitional coexistence rules
+1. `parseLookupList` continues to populate legacy `LayoutTable.LookupList`.
+2. In the same parse pass, populate `LayoutTable.lookupGraph` from the same source bytes/offsets.
+3. Legacy and concrete paths must remain behaviorally equivalent for covered tests.
+4. No consumer migration in this phase; consumers remain on legacy path until Phase 4.
+
+#### Implementation slices
+1. Slice 2.0: Scaffolding and wiring.
+   1. Add `LookupListGraph`/`LookupTable`/`LookupNode` scaffolds.
+   2. Add `LayoutTable.LookupGraph()` and parser hook.
+   3. Add baseline “graph exists + count parity” tests.
+2. Slice 2.1: GSUB typed payloads.
+   1. Implement concrete payload parsing for GSUB lookup types 1–8.
+   2. Include extension type 7 normalization and reverse chaining type 8 payload.
+3. Slice 2.2: GPOS typed payloads.
+   1. Implement concrete payload parsing for GPOS lookup types 1–9.
+   2. Include extension type 9 normalization and class/anchor payload groups.
+4. Slice 2.3: Context/chaining typed rule materialization.
+   1. Move contextual/chaining rule decoding into explicit typed structures.
+   2. Eliminate dependency on `VarArray` for the new concrete path.
+5. Slice 2.4: Legacy cache bug fix (required stabilization).
+   1. Fix value-receiver cache loss in legacy lookup traversal (`LookupList.Navigate`, `Lookup.Subtable`) via stable cache ownership.
+   2. Keep external legacy behavior unchanged.
+6. Slice 2.5: Parity and concurrency hardening.
+   1. Add concrete-vs-legacy parity tests for GSUB/GPOS lookup traversal and payload summaries.
+   2. Add concurrent lazy-load tests for lookup and subtable pointer stability.
+
+#### Test plan for Phase 2
+1. Parse and count parity:
+   1. lookup count parity between legacy and concrete graphs,
+   2. subtable count parity per lookup,
+   3. lookup flag/markFilteringSet parity.
+2. Type+format coverage:
+   1. per-type/per-format payload assertions for supported GSUB/GPOS forms,
+   2. negative tests for malformed format/offset combinations.
+3. Extension behavior:
+   1. GSUB type 7 and GPOS type 9 resolve to expected effective payload type,
+   2. depth guard remains enforced.
+4. Concurrency:
+   1. repeated concurrent access to same lookup/subtable index returns canonical cached object.
+
+#### Completion criteria for Phase 2
+1. Concrete lookup graph is parser-integrated and publicly reachable in `ot` in parallel with legacy path.
+2. Concrete payload model contains no generic `any`/`VarArray` fields in the new API path.
+3. Existing legacy tests remain green, plus new parity/concurrency tests for concrete path pass.
+4. Known legacy cache-loss bug is fixed or isolated with explicit stabilization coverage.
+
+### Lookup-Type Behavior Matrix (for concrete payload/API design)
+
+Flag legend:
+1. `RTL` = `RIGHT_TO_LEFT`
+2. `IB/IL/IM` = `IGNORE_BASE / IGNORE_LIGATURES / IGNORE_MARKS`
+3. `MFS/MAT` = `USE_MARK_FILTERING_SET / MARK_ATTACHMENT_TYPE_MASK`
+
+Global flag notes:
+1. `IB/IL/IM` are generally meaningful for matching/traversal behavior.
+2. `MFS/MAT` are most relevant where marks participate in matching/attachment.
+3. `RTL` is meaningful for GPOS type 3 and otherwise typically ignored.
+
+#### GSUB lookup types
+| Type | Coverage/context needed | ClassDef use | Buffer operation | Glyph count delta | Forwards to other lookups | Flag notes |
+|---|---|---|---|---|---|---|
+| 1 Single | coverage of input glyphs | no | replace 1 glyph with 1 glyph | 0 | no | IB/IL/IM |
+| 2 Multiple | coverage of input glyphs | no | replace 1 glyph with sequence | `+n-1` | no | IB/IL/IM |
+| 3 Alternate | coverage of input glyphs | no | replace 1 glyph with selected alternative | 0 | no | IB/IL/IM |
+| 4 Ligature | coverage for first component | no | replace sequence with 1 ligature glyph | `-(n-1)` | no | IB/IL/IM |
+| 5 Contextual | coverage + rules (glyph/class/coverage by format) | format 2 | conditional substitutions on matched input span | variable | yes (SequenceLookupRecords) | IB/IL/IM, MFS/MAT as needed |
+| 6 Chaining Contextual | input + backtrack + lookahead context | format 2 | conditional substitutions with backtrack/lookahead | variable | yes (SequenceLookupRecords) | IB/IL/IM, MFS/MAT as needed |
+| 7 Extension | none directly; wraps another lookup subtable | inherited | delegate | inherited | yes (to underlying type) | inherited |
+| 8 Reverse Chaining Single | input coverage + backtrack/lookahead coverages | no | replace 1 glyph in reverse-chaining context | 0 | no | IB/IL/IM |
+
+#### GPOS lookup types
+| Type | Coverage/context needed | ClassDef use | Buffer operation | Glyph count delta | Forwards to other lookups | Flag notes |
+|---|---|---|---|---|---|---|
+| 1 Single Adjustment | coverage of adjusted glyphs | no | apply value record to one glyph | 0 | no | IB/IL/IM |
+| 2 Pair Adjustment | coverage of first glyph + pair/class data | format 2 | adjust pair positioning/advance | 0 | no | IB/IL/IM |
+| 3 Cursive Attachment | coverage of cursive glyphs + entry/exit anchors | no | connect adjacent cursive glyphs | 0 | no | `RTL` meaningful here |
+| 4 MarkToBase | mark coverage + base coverage + anchors | no (mark classes, not ClassDef table) | attach mark to base anchor | 0 | no | IM/MFS/MAT important |
+| 5 MarkToLigature | mark coverage + ligature coverage + anchors | no (mark classes, not ClassDef table) | attach mark to ligature component anchor | 0 | no | IM/MFS/MAT important |
+| 6 MarkToMark | mark1 coverage + mark2 coverage + anchors | no (mark classes, not ClassDef table) | attach mark to mark anchor | 0 | no | IM/MFS/MAT important |
+| 7 Contextual Positioning | coverage + rules (glyph/class/coverage by format) | format 2 | conditional positioning on matched span | 0 | yes (SequenceLookupRecords) | IB/IL/IM, MFS/MAT as needed |
+| 8 Chaining Contextual Positioning | input + backtrack + lookahead context | format 2 | conditional positioning with backtrack/lookahead | 0 | yes (SequenceLookupRecords) | IB/IL/IM, MFS/MAT as needed |
+| 9 Extension | none directly; wraps another lookup subtable | inherited | delegate | 0 | yes (to underlying type) | inherited |
+
+#### Consequences for Coverage/ClassDef abstraction
+1. `Coverage` can remain format-hidden as long as semantic API provides `Match(glyph) -> (coverageIndex, ok)`.
+2. `ClassDef` can remain format-hidden as long as semantic API provides `Lookup(glyph) -> classID` with class `0` as default/unmapped.
+3. `otlayout` does not need raw Coverage/ClassDef format knowledge for shaping logic; typed lookup payload semantics are the high-value refactor target.
+
+### Minimum Payload API Surface (separate design table)
+This section defines the minimum semantic payload contract needed by `otlayout`, independent of on-disk format layout.
+
+#### Shared helper payload API
+| Helper | Minimum API surface | Notes |
+|---|---|---|
+| `CoverageRef` | `Match(g GlyphIndex) (int, bool)` | hides coverage format 1/2 |
+| `ClassDefRef` | `Lookup(g GlyphIndex) int` | hides classdef format 1/2 |
+| `SequenceLookupRecord` | `SequenceIndex`, `LookupListIndex` | nested lookup application |
+| `SequenceRule` | `InputGlyphs []GlyphIndex`, `Records []SequenceLookupRecord` | contextual glyph form |
+| `ClassSequenceRule` | `InputClasses []uint16`, `Records []SequenceLookupRecord` | contextual class form |
+| `ChainedSequenceRule` | `Backtrack []GlyphIndex`, `Input []GlyphIndex`, `Lookahead []GlyphIndex`, `Records []SequenceLookupRecord` | chaining glyph form |
+| `ChainedClassRule` | `Backtrack []uint16`, `Input []uint16`, `Lookahead []uint16`, `Records []SequenceLookupRecord` | chaining class form |
+
+#### GSUB minimum payload API
+| GSUB type | Minimum semantic payload API surface | Notes for `otlayout` |
+|---|---|---|
+| 1 Single | `DeltaGlyphID() (int16, bool)` (fmt1), `SubstituteByCoverage(inx int) (GlyphIndex, bool)` (fmt2) | one-in one-out substitution |
+| 2 Multiple | `SequenceByCoverage(inx int) []GlyphIndex` | one-in many-out |
+| 3 Alternate | `AlternatesByCoverage(inx int) []GlyphIndex` | user/feature choice among alternates |
+| 4 Ligature | `LigaturesByCoverage(inx int) []LigatureRule` where `LigatureRule{Components []GlyphIndex, Ligature GlyphIndex}` | first component selected by coverage |
+| 5 Contextual | fmt1: `RulesByCoverage(inx int) []SequenceRule`; fmt2: `ClassDef() ClassDefRef`, `RulesByFirstClass(class int) []ClassSequenceRule`; fmt3: `InputCoverages() []CoverageRef`, `Records() []SequenceLookupRecord` | no raw `VarArray` in API |
+| 6 Chaining Contextual | fmt1: `RulesByCoverage(inx int) []ChainedSequenceRule`; fmt2: `BacktrackClassDef()`, `InputClassDef()`, `LookaheadClassDef()`, `RulesByFirstClass(class int) []ChainedClassRule`; fmt3: `BacktrackCoverages()`, `InputCoverages()`, `LookaheadCoverages()`, `Records()` | includes backtrack/lookahead |
+| 7 Extension | `ResolvedType() LayoutTableLookupType`, `ResolvedSubtable() *LookupNode` | unwrap indirection, preserve diagnostics metadata |
+| 8 Reverse Chaining Single | `BacktrackCoverages() []CoverageRef`, `LookaheadCoverages() []CoverageRef`, `SubstituteByCoverage(inx int) (GlyphIndex, bool)` | replacement is indexed by input coverage index |
+
+#### GPOS minimum payload API
+| GPOS type | Minimum semantic payload API surface | Notes for `otlayout` |
+|---|---|---|
+| 1 Single Adjustment | `ValueByCoverage(inx int) (ValueRecord, ValueFormat, bool)` | fmt1 shared value, fmt2 per-coverage value |
+| 2 Pair Adjustment | fmt1: `PairSetByCoverage(inx int) []PairValueRecord`; fmt2: `ClassDef1()`, `ClassDef2()`, `ClassValue(c1, c2 int) (ValueRecord, ValueRecord, bool)` | supports glyph-pair and class-pair positioning |
+| 3 Cursive Attachment | `EntryExitByCoverage(inx int) (entry Anchor, exit Anchor, ok bool)` | connection logic uses neighboring glyph selection + lookup flag semantics |
+| 4 MarkToBase | `MarkRecordByCoverage(inx int) (markClass uint16, markAnchor Anchor, ok bool)`, `BaseAnchor(baseCoverageInx int, markClass uint16) (Anchor, bool)`, `BaseCoverage() CoverageRef` | mark attachment |
+| 5 MarkToLigature | `MarkRecordByCoverage(inx int) (markClass uint16, markAnchor Anchor, ok bool)`, `LigatureAnchors(ligCoverageInx int, componentInx int, markClass uint16) (Anchor, bool)`, `LigatureCoverage() CoverageRef` | mark to ligature component attachment |
+| 6 MarkToMark | `Mark1RecordByCoverage(inx int) (markClass uint16, markAnchor Anchor, ok bool)`, `Mark2Anchor(mark2CoverageInx int, markClass uint16) (Anchor, bool)`, `Mark2Coverage() CoverageRef` | mark to mark attachment |
+| 7 Contextual Positioning | same semantic contract as GSUB-5 contextual payloads | output is positioning via nested lookups |
+| 8 Chaining Contextual Positioning | same semantic contract as GSUB-6 chaining payloads | output is positioning via nested lookups |
+| 9 Extension | `ResolvedType() LayoutTableLookupType`, `ResolvedSubtable() *LookupNode` | unwrap indirection, preserve diagnostics metadata |
+
 ## Public APIs, Interfaces, and Type Changes
 1. Additions:
    1. New concrete types for shared layout graph and lookup payloads.

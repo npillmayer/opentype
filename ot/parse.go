@@ -1501,6 +1501,7 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ta
 		return ll.err
 	}
 	lytt.LookupList = ll
+	lytt.lookupGraph = parseConcreteLookupListGraph(b, isGPos)
 
 	// Collect GDEF requirements from lookup flags during the first parse pass.
 	for i := 0; i < ll.array.Len(); i++ {

@@ -22,6 +22,7 @@ type LayoutTable struct {
 	FeatureList  TagRecordMap
 	scriptGraph  *ScriptList
 	featureGraph *FeatureList
+	lookupGraph  *LookupListGraph
 	LookupList   LookupList
 	Requirements LayoutRequirements
 	header       *LayoutHeader
@@ -76,6 +77,15 @@ func (t *LayoutTable) FeatureGraph() *FeatureList {
 		return nil
 	}
 	return t.featureGraph
+}
+
+// LookupGraph returns the concrete lookup graph for this layout table.
+// During transition this may be nil when not yet parsed/instantiated.
+func (t *LayoutTable) LookupGraph() *LookupListGraph {
+	if t == nil {
+		return nil
+	}
+	return t.lookupGraph
 }
 
 // LayoutHeader represents header information common to the layout tables.

@@ -129,6 +129,40 @@ func assertScriptGraphParity(t *testing.T, legacyScripts Navigator, graph *Scrip
 	}
 }
 
+func assertLookupGraphBaseline(t *testing.T, legacy LookupList, graph *LookupListGraph) {
+	t.Helper()
+	if graph == nil {
+		t.Fatalf("expected concrete lookup graph to be parsed")
+	}
+	if graph.Len() != legacy.Len() {
+		t.Fatalf("lookup graph count mismatch: legacy=%d concrete=%d", legacy.Len(), graph.Len())
+	}
+	if graph.Error() != nil {
+		t.Fatalf("unexpected concrete lookup graph parse error: %v", graph.Error())
+	}
+	if graph.Len() == 0 {
+		return
+	}
+	legacyLookup := legacy.Navigate(0)
+	concreteLookup := graph.Lookup(0)
+	if concreteLookup == nil {
+		t.Fatalf("expected concrete lookup[0] to be resolvable")
+	}
+	if concreteLookup.Error() != nil {
+		t.Fatalf("unexpected concrete lookup[0] parse error: %v", concreteLookup.Error())
+	}
+	if concreteLookup.Type != legacyLookup.Type {
+		t.Fatalf("lookup[0] type mismatch: legacy=%d concrete=%d", legacyLookup.Type, concreteLookup.Type)
+	}
+	if concreteLookup.Flag != legacyLookup.Flag {
+		t.Fatalf("lookup[0] flag mismatch: legacy=0x%x concrete=0x%x", legacyLookup.Flag, concreteLookup.Flag)
+	}
+	if int(concreteLookup.SubTableCount) != legacyLookup.subTables.length {
+		t.Fatalf("lookup[0] subtable-count mismatch: legacy=%d concrete=%d",
+			legacyLookup.subTables.length, concreteLookup.SubTableCount)
+	}
+}
+
 func TestParseHeader(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
@@ -208,6 +242,7 @@ func TestParseGPos(t *testing.T) {
 	}
 	assertFeatureGraphLazy(t, gpos.FeatureGraph())
 	assertScriptGraphLazy(t, gpos.ScriptGraph())
+	assertLookupGraphBaseline(t, gpos.LookupList, gpos.LookupGraph())
 	t.Logf("otf.GPOS: %d scripts:", gpos.ScriptList.Map().AsTagRecordMap().Len())
 	assertScriptGraphParity(t, gpos.ScriptList, gpos.ScriptGraph())
 }
@@ -253,6 +288,7 @@ func TestParseGSub(t *testing.T) {
 	}
 	assertFeatureGraphLazy(t, gsub.FeatureGraph())
 	assertScriptGraphLazy(t, gsub.ScriptGraph())
+	assertLookupGraphBaseline(t, gsub.LookupList, gsub.LookupGraph())
 	assertScriptGraphParity(t, gsub.ScriptList, gsub.ScriptGraph())
 	// t.Logf("otf.GSUB: %d scripts:", len(gsub.scripts))
 	// for i, sc := range gsub.scripts {

@@ -286,7 +286,9 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 	if gdefTable := otf.tables[T("GDEF")]; gdefTable != nil {
 		otf.Layout.GDef = gdefTable.Self().AsGDef()
 	}
-	//otf.Layout.Base = otf.tables[T("BASE")].Self().AsBase()
+	if baseTable := otf.tables[T("BASE")]; baseTable != nil {
+		otf.Layout.Base = baseTable.Self().AsBase()
+	}
 	//otf.Layout.Jstf = otf.tables[T("JSTF")].Self().AsJstf()
 
 	// Collect layout requirements from parsed GSUB/GPOS lookup flags.
@@ -529,62 +531,53 @@ func parseHead(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 // scripts and sizes in a line of text, whether the glyphs are in the same font or
 // in different fonts.
 func parseBase(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
-	var err error
 	base := newBaseTable(tag, b, offset, size)
-	// The BASE table begins with offsets to Axis tables that describe layout data for
-	// the horizontal and vertical layout directions of text. A font can provide layout
-	// data for both text directions or for only one text direction.
-	xaxis, errx := parseLink16(b, 4, b, "Axis")
-	yaxis, erry := parseLink16(b, 6, b, "Axis")
-	if errx != nil || erry != nil {
-		ec.addError(tag, "Axis", "BASE table axis-tables", SeverityCritical, offset)
-		return nil, errFontFormat("BASE table axis-tables")
+	if len(b) < 8 {
+		ec.addError(tag, "Header", fmt.Sprintf("BASE table too small: %d bytes (need at least 8)", len(b)), SeverityCritical, offset)
+		return nil, errFontFormat("BASE table header too small")
 	}
-	err = parseBaseAxis(base, 0, xaxis, err)
-	err = parseBaseAxis(base, 1, yaxis, err)
-	if err != nil {
-		tracer().Errorf("error parsing BASE table: %v", err)
-		return base, err
-	}
-	return base, err
-}
 
-// An Axis table consists of offsets, measured from the beginning of the Axis table,
-// to a BaseTagList and a BaseScriptList.
-// link may be NULL.
-func parseBaseAxis(base *BaseTable, hOrV int, link NavLink, err error) error {
-	if err != nil {
-		return err
-	}
-	base.axisTables[hOrV] = AxisTable{}
-	if link.IsNull() {
-		return nil
-	}
-	axisHeader := link.Jump()
-	axisbase := axisHeader.Bytes()
-	// The BaseTagList enumerates all baselines used to render the scripts in the
-	// text layout direction. If no baseline data is available for a text direction,
-	// the offset to the corresponding BaseTagList may be set to NULL.
-	if basetags, err := parseLink16(axisbase, 0, axisbase, "BaseTagList"); err == nil {
-		b := basetags.Jump()
-		base.axisTables[hOrV].baselineTags = parseTagList(b.Bytes())
-		tracer().Debugf("axis table %d has %d entries", hOrV,
-			base.axisTables[hOrV].baselineTags.Count)
-	}
-	// For each script listed in the BaseScriptList table, a BaseScriptRecord must be
-	// defined that identifies the script and references its layout data.
-	// BaseScriptRecords are stored in the baseScriptRecords array, ordered
-	// alphabetically by the baseScriptTag in each record.
-	if basescripts, err := parseLink16(axisbase, 2, axisbase, "BaseScriptList"); err == nil {
-		b := basescripts.Jump()
-		base.axisTables[hOrV].baseScriptRecords = parseTagRecordMap16(b.Bytes(),
-			0, b.Bytes(), "BaseScriptList", "BaseScript")
+	base.Major = b.U16(0)
+	base.Minor = b.U16(2)
+	xOff := b.U16(4)
+	yOff := b.U16(6)
 
-		tracer().Debugf("axis table %d has %d entries", hOrV,
-			base.axisTables[hOrV].baselineTags.Count)
+	if base.Major != 1 {
+		ec.addError(tag, "Version", fmt.Sprintf("unsupported BASE major version %d", base.Major), SeverityMajor, offset)
+		base.err = fmt.Errorf("unsupported BASE major version %d", base.Major)
 	}
-	tracer().Infof("BASE axis %d has no/unreadable entires", hOrV)
-	return nil
+	if base.Minor >= 1 {
+		if len(b) < 12 {
+			ec.addError(tag, "Header", "BASE v1.1+ header incomplete", SeverityMajor, offset)
+			if base.err == nil {
+				base.err = errFontFormat("BASE v1.1+ header incomplete")
+			}
+		} else {
+			base.itemVarStoreOffset = b.U32(8)
+		}
+	}
+
+	if xOff != 0 {
+		axis, ok := viewBaseAxis(b, xOff)
+		base.horizontal = axis
+		if !ok {
+			ec.addWarning(tag, fmt.Sprintf("horizontal axis offset %d cannot be parsed", xOff), offset+uint32(xOff))
+			if base.err == nil && axis != nil {
+				base.err = axis.err
+			}
+		}
+	}
+	if yOff != 0 {
+		axis, ok := viewBaseAxis(b, yOff)
+		base.vertical = axis
+		if !ok {
+			ec.addWarning(tag, fmt.Sprintf("vertical axis offset %d cannot be parsed", yOff), offset+uint32(yOff))
+			if base.err == nil && axis != nil {
+				base.err = axis.err
+			}
+		}
+	}
+	return base, nil
 }
 
 // --- CMap table ------------------------------------------------------------

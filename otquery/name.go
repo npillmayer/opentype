@@ -13,7 +13,7 @@ const (
 )
 
 type nameEntry struct {
-	key   ot.NameKey
+	key   nameKey
 	value string
 }
 
@@ -45,7 +45,7 @@ func loadNameEntries(otf *ot.Font) []nameEntry {
 	entries := make([]nameEntry, 0, count)
 	for i := 0; i < count; i++ {
 		rec := b[nameHeaderSize+i*nameRecordSize : nameHeaderSize+(i+1)*nameRecordSize]
-		key := ot.NameKey{
+		key := nameKey{
 			PlatformID: u16(rec[0:2]),
 			EncodingID: u16(rec[2:4]),
 			LanguageID: u16(rec[4:6]),
@@ -70,7 +70,7 @@ func loadNameEntries(otf *ot.Font) []nameEntry {
 	return entries
 }
 
-func isSupportedNameEncoding(key ot.NameKey) bool {
+func isSupportedNameEncoding(key nameKey) bool {
 	// Keep current behavior: decode Unicode BMP + Windows BMP entries only.
 	return (key.PlatformID == 0 && key.EncodingID == 3) || (key.PlatformID == 3 && key.EncodingID == 1)
 }
@@ -84,4 +84,3 @@ func decodeNameUTF16(str []byte) (string, error) {
 	}
 	return string(s), nil
 }
-

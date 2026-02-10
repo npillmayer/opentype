@@ -225,7 +225,6 @@ func (t Tag) String() string {
 type Table interface {
 	Extent() (uint32, uint32) // offset and byte size within the font's binary data
 	Binary() []byte           // the bytes of this table; should be treatet as read-only by clients
-	Fields() Navigator        // start for navigation calls
 	Self() TableSelf          // reference to itself
 }
 
@@ -271,11 +270,6 @@ func (tb *tableBase) Binary() []byte {
 
 func (tb *tableBase) Self() TableSelf {
 	return TableSelf{tableBase: tb}
-}
-
-func (tb *tableBase) Fields() Navigator {
-	tableTag := tb.name.String()
-	return NavigatorFactory(tableTag, tb.data, tb.data)
 }
 
 // TableSelf is a reference to a table. Its primary use is for converting
@@ -389,13 +383,7 @@ func (tself TableSelf) AsHMtx() *HMtxTable {
 
 // HeadTable gives global information about the font.
 // Only a small subset of fields are made public by HeadTable, as they are
-// needed for consistency-checks. To read any of the other fields of table 'head' use:
-//
-//	head   := otf.Table(T("head"))
-//	fields := head.Fields().Get(n)     // get nth field value
-//	fields := head.Fields().All()      // get a slice with all field values
-//
-// See also type `Navigator`.
+// needed for consistency-checks.
 type HeadTable struct {
 	tableBase
 	Flags            uint16 // see https://docs.microsoft.com/en-us/typography/opentype/spec/head

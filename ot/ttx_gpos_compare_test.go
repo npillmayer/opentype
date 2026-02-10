@@ -156,15 +156,22 @@ func compareExpectedGPOSLookups(gpos *GPosTable, exp *ttxtest.ExpectedGPOS, indi
 	if exp == nil {
 		return fmt.Errorf("nil expected GPOS")
 	}
+	graph := gpos.LookupGraph()
+	if graph == nil {
+		return fmt.Errorf("nil GPOS lookup graph")
+	}
 	for _, i := range indices {
-		if i >= gpos.LookupList.Len() {
-			return fmt.Errorf("lookup index %d out of range (GPOS has %d)", i, gpos.LookupList.Len())
+		if i >= graph.Len() {
+			return fmt.Errorf("lookup index %d out of range (GPOS has %d)", i, graph.Len())
 		}
 		if i >= len(exp.Lookups) {
 			return fmt.Errorf("lookup index %d out of range (expected has %d)", i, len(exp.Lookups))
 		}
 		el := exp.Lookups[i]
-		lookup := gpos.LookupList.Navigate(i)
+		lookup := graph.Lookup(i)
+		if lookup == nil {
+			return fmt.Errorf("lookup[%d] missing", i)
+		}
 		if GPosLookupType(lookup.Type) != LayoutTableLookupType(el.Type) {
 			return fmt.Errorf("lookup[%d] type mismatch: got %d, want %d", i, GPosLookupType(lookup.Type), el.Type)
 		}
@@ -176,37 +183,41 @@ func compareExpectedGPOSLookups(gpos *GPosTable, exp *ttxtest.ExpectedGPOS, indi
 				i, lookup.SubTableCount, len(el.Subtables))
 		}
 		for j, est := range el.Subtables {
-			sub := lookup.Subtable(j)
-			if sub == nil {
+			node := lookup.Subtable(j)
+			if node == nil {
 				return fmt.Errorf("lookup[%d] subtable[%d] missing", i, j)
 			}
-			if sub.Format != uint16(est.Format) {
+			enode := effectiveGPosNode(node)
+			if enode == nil {
+				return fmt.Errorf("lookup[%d] subtable[%d] effective node missing", i, j)
+			}
+			if enode.Format != uint16(est.Format) {
 				return fmt.Errorf("lookup[%d] subtable[%d] format mismatch: got %d, want %d",
-					i, j, sub.Format, est.Format)
+					i, j, enode.Format, est.Format)
 			}
-			if sub.LookupType != LayoutTableLookupType(est.Type) {
+			if GPosLookupType(enode.LookupType) != LayoutTableLookupType(est.Type) {
 				return fmt.Errorf("lookup[%d] subtable[%d] type mismatch: got %d, want %d",
-					i, j, sub.LookupType, est.Type)
+					i, j, GPosLookupType(enode.LookupType), est.Type)
 			}
-			switch sub.LookupType {
+			switch GPosLookupType(enode.LookupType) {
 			case GPosLookupTypeSingle:
-				if err := compareSinglePos(sub, est); err != nil {
+				if err := compareSinglePos(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GPosLookupTypePair:
-				if err := comparePairPos(sub, est); err != nil {
+				if err := comparePairPos(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GPosLookupTypeMarkToBase:
-				if err := compareMarkBasePos(lookup, j, sub, est); err != nil {
+				if err := compareMarkBasePos(lookup, j, enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GPosLookupTypeMarkToLigature:
-				if err := compareMarkLigPos(lookup, j, sub, est); err != nil {
+				if err := compareMarkLigPos(lookup, j, enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GPosLookupTypeChainedContextPos:
-				if err := compareChainContextPos(sub, est); err != nil {
+				if err := compareChainContextPos(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			}
@@ -215,8 +226,23 @@ func compareExpectedGPOSLookups(gpos *GPosTable, exp *ttxtest.ExpectedGPOS, indi
 	return nil
 }
 
-func compareSinglePos(sub *LookupSubtable, est ttxtest.ExpectedGPosSubtable) error {
-	coverage, err := coverageGlyphs(sub.Coverage)
+func effectiveGPosNode(node *LookupNode) *LookupNode {
+	if node == nil {
+		return nil
+	}
+	payload := node.GPosPayload()
+	if payload != nil && payload.ExtensionFmt1 != nil && payload.ExtensionFmt1.Resolved != nil {
+		return payload.ExtensionFmt1.Resolved
+	}
+	return node
+}
+
+func compareSinglePos(node *LookupNode, est ttxtest.ExpectedGPosSubtable) error {
+	payload := node.GPosPayload()
+	if payload == nil {
+		return fmt.Errorf("missing GPOS payload")
+	}
+	coverage, err := coverageGlyphs(node.Coverage)
 	if err != nil {
 		return fmt.Errorf("coverage parse: %w", err)
 	}
@@ -232,40 +258,37 @@ func compareSinglePos(sub *LookupSubtable, est ttxtest.ExpectedGPosSubtable) err
 			return fmt.Errorf("coverage[%d] mismatch: got %d, want %d", i, coverage[i], gid)
 		}
 	}
-	switch sub.Format {
+	switch node.Format {
 	case 1:
-		support, ok := sub.Support.(struct {
-			Format ValueFormat
-			Record ValueRecord
-		})
-		if !ok {
+		if payload.SingleFmt1 == nil {
 			return fmt.Errorf("missing single pos support")
 		}
-		if uint16(support.Format) != est.ValueFormat {
-			return fmt.Errorf("value format mismatch: got %d, want %d", support.Format, est.ValueFormat)
+		if uint16(payload.SingleFmt1.ValueFormat) != est.ValueFormat {
+			return fmt.Errorf("value format mismatch: got %d, want %d", payload.SingleFmt1.ValueFormat, est.ValueFormat)
 		}
-		if err := compareValueRecord(ValueFormat(est.ValueFormat), support.Record, est.Value); err != nil {
+		if err := compareValueRecord(ValueFormat(est.ValueFormat), payload.SingleFmt1.Value, est.Value); err != nil {
 			return fmt.Errorf("value record: %w", err)
 		}
 	default:
-		return fmt.Errorf("unsupported single pos format %d", sub.Format)
+		return fmt.Errorf("unsupported single pos format %d", node.Format)
 	}
 	return nil
 }
 
-func comparePairPos(sub *LookupSubtable, est ttxtest.ExpectedGPosSubtable) error {
-	if sub.Format != 1 {
-		return fmt.Errorf("unsupported pair pos format %d", sub.Format)
+func comparePairPos(node *LookupNode, est ttxtest.ExpectedGPosSubtable) error {
+	if node.Format != 1 {
+		return fmt.Errorf("unsupported pair pos format %d", node.Format)
 	}
-	formats, ok := sub.Support.([2]ValueFormat)
-	if !ok {
-		return fmt.Errorf("missing pair pos value formats")
+	payload := node.GPosPayload()
+	if payload == nil || payload.PairFmt1 == nil {
+		return fmt.Errorf("missing pair pos payload")
 	}
+	formats := [2]ValueFormat{payload.PairFmt1.ValueFormat1, payload.PairFmt1.ValueFormat2}
 	if uint16(formats[0]) != est.ValueFormat1 || uint16(formats[1]) != est.ValueFormat2 {
 		return fmt.Errorf("value format mismatch: got %d/%d, want %d/%d",
 			formats[0], formats[1], est.ValueFormat1, est.ValueFormat2)
 	}
-	coverage, err := coverageGlyphs(sub.Coverage)
+	coverage, err := coverageGlyphs(node.Coverage)
 	if err != nil {
 		return fmt.Errorf("coverage parse: %w", err)
 	}
@@ -281,10 +304,10 @@ func comparePairPos(sub *LookupSubtable, est ttxtest.ExpectedGPosSubtable) error
 			return fmt.Errorf("coverage[%d] mismatch: got %d, want %d", i, coverage[i], first)
 		}
 		expPairs := est.PairValues[name]
-		actualPairs, err := pairSetRecords(sub, i, formats[0], formats[1])
-		if err != nil {
-			return fmt.Errorf("pair set %q: %w", name, err)
+		if i >= len(payload.PairFmt1.PairSets) {
+			return fmt.Errorf("pair set %q missing", name)
 		}
+		actualPairs := payload.PairFmt1.PairSets[i]
 		if len(actualPairs) != len(expPairs) {
 			return fmt.Errorf("pair set %q length mismatch: got %d, want %d", name, len(actualPairs), len(expPairs))
 		}
@@ -308,29 +331,30 @@ func comparePairPos(sub *LookupSubtable, est ttxtest.ExpectedGPosSubtable) error
 	return nil
 }
 
-func compareChainContextPos(sub *LookupSubtable, est ttxtest.ExpectedGPosSubtable) error {
-	if sub.Format != 3 {
-		return fmt.Errorf("unsupported chain context pos format %d", sub.Format)
+func compareChainContextPos(node *LookupNode, est ttxtest.ExpectedGPosSubtable) error {
+	if node.Format != 3 {
+		return fmt.Errorf("unsupported chain context pos format %d", node.Format)
 	}
-	seq, ok := sub.Support.(*SequenceContext)
-	if !ok {
-		return fmt.Errorf("missing sequence context support")
+	payload := node.GPosPayload()
+	if payload == nil || payload.ChainingContextFmt3 == nil {
+		return fmt.Errorf("missing chain context pos payload")
 	}
-	if err := compareCoverageSeq(seq.BacktrackCoverage, est.BacktrackCoverage); err != nil {
+	seq := payload.ChainingContextFmt3
+	if err := compareCoverageSeq(seq.BacktrackCoverages, est.BacktrackCoverage); err != nil {
 		return fmt.Errorf("backtrack coverage: %w", err)
 	}
-	if err := compareCoverageSeq(seq.InputCoverage, est.InputCoverage); err != nil {
+	if err := compareCoverageSeq(seq.InputCoverages, est.InputCoverage); err != nil {
 		return fmt.Errorf("input coverage: %w", err)
 	}
-	if err := compareCoverageSeq(seq.LookaheadCoverage, est.LookAheadCoverage); err != nil {
+	if err := compareCoverageSeq(seq.LookaheadCoverages, est.LookAheadCoverage); err != nil {
 		return fmt.Errorf("lookahead coverage: %w", err)
 	}
-	if len(sub.LookupRecords) != len(est.PosLookupRecords) {
-		return fmt.Errorf("lookup record count mismatch: got %d, want %d", len(sub.LookupRecords), len(est.PosLookupRecords))
+	if len(seq.Records) != len(est.PosLookupRecords) {
+		return fmt.Errorf("lookup record count mismatch: got %d, want %d", len(seq.Records), len(est.PosLookupRecords))
 	}
 	for i := range est.PosLookupRecords {
 		exp := est.PosLookupRecords[i]
-		got := sub.LookupRecords[i]
+		got := seq.Records[i]
 		if int(got.SequenceIndex) != exp.SequenceIndex || int(got.LookupListIndex) != exp.LookupListIndex {
 			return fmt.Errorf("lookup record[%d] mismatch: got (%d,%d), want (%d,%d)",
 				i, got.SequenceIndex, got.LookupListIndex, exp.SequenceIndex, exp.LookupListIndex)
@@ -339,23 +363,19 @@ func compareChainContextPos(sub *LookupSubtable, est ttxtest.ExpectedGPosSubtabl
 	return nil
 }
 
-func compareMarkBasePos(lookup Lookup, subIndex int, sub *LookupSubtable, est ttxtest.ExpectedGPosSubtable) error {
-	if sub.Format != 1 {
-		return fmt.Errorf("unsupported mark-to-base format %d", sub.Format)
+func compareMarkBasePos(lookup *LookupTable, subIndex int, node *LookupNode, est ttxtest.ExpectedGPosSubtable) error {
+	if node.Format != 1 {
+		return fmt.Errorf("unsupported mark-to-base format %d", node.Format)
 	}
-	support, ok := sub.Support.(struct {
-		BaseCoverage   Coverage
-		MarkClassCount uint16
-		MarkArray      MarkArray
-		BaseArray      []BaseRecord
-	})
-	if !ok {
-		return fmt.Errorf("missing mark-to-base support")
+	payload := node.GPosPayload()
+	if payload == nil || payload.MarkToBaseFmt1 == nil {
+		return fmt.Errorf("missing mark-to-base payload")
 	}
+	support := payload.MarkToBaseFmt1
 	if int(support.MarkClassCount) != est.MarkClassCount {
 		return fmt.Errorf("mark class count mismatch: got %d, want %d", support.MarkClassCount, est.MarkClassCount)
 	}
-	markCov, err := coverageGlyphs(sub.Coverage)
+	markCov, err := coverageGlyphs(node.Coverage)
 	if err != nil {
 		return fmt.Errorf("mark coverage parse: %w", err)
 	}
@@ -405,23 +425,19 @@ func compareMarkBasePos(lookup Lookup, subIndex int, sub *LookupSubtable, est tt
 	return nil
 }
 
-func compareMarkLigPos(lookup Lookup, subIndex int, sub *LookupSubtable, est ttxtest.ExpectedGPosSubtable) error {
-	if sub.Format != 1 {
-		return fmt.Errorf("unsupported mark-to-ligature format %d", sub.Format)
+func compareMarkLigPos(lookup *LookupTable, subIndex int, node *LookupNode, est ttxtest.ExpectedGPosSubtable) error {
+	if node.Format != 1 {
+		return fmt.Errorf("unsupported mark-to-ligature format %d", node.Format)
 	}
-	support, ok := sub.Support.(struct {
-		LigatureCoverage Coverage
-		MarkClassCount   uint16
-		MarkArray        MarkArray
-		LigatureArray    []LigatureAttach
-	})
-	if !ok {
-		return fmt.Errorf("missing mark-to-ligature support")
+	payload := node.GPosPayload()
+	if payload == nil || payload.MarkToLigatureFmt1 == nil {
+		return fmt.Errorf("missing mark-to-ligature payload")
 	}
+	support := payload.MarkToLigatureFmt1
 	if int(support.MarkClassCount) != est.MarkClassCount {
 		return fmt.Errorf("mark class count mismatch: got %d, want %d", support.MarkClassCount, est.MarkClassCount)
 	}
-	markCov, err := coverageGlyphs(sub.Coverage)
+	markCov, err := coverageGlyphs(node.Coverage)
 	if err != nil {
 		return fmt.Errorf("mark coverage parse: %w", err)
 	}
@@ -493,14 +509,15 @@ func compareCoverageNames(actual []GlyphIndex, exp []string) error {
 	return nil
 }
 
-func lookupSubtableBytes(lookup Lookup, i int) (binarySegm, error) {
-	if lookup.err != nil || i >= int(lookup.SubTableCount) {
+func lookupSubtableBytes(lookup *LookupTable, i int) (binarySegm, error) {
+	if lookup == nil || lookup.err != nil || i >= int(lookup.SubTableCount) {
 		return nil, fmt.Errorf("lookup subtable %d out of range", i)
 	}
-	n := lookup.subTables.Get(i).U16(0)
-	link := makeLink16(n, lookup.loc.Bytes(), "LookupSubtable")
-	loc := link.Jump()
-	return binarySegm(loc.Bytes()), nil
+	n := int(lookup.subtableOffsets[i])
+	if n <= 0 || n >= len(lookup.raw) {
+		return nil, fmt.Errorf("lookup subtable %d offset out of range", i)
+	}
+	return lookup.raw[n:], nil
 }
 
 func parseMarkBaseAnchors(b binarySegm, classCount int) ([]Anchor, []uint16, [][]Anchor, error) {
@@ -741,37 +758,4 @@ func compareValueRecord(format ValueFormat, actual ValueRecord, exp ttxtest.Expe
 		}
 	}
 	return nil
-}
-
-func pairSetRecords(sub *LookupSubtable, setIndex int, vf1, vf2 ValueFormat) ([]PairValueRecord, error) {
-	if sub.Index == nil {
-		return nil, fmt.Errorf("pair pos index missing")
-	}
-	loc, err := sub.Index.Get(setIndex, false)
-	if err != nil {
-		return nil, err
-	}
-	if loc.Size() < 2 {
-		return nil, fmt.Errorf("pair set too small")
-	}
-	cnt := int(loc.U16(0))
-	recSize1 := valueRecordSize(vf1)
-	recSize2 := valueRecordSize(vf2)
-	need := 2 + cnt*(2+recSize1+recSize2)
-	if loc.Size() < need {
-		return nil, fmt.Errorf("pair set size %d < %d", loc.Size(), need)
-	}
-	seg := binarySegm(loc.Bytes())
-	out := make([]PairValueRecord, cnt)
-	offset := 2
-	for i := 0; i < cnt; i++ {
-		sg, _ := seg.u16(offset)
-		offset += 2
-		v1, s1 := parseValueRecord(seg, offset, vf1)
-		offset += s1
-		v2, s2 := parseValueRecord(seg, offset, vf2)
-		offset += s2
-		out[i] = PairValueRecord{SecondGlyph: sg, Value1: v1, Value2: v2}
-	}
-	return out, nil
 }

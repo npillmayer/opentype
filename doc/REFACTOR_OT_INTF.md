@@ -420,7 +420,7 @@ This section records the current behavior in `ot/` for lookup decomposition deta
    1. GPOS single/pair/cursive/mark-attachment execution (types 1/2/3/4/5/6) now consumes concrete payloads first.
    2. Runtime path now executes concrete payload semantics only.
 
-#### Current status snapshot (2026-02-09)
+#### Current status snapshot (2026-02-10)
 1. `Phase 1` is complete for the shared graph migration track:
    1. concrete `ScriptList` / `Script` / `LangSys` / `FeatureList` / `Feature` and lazy graph access are present in parallel with legacy interfaces.
 2. `Phase 2` is active:
@@ -436,10 +436,10 @@ This section records the current behavior in `ot/` for lookup decomposition deta
       6. negative malformed-input checks for concrete GSUB/GPOS parsing (offset/format truncation and recursive extension guards),
       7. concurrent access checks for extension-resolved and context-heavy concrete nodes,
       8. `otlayout` runtime golden behavior checks for concrete-first GPOS application (single/pair/chaining forwarding plus mark-base/mark-ligature attachment metadata).
-3. Transitional coexistence remains intact:
-   1. parser still populates both legacy `LookupList` and concrete `LookupGraph`.
-   2. legacy consumers still call the old API surface, now with lookup-subtable materialization adapter-backed from concrete lookup nodes.
-   3. transitional helper parsing (`parseLookupSubtable`) is also adapter-backed from concrete lookup parsing.
+3. Transitional coexistence remains only in tests:
+   1. parser now populates concrete `LookupGraph` only; `LayoutTable.LookupList` parser wiring has been removed.
+   2. production `ot/` no longer exports legacy `LookupList` / `LookupSubtable` wrappers or adapter plumbing.
+   3. legacy lookup-shape shims have been removed; structural/parity tests now assert concrete `LookupNode` payloads directly.
    4. `otlayout` GSUB runtime (lookup types 1–8, with type 7 unwrapped) now executes concrete payloads only.
    5. `otlayout` GPOS runtime (lookup types 1–8, with type 9 unwrapped) now executes concrete payloads only, including unresolved anchor-reference bookkeeping for cursive/mark-attachment paths.
 
@@ -695,12 +695,12 @@ Scope of this matrix:
 |---|---|---|---|
 | `ot/nav_test.go` | direct Navigator-chain behavior and `AsNameRecords(table.Fields())` | migrate/split | Keep only deferred `Fields()`-related tests; remove GSUB/GPOS nav-chain assertions. |
 | `ot/parse_test.go` | `assertScriptGraphParity` and legacy traversal checks | migrate | Convert to concrete-only assertions for script/feature/lookup graphs. |
-| `ot/parse_refactor_parity_test.go` | legacy-vs-concrete parity via `LookupList.Navigate` | drop | Remove after legacy lookup adapter track is retired. |
-| `ot/refactor_lookup_legacy_adapter_test.go` | adapter projection from concrete to legacy | drop | Remove with adapter deletion. |
-| `ot/lookup_list_subset_test.go` | `RootList` subset contract | migrate/drop | Replace with concrete lookup selection tests or remove if no public subset API remains. |
-| `ot/ttx_gsub_compare_test.go` | legacy lookup traversal via `Navigate` | migrate | Repoint to concrete lookup graph traversal. |
-| `ot/ttx_gpos_compare_test.go` | legacy lookup traversal via `Navigate` | migrate | Repoint to concrete lookup graph traversal. |
-| `ot/parse_gsub_type8_test.go` | legacy lookup traversal via `Navigate` | migrate | Repoint to concrete lookup graph traversal. |
+| `ot/parse_refactor_parity_test.go` | legacy-vs-concrete parity via `LookupList.Navigate` | dropped | removed (legacy parser/list wiring removed). |
+| `ot/refactor_lookup_legacy_adapter_test.go` | adapter projection from concrete to legacy | dropped | removed (legacy list traversal dropped from parser wiring). |
+| `ot/lookup_list_subset_test.go` | `RootList` subset contract | dropped | removed with legacy `LookupList` wrapper deletion. |
+| `ot/ttx_gsub_compare_test.go` | legacy lookup traversal via `Navigate` | migrated | now traverses concrete lookup graph and validates concrete GSUB payloads directly (including contextual rules). |
+| `ot/ttx_gpos_compare_test.go` | legacy lookup traversal via `Navigate` | migrated | now traverses concrete lookup graph and validates concrete GPOS payloads directly; anchor details still decoded from subtable bytes where needed. |
+| `ot/parse_gsub_type8_test.go` | legacy lookup traversal via `Navigate` | migrated | now traverses concrete lookup graph. |
 | `otlayout/feature_functional_test.go` | fixture implements `Params() ot.Navigator` | migrate | Update fixture/API once `Feature.Params` is removed/replaced. |
 
 ## Ordered Cleanup Checklist (Code Only)
@@ -718,10 +718,10 @@ This checklist follows a low-risk cut order: remove production dependencies firs
 - [ ] Ensure `otquery` remains green with current deferred `name` bridge.
 
 ### Stage 2: Remove legacy GSUB/GPOS fields and wrappers in `ot/layout.go`
-- [ ] Delete `LayoutTable.ScriptList` and `LayoutTable.FeatureList` fields.
-- [ ] Delete legacy `langSys` and `feature` navigator wrapper types.
-- [ ] Delete `Lookup` nav-compat methods (`LookupTag`, `IsTagRecordMap`, `AsTagRecordMap`) if no callsites remain.
-- [ ] Remove `LookupList` nav-interface conformance (`RootList`/`NavList`) where no longer needed.
+- [x] Delete `LayoutTable.ScriptList` and `LayoutTable.FeatureList` fields.
+- [x] Delete legacy `langSys` and `feature` navigator wrapper types.
+- [x] Delete `Lookup` nav-compat methods (`LookupTag`, `IsTagRecordMap`, `AsTagRecordMap`) if no callsites remain.
+- [x] Remove `LookupList` nav-interface conformance (`RootList`/`NavList`) where no longer needed.
 
 ### Stage 3: Shrink/retire navigation factory paths for layout
 - [ ] Remove `NavigatorFactory` routing cases for `ScriptList`/`Script`/`LangSys`/`Feature`.
@@ -734,8 +734,8 @@ This checklist follows a low-risk cut order: remove production dependencies firs
 - [ ] Re-run full package tests and static grep for leftover GSUB/GPOS nav calls.
 
 ### Stage 5: Test migration and deletion
-- [ ] Convert remaining parity tests to concrete-only behavior checks.
-- [ ] Delete legacy adapter tests tied to removed code paths.
+- [x] Convert remaining parity tests to concrete-only behavior checks.
+- [x] Delete legacy adapter tests tied to removed code paths.
 - [ ] Keep/adjust only tests that exercise deferred `Fields()` behavior.
 
 ### Stage 6: Deferred follow-up track (`name` + `Fields`)

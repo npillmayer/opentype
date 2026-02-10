@@ -674,7 +674,7 @@ func parseCMap(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 type encodingRecord struct {
 	platformId uint16
 	encodingId uint16
-	link       NavLink
+	link       navLink
 	format     uint16
 	size       int
 	width      int // encoding width in bytes
@@ -1437,20 +1437,15 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ta
 		return fmt.Errorf("lookup list count %d exceeds maximum %d", count, MaxLookupCount)
 	}
 
-	const layoutListName = "LookupList"
-	ll := LookupList{name: layoutListName, base: b, isGPos: isGPos}
-	ll.array, ll.err = parseArray16(b, 0, "Lookup", "LookupSubtables")
-	if ll.err != nil {
-		return ll.err
+	lookupOffsets, perr := parseArray16(b, 0, "Lookup", "LookupSubtables")
+	if perr != nil {
+		return perr
 	}
-	ll.lookupsCache = make([]Lookup, ll.array.Len())
-	ll.lookupsParsed = make([]bool, ll.array.Len())
-	lytt.LookupList = ll
 	lytt.lookupGraph = parseConcreteLookupListGraph(b, isGPos)
 
 	// Collect GDEF requirements from lookup flags during the first parse pass.
-	for i := 0; i < ll.array.Len(); i++ {
-		off := int(ll.array.Get(i).U16(0))
+	for i := 0; i < lookupOffsets.Len(); i++ {
+		off := int(lookupOffsets.Get(i).U16(0))
 		if off == 0 {
 			continue
 		}
@@ -1463,31 +1458,6 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ta
 	}
 
 	return nil
-}
-
-func parseLookupSubtable(b binarySegm, lookupType LayoutTableLookupType) LookupSubtable {
-	return parseLookupSubtableWithDepth(b, lookupType, 0)
-}
-
-func parseLookupSubtableWithDepth(b binarySegm, lookupType LayoutTableLookupType, depth int) LookupSubtable {
-	n := min(20, len(b))
-	if n%2 == 1 {
-		n--
-	}
-	if n > 0 {
-		tracer().Debugf("parse lookup subtable b = %v", asU16Slice(b[:n]))
-	} else {
-		tracer().Debugf("parse lookup subtable b = []")
-	}
-	if len(b) < 4 {
-		return LookupSubtable{}
-	}
-	if depth > MaxExtensionDepth {
-		tracer().Errorf("lookup subtable exceeds maximum extension depth %d", MaxExtensionDepth)
-		return LookupSubtable{}
-	}
-	node := parseConcreteLookupNodeWithDepth(b, lookupType, depth)
-	return legacyLookupSubtableFromConcrete(node)
 }
 
 // --- parse class def table -------------------------------------------------
@@ -1585,155 +1555,6 @@ func parseCoverage(b binarySegm) Coverage {
 	}
 }
 
-// --- Sequence context ------------------------------------------------------
-
-// The contextual lookup types support specifying input glyph sequences that can be
-// acted upon, as well as a list of actions to be taken on any glyph within the sequence.
-// Actions are specified as references to separate nested lookups (an index into the
-// LookupList). The actions are specified for each glyph position, but the entire sequence
-// must be matched, and so the actions are specified in a context-sensitive manner.
-
-// Three subtable formats are defined, which describe the input sequences in different ways.
-func parseSequenceContext(b binarySegm, sub LookupSubtable) (LookupSubtable, error) {
-	if len(b) <= 2 {
-		return sub, errFontFormat("corrupt sequence context")
-	}
-	//format := b.U16(0)
-	switch sub.Format {
-	case 1:
-		return parseSequenceContextFormat1(b, sub)
-	case 2:
-		return parseSequenceContextFormat2(b, sub)
-	case 3:
-		return parseSequenceContextFormat3(b, sub)
-	}
-	return sub, errFontFormat(fmt.Sprintf("unknown sequence context format %d", sub.Format))
-}
-
-// SequenceContextFormat1: simple glyph contexts
-// Type 	Name 	Description
-// uint16 	format 	Format identifier: format = 1
-// Offset16 	coverageOffset 	Offset to Coverage table, from beginning of SequenceContextFormat1 table
-// uint16 	seqRuleSetCount 	Number of SequenceRuleSet tables
-// Offset16 	seqRuleSetOffsets[seqRuleSetCount] 	Array of offsets to SequenceRuleSet tables, from beginning of SequenceContextFormat1 table (offsets may be NULL)
-func parseSequenceContextFormat1(b binarySegm, sub LookupSubtable) (LookupSubtable, error) {
-	if len(b) <= 6 {
-		return sub, errFontFormat("corrupt sequence context")
-	}
-	// nothing to to for format 1
-	//
-	// seqctx := SequenceContext{}
-	// link, err := parseLink16(b, 2, b, "SequenceContext Coverage")
-	// if err != nil {
-	// 	return sequenceContext{}, errFontFormat("corrupt sequence context")
-	// }
-	// cov := link.Jump()
-	// seqctx.coverage[0] = parseCoverage(cov.Bytes())
-	// seqctx.rules = parseVarArrary16(b, 4, 2, "SequenceContext")
-	// return seqctx, nil
-	return sub, nil
-}
-
-// SequenceContextFormat2 table:
-// Type      Name                   Description
-// uint16    format                 Format identifier: format = 2
-// Offset16  coverageOffset         Offset to Coverage table, from beginning of SequenceContextFormat2 table
-// Offset16  classDefOffset         Offset to ClassDef table, from beginning of SequenceContextFormat2 table
-// uint16    classSeqRuleSetCount   Number of ClassSequenceRuleSet tables
-// Offset16  classSeqRuleSetOffsets[classSeqRuleSetCount]    Array of offsets to ClassSequenceRuleSet tables, from beginning of SequenceContextFormat2 table (may be NULL)
-func parseSequenceContextFormat2(b binarySegm, sub LookupSubtable) (LookupSubtable, error) {
-	if len(b) <= 8 {
-		return sub, errFontFormat("corrupt sequence context")
-	}
-	seqctx := &SequenceContext{}
-	sub.Support = seqctx
-	seqctx.ClassDefs = make([]ClassDefinitions, 1)
-	var err error
-	seqctx.ClassDefs[0], err = parseContextClassDef(b, 4)
-	sub.Support = seqctx
-	return sub, err
-}
-
-// The SequenceContextFormat3 table specifies exactly one input sequence pattern. It has an
-// array of offsets to coverage tables. These correspond, in order, to the positions in the
-// input sequence pattern.
-//
-// SequenceContextFormat3 table:
-// Type 	Name 	Description
-// uint16 	format 	Format identifier: format = 3
-// uint16 	glyphCount 	Number of glyphs in the input sequence
-// uint16 	seqLookupCount 	Number of SequenceLookupRecords
-// Offset16 	coverageOffsets[glyphCount] 	Array of offsets to Coverage tables, from beginning of SequenceContextFormat3 subtable
-// SequenceLookupRecord 	seqLookupRecords[seqLookupCount] 	Array of SequenceLookupRecords
-func parseSequenceContextFormat3(b binarySegm, sub LookupSubtable) (LookupSubtable, error) {
-	if len(b) <= 8 {
-		return sub, errFontFormat("corrupt sequence context")
-	}
-	glyphCount := int(b.U16(2))
-	seqctx := SequenceContext{}
-	sub.Support = seqctx
-	seqctx.InputCoverage = make([]Coverage, glyphCount)
-	for i := 0; i < glyphCount; i++ {
-		link, err := parseLink16(b, 6+i*2, b, "SequenceContext Coverage")
-		if err != nil {
-			return sub, errFontFormat("corrupt sequence context")
-		}
-		cov := link.Jump()
-		seqctx.InputCoverage[i] = parseCoverage(cov.Bytes())
-	}
-	return sub, nil
-}
-
-func parseChainedSequenceContext(b binarySegm, sub LookupSubtable) (LookupSubtable, error) {
-	if len(b) <= 2 {
-		return sub, errFontFormat("corrupt chained sequence context")
-	}
-	switch sub.Format {
-	case 1:
-		//parseSequenceContextFormat1(sub.Format, b, sub)
-		// nothing to to for format 1
-		return sub, nil
-	case 2:
-		return parseChainedSequenceContextFormat2(b, sub)
-	case 3:
-		return parseChainedSequenceContextFormat3(b, sub)
-	}
-	return sub, errFontFormat(fmt.Sprintf("unknown chained sequence context format %d", sub.Format))
-}
-
-func parseChainedSequenceContextFormat2(b binarySegm, sub LookupSubtable) (LookupSubtable, error) {
-	backtrack, err1 := parseContextClassDef(b, 4)
-	input, err2 := parseContextClassDef(b, 6)
-	lookahead, err3 := parseContextClassDef(b, 8)
-	if err1 != nil || err2 != nil || err3 != nil {
-		return LookupSubtable{}, errFontFormat("corrupt chained sequence context (format 2)")
-	}
-	sub.Support = &SequenceContext{
-		ClassDefs: []ClassDefinitions{backtrack, input, lookahead},
-	}
-	return sub, nil
-}
-
-func parseChainedSequenceContextFormat3(b binarySegm, sub LookupSubtable) (LookupSubtable, error) {
-	tracer().Debugf("chained sequence context format 3 ........................")
-	tracer().Debugf("b = %v", b[:26].Glyphs())
-	offset := 2
-	backtrack, err1 := parseChainedSeqContextCoverages(b, offset, nil)
-	offset += 2 + len(backtrack)*2
-	input, err2 := parseChainedSeqContextCoverages(b, offset, err1)
-	offset += 2 + len(input)*2
-	lookahead, err3 := parseChainedSeqContextCoverages(b, offset, err2)
-	if err1 != nil || err2 != nil || err3 != nil {
-		return LookupSubtable{}, errFontFormat("corrupt chained sequence context (format 3)")
-	}
-	sub.Support = &SequenceContext{
-		BacktrackCoverage: backtrack,
-		InputCoverage:     input,
-		LookaheadCoverage: lookahead,
-	}
-	return sub, nil
-}
-
 func parseContextClassDef(b binarySegm, at int) (ClassDefinitions, error) {
 	link, err := parseLink16(b, at, b, "ClassDef")
 	if err != nil {
@@ -1762,198 +1583,4 @@ func parseChainedSeqContextCoverages(b binarySegm, at int, err error) ([]Coverag
 		coverages[i] = parseCoverage(link.Jump().Bytes())
 	}
 	return coverages, nil
-}
-
-// TODO Argument should be NavLocation, return value should be []SeqLookupRecord
-//
-// SequenceRule table:
-// Type     Name                          Description
-// uint16   glyphCount                    Number of glyphs to be matched
-// uint16   seqLookupCount                Number of SequenceLookupRecords
-// uint16   inputSequence[glyphCount-1]   Sequence of classes to be matched to the input glyph sequence, beginning with the second glyph position
-// SequenceLookupRecord seqLookupRecords[seqLookupCount]   Array of SequenceLookupRecords
-func (lksub LookupSubtable) SequenceRule(b binarySegm) sequenceRule {
-	seqrule := sequenceRule{}
-	seqrule.glyphCount = b.U16(0)
-	seqrule.inputSequence = array{
-		recordSize: 2, // sizeof(uint16)
-		length:     int(seqrule.glyphCount) - 1,
-	}
-
-	// Check for overflow in input sequence size calculation
-	inputSeqSize, err := checkedMulInt(seqrule.inputSequence.length, 2)
-	if err != nil {
-		tracer().Errorf("SequenceRule input sequence size overflow: %v", err)
-		return sequenceRule{}
-	}
-	inputSeqEnd, err := checkedAddInt(4, inputSeqSize)
-	if err != nil || inputSeqEnd > len(b) {
-		tracer().Errorf("SequenceRule input sequence bounds check failed")
-		return sequenceRule{}
-	}
-	seqrule.inputSequence.loc = b[4:inputSeqEnd]
-
-	// SequenceLookupRecord:
-	// Type     Name             Description
-	// uint16   sequenceIndex    Index (zero-based) into the input glyph sequence
-	// uint16   lookupListIndex  Index (zero-based) into the LookupList
-	cnt := b.U16(2)
-	seqrule.lookupRecords = array{
-		recordSize: 4, // 2* sizeof(uint16)
-		length:     int(cnt),
-		loc:        b[inputSeqEnd:],
-	}
-	return seqrule
-}
-
-// ChainedSequenceRule parses a GSUB-6 format-1 ChainSubRule table.
-func (lksub LookupSubtable) ChainedSequenceRule(loc NavLocation) chainedSequenceRule {
-	rule := chainedSequenceRule{}
-	b := binarySegm(loc.Bytes())
-	if b.Size() < 2 {
-		return rule
-	}
-	backtrackCount := int(b.U16(0))
-	backtrackBytes := backtrackCount * 2
-	if 2+backtrackBytes > b.Size() {
-		tracer().Errorf("ChainedSequenceRule backtrack sequence bounds check failed")
-		return chainedSequenceRule{}
-	}
-	rule.backtrackSequence = array{
-		recordSize: 2,
-		length:     backtrackCount,
-		loc:        b[2 : 2+backtrackBytes],
-	}
-	offset := 2 + backtrackBytes
-	if offset+2 > b.Size() {
-		tracer().Errorf("ChainedSequenceRule missing input glyph count")
-		return chainedSequenceRule{}
-	}
-	inputCount := int(b.U16(offset))
-	offset += 2
-	inputSeqCount := inputCount - 1
-	if inputSeqCount < 0 {
-		inputSeqCount = 0
-	}
-	inputBytes := inputSeqCount * 2
-	if offset+inputBytes > b.Size() {
-		tracer().Errorf("ChainedSequenceRule input sequence bounds check failed")
-		return chainedSequenceRule{}
-	}
-	rule.inputSequence = array{
-		recordSize: 2,
-		length:     inputSeqCount,
-		loc:        b[offset : offset+inputBytes],
-	}
-	offset += inputBytes
-	if offset+2 > b.Size() {
-		tracer().Errorf("ChainedSequenceRule missing lookahead glyph count")
-		return chainedSequenceRule{}
-	}
-	lookaheadCount := int(b.U16(offset))
-	offset += 2
-	lookaheadBytes := lookaheadCount * 2
-	if offset+lookaheadBytes > b.Size() {
-		tracer().Errorf("ChainedSequenceRule lookahead sequence bounds check failed")
-		return chainedSequenceRule{}
-	}
-	rule.lookaheadSequence = array{
-		recordSize: 2,
-		length:     lookaheadCount,
-		loc:        b[offset : offset+lookaheadBytes],
-	}
-	offset += lookaheadBytes
-	if offset+2 > b.Size() {
-		tracer().Errorf("ChainedSequenceRule missing sequence lookup count")
-		return chainedSequenceRule{}
-	}
-	seqLookupCount := int(b.U16(offset))
-	offset += 2
-	lookupBytes := seqLookupCount * 4
-	if offset+lookupBytes > b.Size() {
-		tracer().Errorf("ChainedSequenceRule lookup records bounds check failed")
-		return chainedSequenceRule{}
-	}
-	rule.lookupRecords = array{
-		recordSize: 4,
-		length:     seqLookupCount,
-		loc:        b[offset : offset+lookupBytes],
-	}
-	return rule
-}
-
-// ChainedClassSequenceRule parses a GSUB-6 format-2 ChainSubClassRule table.
-func (lksub LookupSubtable) ChainedClassSequenceRule(loc NavLocation) chainedClassSequenceRule {
-	rule := chainedClassSequenceRule{}
-	b := binarySegm(loc.Bytes())
-	if b.Size() < 2 {
-		return rule
-	}
-	backtrackCount := int(b.U16(0))
-	backtrackBytes := backtrackCount * 2
-	if 2+backtrackBytes > b.Size() {
-		tracer().Errorf("ChainedClassSequenceRule backtrack classes bounds check failed")
-		return chainedClassSequenceRule{}
-	}
-	rule.backtrackClasses = array{
-		recordSize: 2,
-		length:     backtrackCount,
-		loc:        b[2 : 2+backtrackBytes],
-	}
-	offset := 2 + backtrackBytes
-	if offset+2 > b.Size() {
-		tracer().Errorf("ChainedClassSequenceRule missing input glyph count")
-		return chainedClassSequenceRule{}
-	}
-	inputCount := int(b.U16(offset))
-	offset += 2
-	inputSeqCount := inputCount - 1
-	if inputSeqCount < 0 {
-		inputSeqCount = 0
-	}
-	inputBytes := inputSeqCount * 2
-	if offset+inputBytes > b.Size() {
-		tracer().Errorf("ChainedClassSequenceRule input classes bounds check failed")
-		return chainedClassSequenceRule{}
-	}
-	rule.inputClasses = array{
-		recordSize: 2,
-		length:     inputSeqCount,
-		loc:        b[offset : offset+inputBytes],
-	}
-	offset += inputBytes
-	if offset+2 > b.Size() {
-		tracer().Errorf("ChainedClassSequenceRule missing lookahead glyph count")
-		return chainedClassSequenceRule{}
-	}
-	lookaheadCount := int(b.U16(offset))
-	offset += 2
-	lookaheadBytes := lookaheadCount * 2
-	if offset+lookaheadBytes > b.Size() {
-		tracer().Errorf("ChainedClassSequenceRule lookahead classes bounds check failed")
-		return chainedClassSequenceRule{}
-	}
-	rule.lookaheadClasses = array{
-		recordSize: 2,
-		length:     lookaheadCount,
-		loc:        b[offset : offset+lookaheadBytes],
-	}
-	offset += lookaheadBytes
-	if offset+2 > b.Size() {
-		tracer().Errorf("ChainedClassSequenceRule missing sequence lookup count")
-		return chainedClassSequenceRule{}
-	}
-	seqLookupCount := int(b.U16(offset))
-	offset += 2
-	lookupBytes := seqLookupCount * 4
-	if offset+lookupBytes > b.Size() {
-		tracer().Errorf("ChainedClassSequenceRule lookup records bounds check failed")
-		return chainedClassSequenceRule{}
-	}
-	rule.lookupRecords = array{
-		recordSize: 4,
-		length:     seqLookupCount,
-		loc:        b[offset : offset+lookupBytes],
-	}
-	return rule
 }

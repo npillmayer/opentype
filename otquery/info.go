@@ -36,19 +36,19 @@ func NameInfo(otf *ot.Font, lang ot.Tag) map[string]string {
 		tracer().Debugf("name key p=%d e=%d l=%d id=%d", k.PlatformID, k.EncodingID, k.LanguageID, k.NameID)
 	}
 	// font family
-	familyKeys := []ot.NameKey{
+	familyKeys := []nameKey{
 		{PlatformID: 3, EncodingID: 1, NameID: 1}, // Windows platform, encoding BMP
 		{PlatformID: 0, EncodingID: 3, NameID: 1}, // Unicode platform, encoding BMP
 	}
 	findKey(entries, names, "family", familyKeys)
 	// font sub-family
-	subFamKeys := []ot.NameKey{
+	subFamKeys := []nameKey{
 		{PlatformID: 3, EncodingID: 1, NameID: 2},
 		{PlatformID: 0, EncodingID: 3, NameID: 2},
 	}
 	findKey(entries, names, "subfamily", subFamKeys)
 	// font version
-	versionKeys := []ot.NameKey{
+	versionKeys := []nameKey{
 		{PlatformID: 3, EncodingID: 1, NameID: 5},
 		{PlatformID: 0, EncodingID: 3, NameID: 5},
 	}
@@ -56,7 +56,7 @@ func NameInfo(otf *ot.Font, lang ot.Tag) map[string]string {
 	return names
 }
 
-func findKey(entries []nameEntry, m map[string]string, fieldname string, keys []ot.NameKey) {
+func findKey(entries []nameEntry, m map[string]string, fieldname string, keys []nameKey) {
 	for _, key := range keys {
 		for _, entry := range entries {
 			k := entry.key

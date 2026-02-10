@@ -32,27 +32,8 @@ func writeU16(b []byte, offset int, value uint16) {
 
 // ---Locations, i.e. byte segments/slices -----------------------------------
 
-// NavLocation is a position at a byte within a font's binary data.
-// It represents the start of a segment/slice of binary data.
-//
-// NavLocation is always the final link of a chain of Navigator calls, giving access to
-// underlying (unstructured) font data. It is the client's responsibility to interpret the
-// structure and impose it onto the NavLocation's bytes.
-//
-// If an error occured somewhere along a chain of navigation calls, the finally resulting NavLocation
-// may be of size 0.
-type NavLocation interface {
-	Size() int                  // size in bytes
-	Bytes() []byte              // return as a byte slice
-	Slice(int, int) NavLocation // return a sub-segment of this location
-	U16(int) uint16             // convenience access to 16 bit data at byte index
-	U32(int) uint32             // convenience access to 32 bit data at byte index
-	Glyphs() []GlyphIndex       // convenience conversion to slice of glyphs
-}
-
 // binarySegm is a segment of byte data.
-// It implements the Location interface. We use it throughout this module to
-// naviagte the font's binary data.
+// We use it throughout this module to navigate the font's binary data.
 type binarySegm []byte
 
 func (b binarySegm) Size() int {
@@ -64,7 +45,7 @@ func (b binarySegm) Bytes() []byte {
 }
 
 // return a sub-segment of this location
-func (b binarySegm) Slice(from int, to int) NavLocation {
+func (b binarySegm) Slice(from int, to int) binarySegm {
 	if from < 0 {
 		from = 0
 	}
@@ -254,7 +235,7 @@ func (r *glyphRangeRecords) ByteSize() int {
 
 type tagList struct {
 	Count int
-	link  NavLink
+	link  navLink
 }
 
 func parseTagList(b binarySegm) tagList {
@@ -298,19 +279,15 @@ func (l tagList) Tag(i int) Tag {
 
 // --- Link ------------------------------------------------------------------
 
-// NavLink is a type to represent the transfer between one Navigator item and
-// another. Clients may use it to either arrive at the binary segment of the
-// destination (call Jump) or to receive the destination as a Navigator item
-// (call Navigate).
+// navLink is a type to represent an offset jump from one segment to another.
 //
 // Name returns the class name of the link's destination. IsNull is used to check
-// if this NavLink represents a link to a valid destination.
-type NavLink interface {
-	Base() NavLocation   // source location
-	Jump() NavLocation   // destination location
-	IsNull() bool        // is this a valid link?
-	Navigate() Navigator // interpret destination as an OpenType structure element
-	Name() string        // OpenType structure name of destination
+// if this navLink represents a link to a valid destination.
+type navLink interface {
+	Base() binarySegm // source location
+	Jump() binarySegm // destination location
+	IsNull() bool     // is this a valid link?
+	Name() string     // OpenType structure name of destination
 }
 
 // parseLink16 parses a byte array which is presumed to be a map16 entry, where a `uint16`
@@ -318,7 +295,7 @@ type NavLink interface {
 // `offset` is the number of bytes from the beginning of the base segment to the
 // beginning of the value segment. It usually is the size of the 'key' in bytes, but
 // no semantics is enforced.
-func parseLink16(b binarySegm, offset int, base binarySegm, target string) (NavLink, error) {
+func parseLink16(b binarySegm, offset int, base binarySegm, target string) (navLink, error) {
 	if len(b) < offset+2 { // room for key + value ?
 		return link16{}, errBufferBounds
 	}
@@ -337,7 +314,7 @@ func parseLink16(b binarySegm, offset int, base binarySegm, target string) (NavL
 }
 
 // func makeLink16(b fontBinSegm, offset uint16, base fontBinSegm, target string) Link {
-func makeLink16(offset uint16, base binarySegm, target string) NavLink {
+func makeLink16(offset uint16, base binarySegm, target string) navLink {
 	return link16{
 		target: target,
 		base:   base,
@@ -363,11 +340,11 @@ func (l16 link16) Name() string {
 	return l16.target
 }
 
-func (l16 link16) Base() NavLocation {
+func (l16 link16) Base() binarySegm {
 	return l16.base
 }
 
-func (l16 link16) Jump() NavLocation {
+func (l16 link16) Jump() binarySegm {
 	tracer().Debugf("jump to %s", l16.target)
 	if l16.err != nil {
 		return binarySegm{}
@@ -381,14 +358,7 @@ func (l16 link16) Jump() NavLocation {
 	return l16.base[l16.offset:]
 }
 
-func (l16 link16) Navigate() Navigator {
-	if l16.err != nil {
-		return null(l16.err)
-	}
-	return NavigatorFactory(l16.target, l16.Jump(), l16.base)
-}
-
-func parseLink32(b binarySegm, offset int, base binarySegm, target string) (NavLink, error) {
+func parseLink32(b binarySegm, offset int, base binarySegm, target string) (navLink, error) {
 	if len(b) < offset+4 {
 		return link32{}, errBufferBounds
 	}
@@ -422,11 +392,11 @@ func (l32 link32) Name() string {
 	return l32.target
 }
 
-func (l32 link32) Base() NavLocation {
+func (l32 link32) Base() binarySegm {
 	return l32.base
 }
 
-func makeLink32(offset uint32, base binarySegm, target string) NavLink {
+func makeLink32(offset uint32, base binarySegm, target string) navLink {
 	return link32{
 		target: target,
 		base:   base,
@@ -434,7 +404,7 @@ func makeLink32(offset uint32, base binarySegm, target string) NavLink {
 	}
 }
 
-func (l32 link32) Jump() NavLocation {
+func (l32 link32) Jump() binarySegm {
 	tracer().Debugf("jump to %s", l32.target)
 	if l32.err != nil {
 		return binarySegm{}
@@ -448,13 +418,6 @@ func (l32 link32) Jump() NavLocation {
 	return l32.base[l32.offset:]
 }
 
-func (l32 link32) Navigate() Navigator {
-	if l32.err != nil {
-		return null(l32.err)
-	}
-	return NavigatorFactory(l32.target, l32.Jump(), l32.base)
-}
-
 // --- Arrays ----------------------------------------------------------------
 
 // array is a type for a linear sequence of equal-sized records.
@@ -464,14 +427,6 @@ type array struct {
 	recordSize int
 	length     int
 	loc        binarySegm
-}
-
-func ParseList(b binarySegm, N int, recordSize int) NavList {
-	return array{
-		recordSize: recordSize,
-		length:     N,
-		loc:        b,
-	}
 }
 
 func viewArray16(b binarySegm) array {
@@ -567,7 +522,7 @@ func (a array) Len() int {
 }
 
 // Get returns item #i as a byte location.
-func (a array) Get(i int) NavLocation {
+func (a array) Get(i int) binarySegm {
 	if i < 0 || (i+1)*a.recordSize > len(a.loc.Bytes()) {
 		i = 0
 	}
@@ -575,8 +530,8 @@ func (a array) Get(i int) NavLocation {
 	return b
 }
 
-func (a array) Range() iter.Seq2[int, NavLocation] {
-	return func(yield func(int, NavLocation) bool) {
+func (a array) Range() iter.Seq2[int, binarySegm] {
+	return func(yield func(int, binarySegm) bool) {
 		for i := range a.Len() {
 			if !yield(i, a.Get(i)) {
 				return
@@ -585,14 +540,14 @@ func (a array) Range() iter.Seq2[int, NavLocation] {
 	}
 }
 
-// VarArray is a type for arrays of variable length records, which in turn may point to nested
+// varArrayAPI is a type for arrays of variable length records, which in turn may point to nested
 // arrays of (variable size) records.
-type VarArray interface {
+type varArrayAPI interface {
 	// Get returns the record at index i. If deep is true, Get follows all levels
 	// of indirection and assumes that each target level is an array of offsets
 	// (as in nested var-arrays). If deep is false, only the first indirection
 	// level is followed and the immediate target is returned.
-	Get(i int, deep bool) (NavLocation, error)
+	Get(i int, deep bool) (binarySegm, error)
 	Size() int // get the number of entries
 }
 
@@ -603,14 +558,14 @@ type varArray struct {
 	base         binarySegm
 }
 
-// ParseVarArray interprets a byte sequence as a `VarArray`.
+// parseVarArray interprets a byte sequence as a `varArrayAPI`.
 //
 // Layout convention:
 // The caller provides szOffset (where the count lives) and gap (bytes to skip
 // after szOffset before the pointer list starts). The gap includes the count
 // field itself. For the common layout of [count uint16][offsets...], use gap=2.
-func ParseVarArray(loc NavLocation, sizeOffset, arrayDataGap int, name string) VarArray {
-	return parseVarArray16(loc.Bytes(), sizeOffset, arrayDataGap, 1, name)
+func parseVarArray(loc binarySegm, sizeOffset, arrayDataGap int, name string) varArrayAPI {
+	return parseVarArray16(loc, sizeOffset, arrayDataGap, 1, name)
 }
 
 // parseVarArray16 parses a nested offset-array structure with 16-bit offsets.
@@ -645,13 +600,13 @@ func parseVarArray16(b binarySegm, szOffset, gap, indirections int, name string)
 
 	va := varArray{name: name, indirections: indirections, base: b}
 	va.ptrs = array{recordSize: 2, length: int(cnt), loc: b[szOffset+gap:]}
-	tracer().Debugf("parsing VarArray of size %d with %d indirections", cnt, indirections)
+	tracer().Debugf("parsing varArrayAPI of size %d with %d indirections", cnt, indirections)
 	return va
 }
 
 // Get looks up index i within the cascading arrays of va. If deep is false, only
 // the top-level array will be queried.
-func (va varArray) Get(i int, deep bool) (b NavLocation, err error) {
+func (va varArray) Get(i int, deep bool) (b binarySegm, err error) {
 	var a array = va.ptrs
 	var indirect = va.indirections
 	if !deep {
@@ -659,7 +614,7 @@ func (va varArray) Get(i int, deep bool) (b NavLocation, err error) {
 	}
 	base := va.base
 	for j := 0; j < indirect; j++ {
-		b = a.Get(i) // TODO will this create an infinite loop in case of error?
+		b = binarySegm(a.Get(i).Bytes()) // TODO will this create an infinite loop in case of error?
 		aBytes := a.loc.Bytes()
 		tracer().Debugf("varArray->Get(%d|%d), a = %v", i, a.length, binarySegm(aBytes[:min(20, len(aBytes))]).Glyphs())
 		tracer().Debugf("b = %d, %d to go", b.U16(0), va.indirections-1-j)
@@ -669,7 +624,7 @@ func (va varArray) Get(i int, deep bool) (b NavLocation, err error) {
 		}
 		if j < va.indirections {
 			link := makeLink16(b.U16(0), base, "Sequence")
-			b = link.Jump()
+			b = binarySegm(link.Jump().Bytes())
 			if j+1 < va.indirections {
 				a, err = parseArray16(b.Bytes(), 0, "var-array", "var-array-entry")
 				aBytes = a.loc.Bytes()
@@ -694,7 +649,7 @@ func (va varArray) Size() int {
 	return va.ptrs.length
 }
 
-var _ VarArray = varArray{}
+var _ varArrayAPI = varArray{}
 
 // --- Tag record map --------------------------------------------------------
 
@@ -792,7 +747,7 @@ func parseTagRecordMap16(b binarySegm, offset int, base binarySegm, name, target
 }
 
 // Lookup returns the bytes referenced by m[Tag(n)]
-func (m tagRecordMap16) Lookup(n uint32) NavLocation {
+func (m tagRecordMap16) Lookup(n uint32) binarySegm {
 	tag := Tag(n)
 	return m.LookupTag(tag).Jump()
 }
@@ -800,7 +755,7 @@ func (m tagRecordMap16) Lookup(n uint32) NavLocation {
 // Lookup returns the link associated with a given tag.
 //
 // TODO binary search with |N| > ?
-func (m tagRecordMap16) LookupTag(tag Tag) NavLink {
+func (m tagRecordMap16) LookupTag(tag Tag) navLink {
 	if len(m.base) == 0 {
 		tracer().Debugf("tag record map has null-base")
 		return link16{}
@@ -844,7 +799,7 @@ func (m tagRecordMap16) Len() int {
 	return m.records.length
 }
 
-func (m tagRecordMap16) Get(i int) (Tag, NavLink) {
+func (m tagRecordMap16) Get(i int) (Tag, navLink) {
 	b := m.records.Get(i)
 	const sizeOfMapKey = 4 // tags have size of 4 bytes
 	tag := MakeTag(b.Bytes()[:sizeOfMapKey])
@@ -855,40 +810,11 @@ func (m tagRecordMap16) Get(i int) (Tag, NavLink) {
 	return tag, link
 }
 
-func (m tagRecordMap16) Range() iter.Seq2[Tag, NavLink] {
-	return func(yield func(Tag, NavLink) bool) {
+func (m tagRecordMap16) Range() iter.Seq2[Tag, navLink] {
+	return func(yield func(Tag, navLink) bool) {
 		for i := range m.Len() {
 			tag, link := m.Get(i)
 			if !yield(tag, link) {
-				return
-			}
-		}
-	}
-}
-
-// u16List implements the NavList interface. It represents a list/array of
-// u16 values.
-type u16List []uint16
-
-func (u16l u16List) Name() string {
-	return "<unknown>"
-}
-
-func (u16l u16List) Len() int {
-	return len(u16l)
-}
-
-func (u16l u16List) Get(i int) NavLocation {
-	if i < 0 || i >= len(u16l) {
-		return binarySegm{}
-	}
-	return binarySegm{byte(u16l[i] >> 8 & 0xff), byte(u16l[i] & 0xff)}
-}
-
-func (u16l u16List) Range() iter.Seq2[int, NavLocation] {
-	return func(yield func(int, NavLocation) bool) {
-		for i := range u16l {
-			if !yield(i, u16l.Get(i)) {
 				return
 			}
 		}

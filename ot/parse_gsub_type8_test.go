@@ -20,23 +20,30 @@ func TestParseGSubType8(t *testing.T) {
 			t.Fatalf("cannot convert GSUB table for %s", name)
 		}
 
-		ll := gsub.LookupList
-		for i := 0; i < ll.Len(); i++ {
-			lookup := ll.Navigate(i)
-			if lookup.Type != GSubLookupTypeReverseChaining {
+		graph := gsub.LookupGraph()
+		if graph == nil {
+			continue
+		}
+		for i := 0; i < graph.Len(); i++ {
+			lookup := graph.Lookup(i)
+			if lookup == nil || lookup.Type != GSubLookupTypeReverseChaining {
 				continue
 			}
 			found = true
 			for j := 0; j < int(lookup.SubTableCount); j++ {
-				sub := lookup.Subtable(j)
-				if sub.LookupType != GSubLookupTypeReverseChaining {
-					t.Errorf("%s: lookup[%d] subtable[%d] type = %d", name, i, j, sub.LookupType)
+				node := lookup.Subtable(j)
+				if node == nil {
+					t.Fatalf("%s: lookup[%d] subtable[%d] missing", name, i, j)
 				}
-				if sub.Support == nil {
-					t.Fatalf("%s: lookup[%d] subtable[%d] missing reverse chaining support", name, i, j)
+				if node.LookupType != GSubLookupTypeReverseChaining {
+					t.Errorf("%s: lookup[%d] subtable[%d] type = %d", name, i, j, node.LookupType)
 				}
-				if _, ok := sub.Support.(*ReverseChainingSubst); !ok {
-					t.Fatalf("%s: lookup[%d] subtable[%d] Support is %T", name, i, j, sub.Support)
+				payload := node.GSubPayload()
+				if payload == nil || payload.ReverseChainingFmt1 == nil {
+					t.Fatalf("%s: lookup[%d] subtable[%d] missing reverse chaining payload", name, i, j)
+				}
+				if len(payload.ReverseChainingFmt1.SubstituteGlyphIDs) == 0 {
+					t.Fatalf("%s: lookup[%d] subtable[%d] reverse chaining payload has no substitutes", name, i, j)
 				}
 			}
 		}

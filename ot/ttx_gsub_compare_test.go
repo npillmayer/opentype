@@ -250,15 +250,22 @@ func compareExpectedGSUBLookups(gsub *GSubTable, exp *ttxtest.ExpectedGSUB, indi
 	if exp == nil {
 		return fmt.Errorf("nil expected GSUB")
 	}
+	graph := gsub.LookupGraph()
+	if graph == nil {
+		return fmt.Errorf("nil GSUB lookup graph")
+	}
 	for _, i := range indices {
 		if i < 0 || i >= len(exp.Lookups) {
 			return fmt.Errorf("expected lookup index %d out of range", i)
 		}
-		if i < 0 || i >= gsub.LookupList.Len() {
+		if i < 0 || i >= graph.Len() {
 			return fmt.Errorf("actual lookup index %d out of range", i)
 		}
 		el := exp.Lookups[i]
-		lookup := gsub.LookupList.Navigate(i)
+		lookup := graph.Lookup(i)
+		if lookup == nil {
+			return fmt.Errorf("lookup[%d] missing", i)
+		}
 		if lookup.Type != LayoutTableLookupType(el.Type) {
 			return fmt.Errorf("lookup[%d] type mismatch: got %d, want %d", i, lookup.Type, el.Type)
 		}
@@ -270,33 +277,37 @@ func compareExpectedGSUBLookups(gsub *GSubTable, exp *ttxtest.ExpectedGSUB, indi
 				i, lookup.SubTableCount, len(el.Subtables))
 		}
 		for j, est := range el.Subtables {
-			sub := lookup.Subtable(j)
-			if sub == nil {
+			node := lookup.Subtable(j)
+			if node == nil {
 				return fmt.Errorf("lookup[%d] subtable[%d] missing", i, j)
 			}
-			if sub.Format != uint16(est.Format) {
+			enode := effectiveGSubNode(node)
+			if enode == nil {
+				return fmt.Errorf("lookup[%d] subtable[%d] effective node missing", i, j)
+			}
+			if enode.Format != uint16(est.Format) {
 				return fmt.Errorf("lookup[%d] subtable[%d] format mismatch: got %d, want %d",
-					i, j, sub.Format, est.Format)
+					i, j, enode.Format, est.Format)
 			}
-			if LayoutTableLookupType(est.Type) != sub.LookupType {
+			if LayoutTableLookupType(est.Type) != enode.LookupType {
 				return fmt.Errorf("lookup[%d] subtable[%d] type mismatch: got %d, want %d",
-					i, j, sub.LookupType, est.Type)
+					i, j, enode.LookupType, est.Type)
 			}
-			switch sub.LookupType {
+			switch enode.LookupType {
 			case GSubLookupTypeSingle:
-				if err := compareSingleSubst(sub, est); err != nil {
+				if err := compareSingleSubst(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GSubLookupTypeAlternate:
-				if err := compareAlternateSubst(sub, est); err != nil {
+				if err := compareAlternateSubst(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GSubLookupTypeLigature:
-				if err := compareLigatureSubst(sub, est); err != nil {
+				if err := compareLigatureSubst(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GSubLookupTypeContext:
-				if err := compareContextSubst(sub, est); err != nil {
+				if err := compareContextSubst(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			}
@@ -312,11 +323,18 @@ func compareExpectedGSUB(gsub *GSubTable, exp *ttxtest.ExpectedGSUB) error {
 	if exp == nil {
 		return fmt.Errorf("nil expected GSUB")
 	}
-	if gsub.LookupList.Len() != len(exp.Lookups) {
-		return fmt.Errorf("lookup count mismatch: got %d, want %d", gsub.LookupList.Len(), len(exp.Lookups))
+	graph := gsub.LookupGraph()
+	if graph == nil {
+		return fmt.Errorf("nil GSUB lookup graph")
+	}
+	if graph.Len() != len(exp.Lookups) {
+		return fmt.Errorf("lookup count mismatch: got %d, want %d", graph.Len(), len(exp.Lookups))
 	}
 	for i, el := range exp.Lookups {
-		lookup := gsub.LookupList.Navigate(i)
+		lookup := graph.Lookup(i)
+		if lookup == nil {
+			return fmt.Errorf("lookup[%d] missing", i)
+		}
 		if lookup.Type != LayoutTableLookupType(el.Type) {
 			return fmt.Errorf("lookup[%d] type mismatch: got %d, want %d", i, lookup.Type, el.Type)
 		}
@@ -328,33 +346,37 @@ func compareExpectedGSUB(gsub *GSubTable, exp *ttxtest.ExpectedGSUB) error {
 				i, lookup.SubTableCount, len(el.Subtables))
 		}
 		for j, est := range el.Subtables {
-			sub := lookup.Subtable(j)
-			if sub == nil {
+			node := lookup.Subtable(j)
+			if node == nil {
 				return fmt.Errorf("lookup[%d] subtable[%d] missing", i, j)
 			}
-			if sub.Format != uint16(est.Format) {
+			enode := effectiveGSubNode(node)
+			if enode == nil {
+				return fmt.Errorf("lookup[%d] subtable[%d] effective node missing", i, j)
+			}
+			if enode.Format != uint16(est.Format) {
 				return fmt.Errorf("lookup[%d] subtable[%d] format mismatch: got %d, want %d",
-					i, j, sub.Format, est.Format)
+					i, j, enode.Format, est.Format)
 			}
-			if LayoutTableLookupType(est.Type) != sub.LookupType {
+			if LayoutTableLookupType(est.Type) != enode.LookupType {
 				return fmt.Errorf("lookup[%d] subtable[%d] type mismatch: got %d, want %d",
-					i, j, sub.LookupType, est.Type)
+					i, j, enode.LookupType, est.Type)
 			}
-			switch sub.LookupType {
+			switch enode.LookupType {
 			case GSubLookupTypeSingle:
-				if err := compareSingleSubst(sub, est); err != nil {
+				if err := compareSingleSubst(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GSubLookupTypeAlternate:
-				if err := compareAlternateSubst(sub, est); err != nil {
+				if err := compareAlternateSubst(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GSubLookupTypeLigature:
-				if err := compareLigatureSubst(sub, est); err != nil {
+				if err := compareLigatureSubst(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			case GSubLookupTypeContext:
-				if err := compareContextSubst(sub, est); err != nil {
+				if err := compareContextSubst(enode, est); err != nil {
 					return fmt.Errorf("lookup[%d] subtable[%d]: %w", i, j, err)
 				}
 			}
@@ -363,11 +385,26 @@ func compareExpectedGSUB(gsub *GSubTable, exp *ttxtest.ExpectedGSUB) error {
 	return nil
 }
 
-func compareSingleSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error {
+func effectiveGSubNode(node *LookupNode) *LookupNode {
+	if node == nil {
+		return nil
+	}
+	payload := node.GSubPayload()
+	if payload != nil && payload.ExtensionFmt1 != nil && payload.ExtensionFmt1.Resolved != nil {
+		return payload.ExtensionFmt1.Resolved
+	}
+	return node
+}
+
+func compareSingleSubst(node *LookupNode, est ttxtest.ExpectedSubtable) error {
+	payload := node.GSubPayload()
+	if payload == nil {
+		return fmt.Errorf("missing GSUB payload")
+	}
 	if len(est.SingleSubst) == 0 {
 		return fmt.Errorf("expected single substitutions missing")
 	}
-	coverage, err := coverageGlyphs(sub.Coverage)
+	coverage, err := coverageGlyphs(node.Coverage)
 	if err != nil {
 		return fmt.Errorf("coverage parse: %w", err)
 	}
@@ -390,29 +427,36 @@ func compareSingleSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error
 		if err != nil {
 			return fmt.Errorf("substitution out %q: %w", outName, err)
 		}
-		switch sub.Format {
+		switch node.Format {
 		case 1:
-			delta, ok := sub.Support.(int16)
-			if !ok {
+			if payload.SingleFmt1 == nil {
 				return fmt.Errorf("missing delta for format 1")
 			}
+			delta := payload.SingleFmt1.DeltaGlyphID
 			got := GlyphIndex(int(in) + int(delta))
 			if got != out {
 				return fmt.Errorf("substitution %q mismatch: got %d, want %d", name, got, out)
 			}
 		case 2:
-			if got := lookupGlyphTest(sub.Index, i, false); got != out {
+			if payload.SingleFmt2 == nil || i >= len(payload.SingleFmt2.SubstituteGlyphIDs) {
+				return fmt.Errorf("missing substitution list entry %d", i)
+			}
+			if got := payload.SingleFmt2.SubstituteGlyphIDs[i]; got != out {
 				return fmt.Errorf("substitution %q mismatch: got %d, want %d", name, got, out)
 			}
 		default:
-			return fmt.Errorf("unsupported single subst format %d", sub.Format)
+			return fmt.Errorf("unsupported single subst format %d", node.Format)
 		}
 	}
 	return nil
 }
 
-func compareAlternateSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error {
-	coverage, err := coverageGlyphs(sub.Coverage)
+func compareAlternateSubst(node *LookupNode, est ttxtest.ExpectedSubtable) error {
+	payload := node.GSubPayload()
+	if payload == nil || payload.AlternateFmt1 == nil {
+		return fmt.Errorf("missing alternate payload")
+	}
+	coverage, err := coverageGlyphs(node.Coverage)
 	if err != nil {
 		return fmt.Errorf("coverage parse: %w", err)
 	}
@@ -434,10 +478,10 @@ func compareAlternateSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) er
 		if err != nil {
 			return fmt.Errorf("alternate set glyph %q: %w", name, err)
 		}
-		actual, err := alternateSetGlyphs(sub.Index, i)
-		if err != nil {
-			return fmt.Errorf("alternate set %q: %w", name, err)
+		if i >= len(payload.AlternateFmt1.Alternates) {
+			return fmt.Errorf("alternate set %q missing", name)
 		}
+		actual := payload.AlternateFmt1.Alternates[i]
 		expNames := est.Alternates[name]
 		exp := make([]GlyphIndex, 0, len(expNames))
 		for _, altName := range expNames {
@@ -461,11 +505,15 @@ func compareAlternateSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) er
 	return nil
 }
 
-func compareLigatureSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error {
+func compareLigatureSubst(node *LookupNode, est ttxtest.ExpectedSubtable) error {
+	payload := node.GSubPayload()
+	if payload == nil || payload.LigatureFmt1 == nil {
+		return fmt.Errorf("missing ligature payload")
+	}
 	if len(est.Ligatures) == 0 {
 		return fmt.Errorf("expected ligatures missing")
 	}
-	coverage, err := coverageGlyphs(sub.Coverage)
+	coverage, err := coverageGlyphs(node.Coverage)
 	if err != nil {
 		return fmt.Errorf("coverage parse: %w", err)
 	}
@@ -481,10 +529,10 @@ func compareLigatureSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) err
 			return fmt.Errorf("coverage[%d] mismatch: got %d, want %d", i, coverage[i], first)
 		}
 		exp := est.Ligatures[name]
-		actual, err := ligatureSet(sub.Index, i)
-		if err != nil {
-			return fmt.Errorf("ligature set %q: %w", name, err)
+		if i >= len(payload.LigatureFmt1.LigatureSets) {
+			return fmt.Errorf("ligature set %q missing", name)
 		}
+		actual := toParsedLigatures(payload.LigatureFmt1.LigatureSets[i])
 		if len(actual) != len(exp) {
 			return fmt.Errorf("ligature count mismatch for %q: got %d, want %d", name, len(actual), len(exp))
 		}
@@ -497,25 +545,29 @@ func compareLigatureSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) err
 	return nil
 }
 
-func compareContextSubst(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error {
-	switch sub.Format {
+func compareContextSubst(node *LookupNode, est ttxtest.ExpectedSubtable) error {
+	switch node.Format {
 	case 1:
-		return compareContextSubstFmt1(sub, est)
+		return compareContextSubstFmt1(node, est)
 	case 2:
-		return compareContextSubstFmt2(sub, est)
+		return compareContextSubstFmt2(node, est)
 	default:
-		return fmt.Errorf("unsupported context subst format %d", sub.Format)
+		return fmt.Errorf("unsupported context subst format %d", node.Format)
 	}
 }
 
-func compareContextSubstFmt1(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error {
+func compareContextSubstFmt1(node *LookupNode, est ttxtest.ExpectedSubtable) error {
+	payload := node.GSubPayload()
+	if payload == nil || payload.ContextFmt1 == nil {
+		return fmt.Errorf("missing context format 1 payload")
+	}
 	if est.ContextSubst == nil {
 		return fmt.Errorf("expected context subst missing")
 	}
-	if sub.Format != 1 {
-		return fmt.Errorf("unsupported context subst format %d", sub.Format)
+	if node.Format != 1 {
+		return fmt.Errorf("unsupported context subst format %d", node.Format)
 	}
-	coverage, err := coverageGlyphs(sub.Coverage)
+	coverage, err := coverageGlyphs(node.Coverage)
 	if err != nil {
 		return fmt.Errorf("coverage parse: %w", err)
 	}
@@ -537,10 +589,7 @@ func compareContextSubstFmt1(sub *LookupSubtable, est ttxtest.ExpectedSubtable) 
 		if i < len(est.ContextSubst.RuleSets) {
 			expRules = est.ContextSubst.RuleSets[i].Rules
 		}
-		rules, err := parseSequenceRules(sub, i)
-		if err != nil {
-			return fmt.Errorf("rule set %d: %w", i, err)
-		}
+		rules := parseSequenceRules(payload.ContextFmt1, i)
 		if len(rules) != len(expRules) {
 			return fmt.Errorf("rule set %d count mismatch: got %d, want %d", i, len(rules), len(expRules))
 		}
@@ -553,14 +602,18 @@ func compareContextSubstFmt1(sub *LookupSubtable, est ttxtest.ExpectedSubtable) 
 	return nil
 }
 
-func compareContextSubstFmt2(sub *LookupSubtable, est ttxtest.ExpectedSubtable) error {
+func compareContextSubstFmt2(node *LookupNode, est ttxtest.ExpectedSubtable) error {
+	payload := node.GSubPayload()
+	if payload == nil || payload.ContextFmt2 == nil {
+		return fmt.Errorf("missing context format 2 payload")
+	}
 	if est.ContextSubst == nil {
 		return fmt.Errorf("expected context subst missing")
 	}
-	if sub.Format != 2 {
-		return fmt.Errorf("unsupported context subst format %d", sub.Format)
+	if node.Format != 2 {
+		return fmt.Errorf("unsupported context subst format %d", node.Format)
 	}
-	coverage, err := coverageGlyphs(sub.Coverage)
+	coverage, err := coverageGlyphs(node.Coverage)
 	if err != nil {
 		return fmt.Errorf("coverage parse: %w", err)
 	}
@@ -578,16 +631,12 @@ func compareContextSubstFmt2(sub *LookupSubtable, est ttxtest.ExpectedSubtable) 
 	}
 
 	if len(est.ContextSubst.ClassDefs) > 0 {
-		seqctx, ok := sub.Support.(*SequenceContext)
-		if !ok || seqctx == nil || len(seqctx.ClassDefs) == 0 {
-			return fmt.Errorf("missing class definitions in subtable support")
-		}
 		for name, class := range est.ContextSubst.ClassDefs {
 			gid, err := glyphNameToID(name)
 			if err != nil {
 				return fmt.Errorf("classdef glyph %q: %w", name, err)
 			}
-			if got := int(seqctx.ClassDefs[0].Lookup(gid)); got != class {
+			if got := int(payload.ContextFmt2.ClassDef.Lookup(gid)); got != class {
 				return fmt.Errorf("classdef %q mismatch: got %d, want %d", name, got, class)
 			}
 		}
@@ -595,10 +644,7 @@ func compareContextSubstFmt2(sub *LookupSubtable, est ttxtest.ExpectedSubtable) 
 
 	for i := range est.ContextSubst.ClassRuleSets {
 		expRules := est.ContextSubst.ClassRuleSets[i].Rules
-		rules, err := parseClassSequenceRules(sub, i)
-		if err != nil {
-			return fmt.Errorf("class rule set %d: %w", i, err)
-		}
+		rules := parseClassSequenceRules(payload.ContextFmt2, i)
 		if len(rules) != len(expRules) {
 			return fmt.Errorf("class rule set %d count mismatch: got %d, want %d", i, len(rules), len(expRules))
 		}
@@ -616,39 +662,20 @@ type parsedSequenceRule struct {
 	Records []SequenceLookupRecord
 }
 
-func parseSequenceRules(sub *LookupSubtable, coverageIndex int) ([]parsedSequenceRule, error) {
-	if sub.Index.Size() == 0 {
-		return nil, nil
+func parseSequenceRules(payload *GSubContextFmt1Payload, coverageIndex int) []parsedSequenceRule {
+	if payload == nil || coverageIndex < 0 || coverageIndex >= len(payload.RuleSets) {
+		return nil
 	}
-	ruleSetLoc, err := sub.Index.Get(coverageIndex, false)
-	if err != nil {
-		return nil, err
-	}
-	if ruleSetLoc.Size() < 2 {
-		return nil, nil
-	}
-	ruleSet := ParseVarArray(ruleSetLoc, 0, 2, "SequenceRuleSet")
-	out := make([]parsedSequenceRule, 0, ruleSet.Size())
-	for i := 0; i < ruleSet.Size(); i++ {
-		ruleLoc, err := ruleSet.Get(i, false)
-		if err != nil || ruleLoc.Size() < 4 {
-			continue
-		}
-		seqrule := sub.SequenceRule(binarySegm(ruleLoc.Bytes()))
-		input := make([]GlyphIndex, 0, seqrule.inputSequence.Len())
-		for _, loc := range seqrule.inputSequence.Range() {
-			input = append(input, GlyphIndex(loc.U16(0)))
-		}
-		records := make([]SequenceLookupRecord, 0, seqrule.lookupRecords.Len())
-		for _, loc := range seqrule.lookupRecords.Range() {
-			records = append(records, SequenceLookupRecord{
-				SequenceIndex:   loc.U16(0),
-				LookupListIndex: loc.U16(2),
-			})
-		}
+	ruleSet := payload.RuleSets[coverageIndex]
+	out := make([]parsedSequenceRule, 0, len(ruleSet))
+	for _, r := range ruleSet {
+		input := make([]GlyphIndex, len(r.InputGlyphs))
+		copy(input, r.InputGlyphs)
+		records := make([]SequenceLookupRecord, len(r.Records))
+		copy(records, r.Records)
 		out = append(out, parsedSequenceRule{Input: input, Records: records})
 	}
-	return out, nil
+	return out
 }
 
 func compareSequenceRule(actual parsedSequenceRule, exp ttxtest.ExpectedSequenceRule) error {
@@ -685,52 +712,20 @@ type parsedClassSequenceRule struct {
 	Records []SequenceLookupRecord
 }
 
-func parseClassSequenceRules(sub *LookupSubtable, setIndex int) ([]parsedClassSequenceRule, error) {
-	if sub.Index.Size() == 0 {
-		return nil, nil
+func parseClassSequenceRules(payload *GSubContextFmt2Payload, setIndex int) []parsedClassSequenceRule {
+	if payload == nil || setIndex < 0 || setIndex >= len(payload.RuleSets) {
+		return nil
 	}
-	ruleSetLoc, err := sub.Index.Get(setIndex, false)
-	if err != nil {
-		return nil, err
-	}
-	if ruleSetLoc.Size() < 2 {
-		return nil, nil
-	}
-	ruleSet := ParseVarArray(ruleSetLoc, 0, 2, "ClassSequenceRuleSet")
-	out := make([]parsedClassSequenceRule, 0, ruleSet.Size())
-	for i := 0; i < ruleSet.Size(); i++ {
-		ruleLoc, err := ruleSet.Get(i, false)
-		if err != nil || ruleLoc.Size() < 4 {
-			continue
-		}
-		glyphCount := int(ruleLoc.U16(0))
-		seqLookupCount := int(ruleLoc.U16(2))
-		if glyphCount < 1 {
-			continue
-		}
-		classCount := glyphCount - 1
-		classBytes := classCount * 2
-		recBytes := seqLookupCount * 4
-		minSize := 4 + classBytes + recBytes
-		if ruleLoc.Size() < minSize {
-			continue
-		}
-		classes := make([]uint16, classCount)
-		for j := 0; j < classCount; j++ {
-			classes[j] = ruleLoc.U16(4 + j*2)
-		}
-		records := make([]SequenceLookupRecord, seqLookupCount)
-		recStart := 4 + classBytes
-		for r := 0; r < seqLookupCount; r++ {
-			off := recStart + r*4
-			records[r] = SequenceLookupRecord{
-				SequenceIndex:   ruleLoc.U16(off),
-				LookupListIndex: ruleLoc.U16(off + 2),
-			}
-		}
+	ruleSet := payload.RuleSets[setIndex]
+	out := make([]parsedClassSequenceRule, 0, len(ruleSet))
+	for _, r := range ruleSet {
+		classes := make([]uint16, len(r.InputClasses))
+		copy(classes, r.InputClasses)
+		records := make([]SequenceLookupRecord, len(r.Records))
+		copy(records, r.Records)
 		out = append(out, parsedClassSequenceRule{Classes: classes, Records: records})
 	}
-	return out, nil
+	return out
 }
 
 func compareClassSequenceRule(actual parsedClassSequenceRule, exp ttxtest.ExpectedClassSequenceRule) error {
@@ -763,45 +758,20 @@ type parsedLigature struct {
 	Glyph      GlyphIndex
 }
 
-func ligatureSet(index VarArray, setIndex int) ([]parsedLigature, error) {
-	loc, err := index.Get(setIndex, false)
-	if err != nil {
-		return nil, err
+func toParsedLigatures(in []GSubLigatureRule) []parsedLigature {
+	if len(in) == 0 {
+		return nil
 	}
-	if loc.Size() < 2 {
-		return nil, fmt.Errorf("ligature set too small")
+	out := make([]parsedLigature, len(in))
+	for i, lig := range in {
+		components := make([]GlyphIndex, len(lig.Components))
+		copy(components, lig.Components)
+		out[i] = parsedLigature{
+			Components: components,
+			Glyph:      lig.Ligature,
+		}
 	}
-	cnt := int(loc.U16(0))
-	need := 2 + cnt*2
-	if loc.Size() < need {
-		return nil, fmt.Errorf("ligature set size %d < %d", loc.Size(), need)
-	}
-	out := make([]parsedLigature, 0, cnt)
-	for i := 0; i < cnt; i++ {
-		off := loc.U16(2 + i*2)
-		if off == 0 || int(off) >= loc.Size() {
-			return nil, fmt.Errorf("ligature offset %d out of bounds", off)
-		}
-		l := binarySegm(loc.Bytes()[off:])
-		if l.Size() < 4 {
-			return nil, fmt.Errorf("ligature table too small")
-		}
-		glyph := GlyphIndex(l.U16(0))
-		compCount := int(l.U16(2))
-		if compCount < 1 {
-			return nil, fmt.Errorf("ligature component count %d", compCount)
-		}
-		needComp := 4 + (compCount-1)*2
-		if l.Size() < needComp {
-			return nil, fmt.Errorf("ligature table size %d < %d", l.Size(), needComp)
-		}
-		comps := make([]GlyphIndex, 0, compCount-1)
-		for j := 0; j < compCount-1; j++ {
-			comps = append(comps, GlyphIndex(l.U16(4+j*2)))
-		}
-		out = append(out, parsedLigature{Components: comps, Glyph: glyph})
-	}
-	return out, nil
+	return out
 }
 
 func compareLigature(actual parsedLigature, exp ttxtest.ExpectedLigature) error {
@@ -825,31 +795,6 @@ func compareLigature(actual parsedLigature, exp ttxtest.ExpectedLigature) error 
 		return fmt.Errorf("ligature glyph mismatch: got %d, want %d", actual.Glyph, gid)
 	}
 	return nil
-}
-
-func alternateSetGlyphs(index VarArray, setIndex int) ([]GlyphIndex, error) {
-	loc, err := index.Get(setIndex, false)
-	if err != nil {
-		return nil, err
-	}
-	if loc.Size() < 2 {
-		return nil, fmt.Errorf("alternate set too small")
-	}
-	cnt := int(loc.U16(0))
-	need := 2 + cnt*2
-	if loc.Size() < need {
-		return nil, fmt.Errorf("alternate set size %d < %d", loc.Size(), need)
-	}
-	seg := binarySegm(loc.Bytes()[2:need])
-	return seg.Glyphs(), nil
-}
-
-func lookupGlyphTest(index VarArray, ginx int, deep bool) GlyphIndex {
-	outglyph, err := index.Get(ginx, deep)
-	if err != nil {
-		return 0
-	}
-	return GlyphIndex(outglyph.U16(0))
 }
 
 func coverageGlyphs(c Coverage) ([]GlyphIndex, error) {

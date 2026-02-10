@@ -126,13 +126,10 @@ func assertScriptGraphParity(t *testing.T, graph *ScriptList) {
 	}
 }
 
-func assertLookupGraphBaseline(t *testing.T, legacy LookupList, graph *LookupListGraph) {
+func assertLookupGraphBaseline(t *testing.T, graph *LookupListGraph) {
 	t.Helper()
 	if graph == nil {
 		t.Fatalf("expected concrete lookup graph to be parsed")
-	}
-	if graph.Len() != legacy.Len() {
-		t.Fatalf("lookup graph count mismatch: legacy=%d concrete=%d", legacy.Len(), graph.Len())
 	}
 	if graph.Error() != nil {
 		t.Fatalf("unexpected concrete lookup graph parse error: %v", graph.Error())
@@ -140,7 +137,6 @@ func assertLookupGraphBaseline(t *testing.T, legacy LookupList, graph *LookupLis
 	if graph.Len() == 0 {
 		return
 	}
-	legacyLookup := legacy.Navigate(0)
 	concreteLookup := graph.Lookup(0)
 	if concreteLookup == nil {
 		t.Fatalf("expected concrete lookup[0] to be resolvable")
@@ -148,15 +144,9 @@ func assertLookupGraphBaseline(t *testing.T, legacy LookupList, graph *LookupLis
 	if concreteLookup.Error() != nil {
 		t.Fatalf("unexpected concrete lookup[0] parse error: %v", concreteLookup.Error())
 	}
-	if concreteLookup.Type != legacyLookup.Type {
-		t.Fatalf("lookup[0] type mismatch: legacy=%d concrete=%d", legacyLookup.Type, concreteLookup.Type)
-	}
-	if concreteLookup.Flag != legacyLookup.Flag {
-		t.Fatalf("lookup[0] flag mismatch: legacy=0x%x concrete=0x%x", legacyLookup.Flag, concreteLookup.Flag)
-	}
-	if int(concreteLookup.SubTableCount) != legacyLookup.subTables.length {
-		t.Fatalf("lookup[0] subtable-count mismatch: legacy=%d concrete=%d",
-			legacyLookup.subTables.length, concreteLookup.SubTableCount)
+	if int(concreteLookup.SubTableCount) != len(concreteLookup.subtableOffsets) {
+		t.Fatalf("lookup[0] subtable-count mismatch: offsets=%d concrete=%d",
+			len(concreteLookup.subtableOffsets), concreteLookup.SubTableCount)
 	}
 }
 
@@ -397,7 +387,7 @@ func TestParseGPos(t *testing.T) {
 	}
 	assertFeatureGraphLazy(t, gpos.FeatureGraph())
 	assertScriptGraphLazy(t, gpos.ScriptGraph())
-	assertLookupGraphBaseline(t, gpos.LookupList, gpos.LookupGraph())
+	assertLookupGraphBaseline(t, gpos.LookupGraph())
 	assertLookupGraphGPosScaffold(t, gpos.LookupGraph())
 	t.Logf("otf.GPOS: %d concrete scripts:", gpos.ScriptGraph().Len())
 	assertScriptGraphParity(t, gpos.ScriptGraph())
@@ -440,7 +430,7 @@ func TestParseGSub(t *testing.T) {
 	}
 	assertFeatureGraphLazy(t, gsub.FeatureGraph())
 	assertScriptGraphLazy(t, gsub.ScriptGraph())
-	assertLookupGraphBaseline(t, gsub.LookupList, gsub.LookupGraph())
+	assertLookupGraphBaseline(t, gsub.LookupGraph())
 	assertLookupGraphGSubScaffold(t, gsub.LookupGraph())
 	assertScriptGraphParity(t, gsub.ScriptGraph())
 	// t.Logf("otf.GSUB: %d scripts:", len(gsub.scripts))
@@ -610,7 +600,7 @@ func TestLookupSubtableGraphLazyConcurrent(t *testing.T) {
 	}
 }
 
-func TestLegacyLookupCacheStableAcrossValueReceivers(t *testing.T) {
+func TestLookupGraphCacheStableAcrossRepeatedAccess(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
@@ -619,26 +609,30 @@ func TestLegacyLookupCacheStableAcrossValueReceivers(t *testing.T) {
 	if gsub == nil {
 		t.Fatalf("expected GSUB table")
 	}
-	if gsub.LookupList.Len() == 0 {
-		t.Fatalf("expected non-empty legacy GSUB lookup list")
+	graph := gsub.LookupGraph()
+	if graph == nil || graph.Len() == 0 {
+		t.Fatalf("expected non-empty concrete GSUB lookup graph")
 	}
 
-	// Exercise value-receiver path on LookupList and Lookup repeatedly.
-	st1 := gsub.LookupList.Navigate(0).Subtable(0)
-	st2 := gsub.LookupList.Navigate(0).Subtable(0)
+	lookup1 := graph.Lookup(0)
+	lookup2 := graph.Lookup(0)
+	if lookup1 == nil || lookup2 == nil {
+		t.Fatalf("expected non-nil concrete lookup")
+	}
+	if lookup1 != lookup2 {
+		t.Fatalf("expected stable cached lookup pointer across repeated traversal")
+	}
+
+	if lookup1.SubTableCount == 0 {
+		t.Skip("lookup[0] has no subtables")
+	}
+	st1 := lookup1.Subtable(0)
+	st2 := lookup2.Subtable(0)
 	if st1 == nil || st2 == nil {
-		t.Fatalf("expected non-nil legacy lookup subtables")
+		t.Fatalf("expected non-nil concrete lookup subtable")
 	}
 	if st1 != st2 {
-		t.Fatalf("expected stable cached subtable pointer across value-receiver traversal")
-	}
-
-	// Verify cache parse sentinels are updated on the stable list instance.
-	if !gsub.LookupList.lookupsParsed[0] {
-		t.Fatalf("expected lookup cache sentinel to be set")
-	}
-	if !gsub.LookupList.lookupsCache[0].subTablesParsed[0] {
-		t.Fatalf("expected subtable cache sentinel to be set")
+		t.Fatalf("expected stable cached subtable pointer across repeated traversal")
 	}
 }
 
@@ -768,11 +762,9 @@ func TestParseGSubLookups(t *testing.T) {
 	otf := parseFont(t, "Calibri")
 	table := getTable(otf, "GSUB", t)
 	gsub := table.Self().AsGSub()
-	ll := gsub.LookupList
-	if ll.err != nil {
-		t.Fatal(ll.err)
-	} else if ll.array.length == 0 {
-		t.Fatalf("GSUB table has no LookupList section")
+	graph := gsub.LookupGraph()
+	if graph == nil || graph.Len() == 0 {
+		t.Fatalf("GSUB table has no lookup graph section")
 	}
 	/*
 	   <LookupList>
@@ -792,42 +784,32 @@ func TestParseGSubLookups(t *testing.T) {
 	       </ExtensionSubst>
 	     </Lookup>
 	*/
-	t.Logf("font Calibri has %d lookups", ll.array.length)
-	lookup := gsub.LookupList.Navigate(0)
-	t.Logf("lookup[0].subTables count is %d", lookup.subTables.length)
-	if lookup.subTablesCache == nil {
-		t.Logf("no cached sub-tables")
-	}
-	st := lookup.Subtable(0)
-	t.Logf("type of sub-table is %s", st.LookupType.GSubString())
-	if st.LookupType != 1 {
-		t.Errorf("expected first lookup to be of type 7 -> 1, is %d", st.LookupType)
-	}
-	// Concrete lookup graph keeps extension as explicit type-7 node and resolves type via payload.
-	cgraph := gsub.LookupGraph()
-	if cgraph == nil {
-		t.Fatalf("expected concrete lookup graph for GSUB")
-	}
-	clookup := cgraph.Lookup(0)
+	t.Logf("font Calibri has %d lookups", graph.Len())
+	clookup := graph.Lookup(0)
 	if clookup == nil {
 		t.Fatalf("expected concrete lookup[0]")
 	}
+	t.Logf("lookup[0].subTables count is %d", clookup.SubTableCount)
 	csub := clookup.Subtable(0)
+	if csub == nil {
+		t.Fatalf("expected concrete subtable[0]")
+	}
+	// Concrete lookup graph keeps extension as explicit type-7 node and resolves type via payload.
 	if csub == nil || csub.GSubPayload() == nil || csub.GSubPayload().ExtensionFmt1 == nil {
 		t.Fatalf("expected concrete GSUB extension payload for lookup[0]/subtable[0]")
 	}
 	if csub.LookupType != GSubLookupTypeExtensionSubs {
 		t.Fatalf("expected concrete subtable type 7 (extension), got %d", csub.LookupType)
 	}
-	if csub.GSubPayload().ExtensionFmt1.ResolvedType != st.LookupType {
-		t.Fatalf("extension resolved-type mismatch: legacy=%d concrete=%d", st.LookupType, csub.GSubPayload().ExtensionFmt1.ResolvedType)
+	if csub.GSubPayload().ExtensionFmt1.ResolvedType != GSubLookupTypeSingle {
+		t.Fatalf("extension resolved-type mismatch: want=%d concrete=%d", GSubLookupTypeSingle, csub.GSubPayload().ExtensionFmt1.ResolvedType)
 	}
 	if csub.GSubPayload().ExtensionFmt1.Resolved == nil {
 		t.Fatalf("expected concrete extension resolved node")
 	}
-	if csub.GSubPayload().ExtensionFmt1.Resolved.LookupType != st.LookupType {
-		t.Fatalf("extension resolved node type mismatch: legacy=%d concrete=%d",
-			st.LookupType, csub.GSubPayload().ExtensionFmt1.Resolved.LookupType)
+	if csub.GSubPayload().ExtensionFmt1.Resolved.LookupType != GSubLookupTypeSingle {
+		t.Fatalf("extension resolved node type mismatch: want=%d concrete=%d",
+			GSubLookupTypeSingle, csub.GSubPayload().ExtensionFmt1.Resolved.LookupType)
 	}
 }
 
@@ -866,35 +848,34 @@ func TestParseGPosLookups(t *testing.T) {
 		t.Fatal("cannot convert GPOS table")
 	}
 
-	ll := gpos.LookupList
-	if ll.err != nil {
-		t.Fatal(ll.err)
+	graph := gpos.LookupGraph()
+	if graph == nil || graph.Len() == 0 {
+		t.Fatal("GPOS lookup graph is empty")
 	}
 
-	if ll.array.length == 0 {
-		t.Fatal("GPOS LookupList is empty")
-	}
-
-	t.Logf("GPOS has %d lookups", ll.array.length)
+	t.Logf("GPOS has %d lookups", graph.Len())
 
 	// Test that we can parse lookup subtables without panicking
 	// The old implementation had a panic("TODO GPOS Lookup Subtable")
 	parsedCount := 0
-	for i := 0; i < int(ll.array.length); i++ {
-		lookup := gpos.LookupList.Navigate(i)
-		if lookup.err != nil {
-			t.Logf("Warning: could not navigate to lookup %d: %v", i, lookup.err)
+	for i := 0; i < graph.Len(); i++ {
+		lookup := graph.Lookup(i)
+		if lookup == nil || lookup.Error() != nil {
+			t.Logf("Warning: could not navigate to lookup %d: %v", i, lookup.Error())
 			continue
 		}
 
 		t.Logf("Lookup %d: type=%s flags=0x%04x subtables=%d",
-			i, lookup.Type.GPosString(), lookup.Flag, lookup.subTables.length)
+			i, lookup.Type.GPosString(), lookup.Flag, lookup.SubTableCount)
 
 		// Try to parse the first subtable to verify our GPOS parsing works
-		if lookup.subTables.length > 0 {
-			st := lookup.Subtable(0)
+		if lookup.SubTableCount > 0 {
+			node := lookup.Subtable(0)
+			if node == nil {
+				continue
+			}
 			t.Logf("  Subtable[0]: type=%s format=%d",
-				st.LookupType.GPosString(), st.Format)
+				GPosLookupType(node.LookupType).GPosString(), node.Format)
 
 			// The fact that we got here without panicking means our GPOS parsing works!
 			// The old implementation had: panic("TODO GPOS Lookup Subtable")
@@ -903,8 +884,8 @@ func TestParseGPosLookups(t *testing.T) {
 	}
 
 	// Verify we have the expected number of lookups for Calibri
-	if ll.array.length != 14 {
-		t.Errorf("expected Calibri GPOS to have 14 lookups, got %d", ll.array.length)
+	if graph.Len() != 14 {
+		t.Errorf("expected Calibri GPOS to have 14 lookups, got %d", graph.Len())
 	}
 
 	// Verify we successfully parsed subtables

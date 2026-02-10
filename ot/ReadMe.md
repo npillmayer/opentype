@@ -23,7 +23,7 @@ applications in their own right. I often need a break from the vast desert of
 bytes (without any sign posts), which is what font data files are at their core. Breaks,
 where I talk to myself and ask, this is what you do in your spare time? Really?
 
-No font collections nor variable fonts are supported yet. 
+No font collections nor variable fonts are supported yet, but will be in the future. 
 
 We borrow the contract expressed by Rust's `ttf-parser`.
 ttf-parser does not try to prove that a font is correct, but enforces a narrower, more useful contract:
@@ -66,15 +66,15 @@ in Rust:
 Package `ot` will not provide functions to interpret any table of a font, but rather
 expose the tables to the client in a semantic way. It is not possible to, for example, ask
 package `ot` for a kerning distance between two glyphs. Instead, clients have to check
-for the availability of kerning tables and consult the appropriate table(s)
-themselves. From this point of view `ot` is a low-level package.
+for the availability of a GPOS table and consult it themselves.
+From this point of view `ot` is a low-level package.
 
-The binary data of a font can be thought of as a bunch of structures
+The binary data of an OpenType font can be thought of as a bunch of structures
 connected by links. The linking is done by offsets (u16 or u32) from link anchors
 defined by the spec. Data-structures may be categorized into fields-like,
 list-like and map-like. The implementation details of these structures vary
 heavily, and many internal tables combine more than one category, but conceptually it
-should be possible to navigate the graph, spanned by links and structures,
+should often be possible to navigate the graph, spanned by links and structures,
 without caring about implementation details.
 Consider this overview of OpenType Layout tables (GSUB and GPOS):
 
@@ -86,11 +86,5 @@ Consider this overview of OpenType Layout tables (GSUB and GPOS):
 
 GSUB is an important table for text shaping, so package `ot` offers a special semantic type.
 However, this type is not exposing GSUB in full depth.
-To find out if the current font contains features applicable for Latin script with
-Turkish language flavour, type:
-
-    langSys := gsub.ScriptList.Map().AsTagRecordMap().LookupTag(T("latn")).Navigate().Map().AsTagRecordMap().LookupTag(T("TRK")).Navigate().List()
-    fmt.Println("%d font-features for Turkish", langSys.Len())
-    // => yields 24 with font 'Calibri'
 
 This is an early draft, not suited to be used by other programs.

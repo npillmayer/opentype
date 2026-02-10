@@ -83,7 +83,7 @@ func parseConcreteGPosType1(node *LookupNode) {
 		}
 		values := make([]ValueRecord, valueCount)
 		offset := 8
-		for i := 0; i < valueCount; i++ {
+		for i := range valueCount {
 			vr, n := parseValueRecord(node.raw, offset, valueFormat)
 			values[i] = vr
 			offset += n
@@ -158,9 +158,9 @@ func parseConcreteGPosType2(node *LookupNode) {
 		}
 		records := make([][]GPosClass2ValueRecord, class1Count)
 		offset := 16
-		for i := 0; i < class1Count; i++ {
+		for i := range class1Count {
 			row := make([]GPosClass2ValueRecord, class2Count)
-			for j := 0; j < class2Count; j++ {
+			for j := range class2Count {
 				v1, n1 := parseValueRecord(node.raw, offset, valueFormat1)
 				offset += n1
 				v2, n2 := parseValueRecord(node.raw, offset, valueFormat2)
@@ -198,7 +198,7 @@ func parseConcreteGPosType3(node *LookupNode) {
 	}
 	entries := make([]GPosEntryExitAnchor, entryExitCount)
 	offsets := make([]gposEntryExitOffsets, entryExitCount)
-	for i := 0; i < entryExitCount; i++ {
+	for i := range entryExitCount {
 		base := 6 + i*4
 		entryOff := node.raw.U16(base)
 		exitOff := node.raw.U16(base + 2)
@@ -441,13 +441,13 @@ func parseConcreteGPosType7(node *LookupNode) {
 			return
 		}
 		node.GPos.ContextFmt3.InputCoverages = make([]Coverage, glyphCount)
-		for i := 0; i < glyphCount; i++ {
+		for i := range glyphCount {
 			link, err := parseLink16(node.raw, 6+i*2, node.raw, "GPOS7/3.InputCoverage")
 			if err != nil {
 				setLookupNodeError(node, err)
 				continue
 			}
-			node.GPos.ContextFmt3.InputCoverages[i] = parseCoverage(link.Jump().Bytes())
+			node.GPos.ContextFmt3.InputCoverages[i] = parseCoverage(link.jump().Bytes())
 		}
 		records, err := parseSequenceLookupRecords(node.raw, 6+glyphCount*2, seqLookupCount)
 		if err != nil {
@@ -587,7 +587,7 @@ func parseConcreteGPosType9(node *LookupNode, depth int) {
 		return
 	}
 	resolvedType := MaskGPosLookupType(actualType)
-	resolved := parseConcreteLookupNodeWithDepth(link.Jump().Bytes(), resolvedType, depth+1)
+	resolved := parseConcreteLookupNodeWithDepth(link.jump().Bytes(), resolvedType, depth+1)
 	node.GPos.ExtensionFmt1.ResolvedType = resolvedType
 	node.GPos.ExtensionFmt1.Resolved = resolved
 	if resolved != nil {
@@ -609,7 +609,7 @@ func parseGPosPairSet(b binarySegm, format1, format2 ValueFormat) ([]PairValueRe
 	}
 	records := make([]PairValueRecord, pairValueCount)
 	offset := 2
-	for i := 0; i < pairValueCount; i++ {
+	for i := range pairValueCount {
 		second := b.U16(offset)
 		offset += 2
 		v1, n1 := parseValueRecord(b, offset, format1)
@@ -682,7 +682,7 @@ func parseGPosLigatureAttachRecords(ligArray binarySegm, classCount int) ([]GPos
 		return nil, errBufferBounds
 	}
 	records := make([]GPosLigatureAttachRecord, 0, ligCount)
-	for i := 0; i < ligCount; i++ {
+	for i := range ligCount {
 		off := ligArray.U16(2 + i*2)
 		if off == 0 {
 			continue
@@ -704,10 +704,10 @@ func parseGPosLigatureAttachRecords(ligArray binarySegm, classCount int) ([]GPos
 			componentAnchorOffsets: make([][]uint16, componentCount),
 		}
 		offset := 2
-		for c := 0; c < componentCount; c++ {
+		for c := range componentCount {
 			componentAnchors := make([]*Anchor, classCount)
 			componentAnchorOffsets := make([]uint16, classCount)
-			for clz := 0; clz < classCount; clz++ {
+			for clz := range classCount {
 				aoff := ligAttach.U16(offset)
 				offset += 2
 				componentAnchorOffsets[clz] = aoff

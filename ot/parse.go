@@ -32,8 +32,7 @@ const (
 // Maximum recursion/nesting depths to prevent stack overflow.
 // These limits follow ttf-parser's approach of bounded recursion.
 const (
-	MaxExtensionDepth   = 16 // Maximum Extension lookup nesting
-	MaxIndirectionDepth = 8  // Maximum varArray indirection levels
+	MaxExtensionDepth = 16 // Maximum Extension lookup nesting
 )
 
 // ---------------------------------------------------------------------------
@@ -432,8 +431,8 @@ func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 		loca := locaTable.Self().AsLoca()
 
 		// Calculate expected loca table size based on IndexToLocFormat
-		if head.IndexToLocFormat == 0 {
-			// Short format: (numGlyphs + 1) * 2 bytes
+		switch head.IndexToLocFormat {
+		case 0: // Short format: (numGlyphs + 1) * 2 bytes
 			expectedLocaSize, err := checkedMulInt(numGlyphs+1, 2)
 			if err != nil {
 				ec.addError(T("loca"), "Size", fmt.Sprintf("size calculation overflow: %v", err), SeverityCritical, 0)
@@ -444,8 +443,7 @@ func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 				return errFontFormat(fmt.Sprintf("loca table size (%d) insufficient for %d glyphs in short format (need %d)",
 					loca.length, numGlyphs, expectedLocaSize))
 			}
-		} else if head.IndexToLocFormat == 1 {
-			// Long format: (numGlyphs + 1) * 4 bytes
+		case 1: // Long format: (numGlyphs + 1) * 4 bytes
 			expectedLocaSize, err := checkedMulInt(numGlyphs+1, 4)
 			if err != nil {
 				ec.addError(T("loca"), "Size", fmt.Sprintf("size calculation overflow: %v", err), SeverityCritical, 0)
@@ -456,7 +454,7 @@ func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 				return errFontFormat(fmt.Sprintf("loca table size (%d) insufficient for %d glyphs in long format (need %d)",
 					loca.length, numGlyphs, expectedLocaSize))
 			}
-		} else {
+		default:
 			ec.addError(T("head"), "IndexToLocFormat", fmt.Sprintf("invalid value: %d (must be 0 or 1)", head.IndexToLocFormat), SeverityCritical, 0)
 			return errFontFormat(fmt.Sprintf("invalid head.IndexToLocFormat: %d (must be 0 or 1)",
 				head.IndexToLocFormat))
@@ -481,11 +479,6 @@ func parseTable(t Tag, b binarySegm, offset, size uint32, ec *errorCollector) (T
 		return parseCMap(t, b, offset, size, ec)
 	case T("head"):
 		return parseHead(t, b, offset, size, ec)
-	case T("glyf"):
-		// We do not parse the glyf table (glyph outline data).
-		// For shaping and layout, all necessary metrics are provided by hmtx (advance width, LSB).
-		// The glyf table contains outline data for rendering, which is out of scope.
-		return newTable(t, b, offset, size), nil
 	case T("GDEF"):
 		return parseGDef(t, b, offset, size, ec)
 	case T("GPOS"):
@@ -505,7 +498,7 @@ func parseTable(t Tag, b binarySegm, offset, size uint32, ec *errorCollector) (T
 	}
 	tracer().Infof("font contains table (%s), will not be interpreted", t)
 	// Record as minor warning - not parsed but not a problem
-	ec.addWarning(t, fmt.Sprintf("table not interpreted"), offset)
+	ec.addWarning(t, "table not interpreted", offset)
 	return newTable(t, b, offset, size), nil
 }
 
@@ -651,7 +644,7 @@ func parseCMap(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 			ec.addWarning(tag, fmt.Sprintf("sub-table %d (platform=%d, encoding=%d) cannot be parsed", i, pid, psid), offset)
 			continue
 		}
-		subtable := link.Jump()
+		subtable := link.jump()
 		format := subtable.U16(0)
 		tracer().Debugf("cmap table contains subtable with format %d", format)
 		if supportedCmapFormat(format, pid, psid) {
@@ -664,7 +657,7 @@ func parseCMap(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 		ec.addError(tag, "Format", "no supported cmap format found", SeverityMajor, offset)
 		return nil, errFontFormat("no supported cmap format found")
 	}
-	t.GlyphIndexMap, err = makeGlyphIndex(b, enc, tag, offset, ec)
+	t.GlyphIndexMap, err = makeGlyphIndex(enc, tag, offset, ec)
 	if err != nil {
 		return nil, err
 	}
@@ -1139,7 +1132,7 @@ func parseScriptList(lytt *LayoutTable, b binarySegm, err error) error {
 		return err
 	}
 	link := link16{base: b, offset: uint16(lytt.header.offsetFor(layoutScriptSection))}
-	scripts := link.Jump() // now we stand at the ScriptList table
+	scripts := link.jump() // now we stand at the ScriptList table
 	scriptRecords, perr := parseArray(scripts.Bytes(), 0, 6, "ScriptList", "Script")
 	if perr != nil {
 		lytt.scriptGraph = &ScriptList{
@@ -1273,7 +1266,7 @@ func parseFeatureList(lytt *LayoutTable, b []byte, err error) error {
 		return err
 	}
 	link := link16{base: b, offset: uint16(lytt.header.offsetFor(layoutFeatureSection))}
-	features := link.Jump() // now we stand at the FeatureList table
+	features := link.jump() // now we stand at the FeatureList table
 	featureRecords, perr := parseArray(features.Bytes(), 0, 6, "FeatureList", "Feature")
 	if perr != nil {
 		lytt.featureGraph = &FeatureList{
@@ -1528,23 +1521,22 @@ func parseCoverage(b binarySegm) Coverage {
 	tracer().Debugf("coverage header format %d has count = %d ", h.CoverageFormat, h.Count)
 
 	// Validate based on format
-	if h.CoverageFormat == 1 {
-		// Format 1: array of glyph IDs (2 bytes each)
+	switch h.CoverageFormat {
+	case 1: // Format 1: array of glyph IDs (2 bytes each)
 		requiredSize := 4 + int(h.Count)*2
 		if len(b) < requiredSize {
 			tracer().Errorf("coverage format 1 extends beyond bounds: need %d, have %d",
 				requiredSize, len(b))
 			return Coverage{}
 		}
-	} else if h.CoverageFormat == 2 {
-		// Format 2: array of range records (6 bytes each: start, end, startCoverageIndex)
+	case 2: // Format 2: array of range records (6 bytes each: start, end, startCoverageIndex)
 		requiredSize := 4 + int(h.Count)*6
 		if len(b) < requiredSize {
 			tracer().Errorf("coverage format 2 extends beyond bounds: need %d, have %d",
 				requiredSize, len(b))
 			return Coverage{}
 		}
-	} else {
+	default: // there are only two formats
 		tracer().Errorf("unknown coverage format %d", h.CoverageFormat)
 		return Coverage{}
 	}
@@ -1560,27 +1552,27 @@ func parseContextClassDef(b binarySegm, at int) (ClassDefinitions, error) {
 	if err != nil {
 		return ClassDefinitions{}, err
 	}
-	cdef, err := parseClassDefinitions(link.Jump().Bytes())
+	cdef, err := parseClassDefinitions(link.jump().Bytes())
 	if err != nil {
 		return ClassDefinitions{}, err
 	}
 	return cdef, nil
 }
 
-func parseChainedSeqContextCoverages(b binarySegm, at int, err error) ([]Coverage, error) {
-	if err != nil {
-		return []Coverage{}, err
-	}
-	count := int(b.U16(at))
-	coverages := make([]Coverage, count)
-	tracer().Debugf("chained seq context with %d coverages", count)
-	for i := 0; i < count; i++ {
-		link, err := parseLink16(b, at+2+i*2, b, "ChainedSequenceContext Coverage")
-		if err != nil {
-			tracer().Errorf("error parsing coverages' offset")
-			return []Coverage{}, err
-		}
-		coverages[i] = parseCoverage(link.Jump().Bytes())
-	}
-	return coverages, nil
-}
+// func parseChainedSeqContextCoverages(b binarySegm, at int, err error) ([]Coverage, error) {
+// 	if err != nil {
+// 		return []Coverage{}, err
+// 	}
+// 	count := int(b.U16(at))
+// 	coverages := make([]Coverage, count)
+// 	tracer().Debugf("chained seq context with %d coverages", count)
+// 	for i := 0; i < count; i++ {
+// 		link, err := parseLink16(b, at+2+i*2, b, "ChainedSequenceContext Coverage")
+// 		if err != nil {
+// 			tracer().Errorf("error parsing coverages' offset")
+// 			return []Coverage{}, err
+// 		}
+// 		coverages[i] = parseCoverage(link.jump().Bytes())
+// 	}
+// 	return coverages, nil
+// }

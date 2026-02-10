@@ -157,16 +157,6 @@ func (r *glyphRangeArray) Match(g GlyphIndex) (int, bool) {
 	if r.count <= 0 {
 		return 0, false
 	}
-	// if r.is32 {
-	// 	for i := 0; i < r.count; i++ {
-	// 		k, err := r.data.u32(i * 4)
-	// 		if err != nil {
-	// 			return 0, false
-	// 		} else if GlyphIndex(k) == g {
-	// 			return i, true
-	// 		}
-	// 	}
-	// } else {
 	for i := 0; i < r.count; i++ {
 		k, err := r.data.u16(i * 2)
 		if err != nil {
@@ -231,52 +221,6 @@ func (r *glyphRangeRecords) ByteSize() int {
 	return r.byteSize
 }
 
-// --- Tag list --------------------------------------------------------------
-
-type tagList struct {
-	Count int
-	link  navLink
-}
-
-func parseTagList(b binarySegm) tagList {
-	if len(b) < 2 {
-		return tagList{Count: 0}
-	}
-
-	count := int(u16(b))
-
-	// Validate against reasonable limit
-	if count > MaxTagListCount {
-		tracer().Errorf("tag list count %d exceeds maximum %d", count, MaxTagListCount)
-		return tagList{Count: 0}
-	}
-
-	// Validate against buffer size (each tag is 4 bytes)
-	requiredSize := 2 + count*4
-	if requiredSize > len(b) {
-		tracer().Errorf("tag list: count %d requires %d bytes, have %d",
-			count, requiredSize, len(b))
-		return tagList{Count: 0}
-	}
-
-	tl := tagList{Count: count}
-	tl.link = link16{
-		base:   b,
-		offset: 2,
-	}
-	return tl
-}
-
-func (l tagList) Tag(i int) Tag {
-	const taglen = 4
-	if b := l.link.Jump(); len(b.Bytes()) >= (i+1)*taglen {
-		if n, err := binarySegm(b.Bytes()).u32(i * taglen); err == nil {
-			return Tag(n)
-		}
-	}
-	return Tag(0)
-}
-
 // --- Link ------------------------------------------------------------------
 
 // navLink is a type to represent an offset jump from one segment to another.
@@ -285,8 +229,8 @@ func (l tagList) Tag(i int) Tag {
 // if this navLink represents a link to a valid destination.
 type navLink interface {
 	Base() binarySegm // source location
-	Jump() binarySegm // destination location
-	IsNull() bool     // is this a valid link?
+	jump() binarySegm // destination location
+	isNull() bool     // is this a valid link?
 	Name() string     // OpenType structure name of destination
 }
 
@@ -313,15 +257,6 @@ func parseLink16(b binarySegm, offset int, base binarySegm, target string) (navL
 	}, nil
 }
 
-// func makeLink16(b fontBinSegm, offset uint16, base fontBinSegm, target string) Link {
-func makeLink16(offset uint16, base binarySegm, target string) navLink {
-	return link16{
-		target: target,
-		base:   base,
-		offset: offset,
-	}
-}
-
 type link16 struct {
 	err    error
 	target string
@@ -329,7 +264,7 @@ type link16 struct {
 	offset uint16
 }
 
-func (l16 link16) IsNull() bool {
+func (l16 link16) isNull() bool {
 	if l16.err != nil {
 		return true
 	}
@@ -344,7 +279,7 @@ func (l16 link16) Base() binarySegm {
 	return l16.base
 }
 
-func (l16 link16) Jump() binarySegm {
+func (l16 link16) jump() binarySegm {
 	tracer().Debugf("jump to %s", l16.target)
 	if l16.err != nil {
 		return binarySegm{}
@@ -381,7 +316,7 @@ type link32 struct {
 	offset uint32
 }
 
-func (l32 link32) IsNull() bool {
+func (l32 link32) isNull() bool {
 	if l32.err != nil {
 		return true
 	}
@@ -396,15 +331,7 @@ func (l32 link32) Base() binarySegm {
 	return l32.base
 }
 
-func makeLink32(offset uint32, base binarySegm, target string) navLink {
-	return link32{
-		target: target,
-		base:   base,
-		offset: offset,
-	}
-}
-
-func (l32 link32) Jump() binarySegm {
+func (l32 link32) jump() binarySegm {
 	tracer().Debugf("jump to %s", l32.target)
 	if l32.err != nil {
 		return binarySegm{}
@@ -538,294 +465,4 @@ func (a array) Range() iter.Seq2[int, binarySegm] {
 			}
 		}
 	}
-}
-
-// varArrayAPI is a type for arrays of variable length records, which in turn may point to nested
-// arrays of (variable size) records.
-type varArrayAPI interface {
-	// Get returns the record at index i. If deep is true, Get follows all levels
-	// of indirection and assumes that each target level is an array of offsets
-	// (as in nested var-arrays). If deep is false, only the first indirection
-	// level is followed and the immediate target is returned.
-	Get(i int, deep bool) (binarySegm, error)
-	Size() int // get the number of entries
-}
-
-type varArray struct {
-	name         string
-	ptrs         array
-	indirections int
-	base         binarySegm
-}
-
-// parseVarArray interprets a byte sequence as a `varArrayAPI`.
-//
-// Layout convention:
-// The caller provides szOffset (where the count lives) and gap (bytes to skip
-// after szOffset before the pointer list starts). The gap includes the count
-// field itself. For the common layout of [count uint16][offsets...], use gap=2.
-func parseVarArray(loc binarySegm, sizeOffset, arrayDataGap int, name string) varArrayAPI {
-	return parseVarArray16(loc, sizeOffset, arrayDataGap, 1, name)
-}
-
-// parseVarArray16 parses a nested offset-array structure with 16-bit offsets.
-// The gap parameter includes the count field (uint16). For layout:
-//
-//	[count uint16][offsets...]
-//
-// set gap=2.
-func parseVarArray16(b binarySegm, szOffset, gap, indirections int, name string) varArray {
-	minSize := szOffset + gap + 2
-	if len(b) < minSize {
-		tracer().Errorf("byte segment too small to parse variable array")
-		return varArray{}
-	}
-	//
-	// Enforce maximum indirection depth to prevent stack overflow
-	if indirections > MaxIndirectionDepth {
-		tracer().Errorf("varArray %s: indirection depth %d exceeds maximum %d",
-			name, indirections, MaxIndirectionDepth)
-		return varArray{}
-	}
-
-	cnt, _ := b.u16(szOffset)
-
-	// Validate count against buffer size (each pointer is 2 bytes)
-	requiredSize := szOffset + gap + int(cnt)*2
-	if requiredSize > len(b) {
-		tracer().Errorf("varArray %s: count %d requires %d bytes, have %d",
-			name, cnt, requiredSize, len(b))
-		return varArray{}
-	}
-
-	va := varArray{name: name, indirections: indirections, base: b}
-	va.ptrs = array{recordSize: 2, length: int(cnt), loc: b[szOffset+gap:]}
-	tracer().Debugf("parsing varArrayAPI of size %d with %d indirections", cnt, indirections)
-	return va
-}
-
-// Get looks up index i within the cascading arrays of va. If deep is false, only
-// the top-level array will be queried.
-func (va varArray) Get(i int, deep bool) (b binarySegm, err error) {
-	var a array = va.ptrs
-	var indirect = va.indirections
-	if !deep {
-		indirect = 1
-	}
-	base := va.base
-	for j := 0; j < indirect; j++ {
-		b = binarySegm(a.Get(i).Bytes()) // TODO will this create an infinite loop in case of error?
-		aBytes := a.loc.Bytes()
-		tracer().Debugf("varArray->Get(%d|%d), a = %v", i, a.length, binarySegm(aBytes[:min(20, len(aBytes))]).Glyphs())
-		tracer().Debugf("b = %d, %d to go", b.U16(0), va.indirections-1-j)
-		if b.U16(0) == 0 {
-			tracer().Debugf("link to ptrs-data is NULL, empty array")
-			return binarySegm{}, nil
-		}
-		if j < va.indirections {
-			link := makeLink16(b.U16(0), base, "Sequence")
-			b = binarySegm(link.Jump().Bytes())
-			if j+1 < va.indirections {
-				a, err = parseArray16(b.Bytes(), 0, "var-array", "var-array-entry")
-				aBytes = a.loc.Bytes()
-				tracer().Debugf("new a has size %d, is %v", a.length, binarySegm(aBytes[:min(20, len(aBytes))]).Glyphs())
-			}
-		}
-	}
-	bBytes := b.Bytes()
-	n := min(20, len(bBytes))
-	if n%2 == 1 {
-		n--
-	}
-	if n > 0 {
-		tracer().Debugf("varArray result = %v", asU16Slice(binarySegm(bBytes[:n])))
-	} else {
-		tracer().Debugf("varArray result = %v", []uint16{})
-	}
-	return b, err
-}
-
-func (va varArray) Size() int {
-	return va.ptrs.length
-}
-
-var _ varArrayAPI = varArray{}
-
-// --- Tag record map --------------------------------------------------------
-
-// tagRecordMap16 is a type for sub-tables which map from a tag to a target.
-// `record` points to a struct essentially holding a slice of bytes, which is interpreted
-// as a fixed size array of entries.
-type tagRecordMap16 struct {
-	name    string
-	target  string
-	base    binarySegm
-	records array
-}
-
-// makeTagRecordMap16 creates a map-like interpretation on a slice of bytes.
-//
-// | Type      | Name         | Descr.                      |
-// |-----------|--------------|-----------------------------|
-// | offset    | Some Info    | Additional opaque data      |
-// | uint16    | Count        | # Records                   |
-// | x-Records | Array[Count] | Array of records or indices |
-//
-// For tag record maps, the entries (x-Records) are segments of bytes, which in turn
-// are interpreted as a key + a value. The key is expected to be a 4-byte tag.
-// `offset`may be 0.
-func makeTagRecordMap16(name, target string, b, base binarySegm, offset, N int) tagRecordMap16 {
-	m := tagRecordMap16{
-		name:   name,
-		target: target,
-		base:   base,
-	}
-	const recordSize = 6 // Tag=4 bytes + offset-value=2 bytes (= map16)
-	const countSize = 2  // count is uint16
-	arraySize := N * recordSize
-	eob := offset + countSize + arraySize
-	if b == nil {
-		b = make(binarySegm, eob)
-		writeU16(b.Bytes(), 0, uint16(N)) // need to set the count value to N
-	} else if eob > len(b) {
-		tracer().Errorf("byte buffer too small for tag record map")
-		return tagRecordMap16{}
-	}
-	n, _ := b.u16(offset)
-	if int(n) != N {
-		tracer().Errorf("invalid count %d for tag record map", n)
-		panic("record count n not equal to given count N")
-	}
-	arrBase := b[offset+countSize : eob]
-	m.records = viewArray(arrBase, recordSize)
-	return m
-}
-
-// recsize is the byte size of the record entry not including the Tag.
-func parseTagRecordMap16(b binarySegm, offset int, base binarySegm, name, target string) tagRecordMap16 {
-	if len(b) < offset+2 {
-		tracer().Errorf("buffer too small for tag record map")
-		return tagRecordMap16{}
-	}
-	N, err := b.u16(offset)
-	if err != nil {
-		return tagRecordMap16{}
-	}
-	// Apply reasonable limit based on context
-	var maxCount int
-	switch name {
-	case "ScriptList":
-		maxCount = MaxScriptCount
-	case "FeatureList":
-		maxCount = MaxFeatureCount
-	default:
-		maxCount = MaxRecordMapCount
-	}
-	if int(N) > maxCount {
-		tracer().Errorf("tag record map %s: count %d exceeds maximum %d", name, N, maxCount)
-		return tagRecordMap16{}
-	}
-	const recordSize = 6 // validate count against buffer size (Tag=4 bytes + offset=2 bytes = 6)
-	const countSize = 2  // count is uint16
-	requiredSize := offset + countSize + int(N)*recordSize
-	if requiredSize > len(b) {
-		tracer().Errorf("tag record map %s: count %d requires %d bytes, have %d",
-			name, N, requiredSize, len(b))
-		return tagRecordMap16{}
-	}
-	tracer().Debugf("view on tag record map with %d entries", N)
-	return makeTagRecordMap16(name, target, b, base, offset, int(N))
-	// TODO remove this when tests pass
-	// m := tagRecordMap16{
-	// 	name:   name,
-	// 	target: target,
-	// 	base:   base,
-	// }
-	// arrBase := b[offset+2 : offset+2+int(N)*recordSize]
-	// m.records = viewArray(arrBase, recordSize)
-	// return m
-}
-
-// Lookup returns the bytes referenced by m[Tag(n)]
-func (m tagRecordMap16) Lookup(n uint32) binarySegm {
-	tag := Tag(n)
-	return m.LookupTag(tag).Jump()
-}
-
-// Lookup returns the link associated with a given tag.
-//
-// TODO binary search with |N| > ?
-func (m tagRecordMap16) LookupTag(tag Tag) navLink {
-	if len(m.base) == 0 {
-		tracer().Debugf("tag record map has null-base")
-		return link16{}
-	}
-	tracer().Debugf("tag record map has %d entries", m.records.length)
-	for i := 0; i < m.records.length; i++ {
-		b := m.records.Get(i)
-		rtag := MakeTag(b.Bytes()[:4])
-		tracer().Debugf("testing for tag = %s", rtag)
-		if tag == rtag {
-			tracer().Debugf("tag record lookup found tag (%s)", rtag)
-			link, err := parseLink16(b.Bytes(), 4, m.base, m.target)
-			if err != nil {
-				return link16{}
-			}
-			tracer().Debugf("    record links %s from %d", m.target, link.Base().U16(0))
-			return link
-		}
-	}
-	return link16{}
-}
-
-// Tags returns all the tags which the map uses as keys.
-func (m tagRecordMap16) Tags() []Tag {
-	tracer().Debugf("tag record map has %d entries", m.records.length)
-	tags := make([]Tag, 0, 3)
-	for i := 0; i < m.records.length; i++ {
-		b := m.records.Get(i)
-		tag := MakeTag(b.Bytes()[:4])
-		tracer().Debugf("  Tag = (%s)", tag)
-		tags = append(tags, tag)
-	}
-	return tags
-}
-
-func (m tagRecordMap16) Name() string {
-	return m.name
-}
-
-func (m tagRecordMap16) Len() int {
-	return m.records.length
-}
-
-func (m tagRecordMap16) Get(i int) (Tag, navLink) {
-	b := m.records.Get(i)
-	const sizeOfMapKey = 4 // tags have size of 4 bytes
-	tag := MakeTag(b.Bytes()[:sizeOfMapKey])
-	link, err := parseLink16(b.Bytes(), sizeOfMapKey, m.base, m.target)
-	if err != nil {
-		return 0, link16{}
-	}
-	return tag, link
-}
-
-func (m tagRecordMap16) Range() iter.Seq2[Tag, navLink] {
-	return func(yield func(Tag, navLink) bool) {
-		for i := range m.Len() {
-			tag, link := m.Get(i)
-			if !yield(tag, link) {
-				return
-			}
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

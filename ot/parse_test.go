@@ -456,7 +456,7 @@ func TestFeatureGraphLazyConcurrent(t *testing.T) {
 	ptrs := make(chan *Feature, workers)
 	var wg sync.WaitGroup
 	wg.Add(workers)
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
 			ptrs <- graph.featureAtIndex(0)
@@ -496,7 +496,7 @@ func TestScriptGraphLazyConcurrent(t *testing.T) {
 	ptrs := make(chan *Script, workers)
 	var wg sync.WaitGroup
 	wg.Add(workers)
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
 			ptrs <- graph.Script(tag)
@@ -538,7 +538,7 @@ func TestLookupGraphLazyConcurrent(t *testing.T) {
 	ptrs := make(chan *LookupTable, workers)
 	var wg sync.WaitGroup
 	wg.Add(workers)
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
 			ptrs <- graph.Lookup(0)
@@ -577,7 +577,7 @@ func TestLookupSubtableGraphLazyConcurrent(t *testing.T) {
 	ptrs := make(chan *LookupNode, workers)
 	var wg sync.WaitGroup
 	wg.Add(workers)
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
 			ptrs <- lookup.Subtable(0)
@@ -795,7 +795,7 @@ func TestParseGSubLookups(t *testing.T) {
 		t.Fatalf("expected concrete subtable[0]")
 	}
 	// Concrete lookup graph keeps extension as explicit type-7 node and resolves type via payload.
-	if csub == nil || csub.GSubPayload() == nil || csub.GSubPayload().ExtensionFmt1 == nil {
+	if csub.GSubPayload() == nil || csub.GSubPayload().ExtensionFmt1 == nil {
 		t.Fatalf("expected concrete GSUB extension payload for lookup[0]/subtable[0]")
 	}
 	if csub.LookupType != GSubLookupTypeExtensionSubs {

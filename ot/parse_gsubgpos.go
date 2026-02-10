@@ -1,5 +1,25 @@
 package ot
 
+// parseGSub parses the GSUB (Glyph Substitution) table.
+func parseGSub(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
+	var err error
+	gsub := newGSubTable(tag, b, offset, size)
+	err = parseLayoutHeader(&gsub.LayoutTable, b, err, tag, ec)
+	err = parseLookupList(&gsub.LayoutTable, b, err, false, tag, ec) // false = GSUB
+	err = parseFeatureList(&gsub.LayoutTable, b, err)
+	err = parseScriptList(&gsub.LayoutTable, b, err)
+	if err != nil {
+		tracer().Errorf("error parsing GSUB table: %v", err)
+		return gsub, err
+	}
+	mj, mn := gsub.header.Version()
+	tracer().Debugf("GSUB table has version %d.%d", mj, mn)
+	if graph := gsub.LookupGraph(); graph != nil {
+		tracer().Debugf("GSUB table has %d lookup list entries", graph.Len())
+	}
+	return gsub, err
+}
+
 // parseGPos parses the GPOS (Glyph Positioning) table.
 func parseGPos(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
 	var err error
@@ -152,59 +172,16 @@ func parseBaseArray(b binarySegm, classCount int) []BaseRecord {
 	baseCount := int(b.U16(0))
 	offset := 2
 	recs := make([]BaseRecord, 0, baseCount)
-	for i := 0; i < baseCount; i++ {
+	for range baseCount {
 		if offset+classCount*2 > len(b) {
 			break
 		}
 		anchors := make([]uint16, classCount)
-		for c := 0; c < classCount; c++ {
+		for c := range classCount {
 			anchors[c] = b.U16(offset + c*2)
 		}
 		recs = append(recs, BaseRecord{BaseAnchors: anchors})
 		offset += classCount * 2
 	}
 	return recs
-}
-
-// parseLigatureArray parses a LigatureArray table from binary data.
-func parseLigatureArray(b binarySegm, classCount int) []LigatureAttach {
-	if len(b) < 2 || classCount <= 0 {
-		return nil
-	}
-	ligCount := int(b.U16(0))
-	offset := 2
-	offs := make([]uint16, 0, ligCount)
-	for i := 0; i < ligCount; i++ {
-		if offset+2 > len(b) {
-			break
-		}
-		offs = append(offs, b.U16(offset))
-		offset += 2
-	}
-	out := make([]LigatureAttach, 0, len(offs))
-	for _, o := range offs {
-		if o == 0 || int(o)+2 > len(b) {
-			continue
-		}
-		lig := b[o:]
-		compCount := int(binarySegm(lig).U16(0))
-		compAnchors := make([][]uint16, 0, compCount)
-		compOff := 2
-		for c := 0; c < compCount; c++ {
-			if compOff+classCount*2 > len(lig) {
-				break
-			}
-			anchors := make([]uint16, classCount)
-			for k := 0; k < classCount; k++ {
-				anchors[k] = binarySegm(lig).U16(compOff + k*2)
-			}
-			compAnchors = append(compAnchors, anchors)
-			compOff += classCount * 2
-		}
-		out = append(out, LigatureAttach{
-			ComponentCount:   uint16(compCount),
-			ComponentAnchors: compAnchors,
-		})
-	}
-	return out
 }

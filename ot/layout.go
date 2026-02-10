@@ -179,16 +179,16 @@ const ( // LookupFlag bit enumeration
 type LayoutTableLookupType uint16
 
 // Layout table script record
-type scriptRecord struct {
-	Tag    Tag
-	Offset uint16
-}
+// type scriptRecord struct {
+// 	Tag    Tag
+// 	Offset uint16
+// }
 
 // Layout table feature record
-type featureRecord struct {
-	Tag    Tag
-	Offset uint16
-}
+// type featureRecord struct {
+// 	Tag    Tag
+// 	Offset uint16
+// }
 
 // --- GDEF table ------------------------------------------------------------
 
@@ -1039,22 +1039,26 @@ const (
 // glyph contexts. GDEF tables also use the idea of glyph classes.
 // (see https://docs.microsoft.com/en-us/typography/opentype/spec/chapter2#class-definition-table)
 type ClassDefinitions struct {
-	format  uint16          // format version 1 or 2
-	records classDefVariant // either format 1 or 2
+	format  uint16 // format version 1 or 2
+	records classDefVariant
 }
 
 func (cdef *ClassDefinitions) setRecords(recs array, startGlyphID GlyphIndex) {
-	if cdef.format == 1 {
+	switch cdef.format {
+	case 1:
 		cdef.records = &classDefinitionsFormat1{
 			count:      recs.length,
 			start:      startGlyphID,
 			valueArray: recs,
 		}
-	} else if cdef.format == 2 {
+	case 2:
 		cdef.records = &classDefinitionsFormat2{
 			count:       recs.length,
 			classRanges: recs,
 		}
+	default:
+		tracer().Errorf("Unsupported ClassDef format %d", cdef.format)
+		cdef.records = &classDefinitionsFormat2{count: 0}
 	}
 }
 
@@ -1082,7 +1086,6 @@ type classDefinitionsFormat2 struct {
 }
 
 func (cdf *classDefinitionsFormat2) Lookup(glyph GlyphIndex) int {
-	//trace().Debugf("lookup up glyph %d in class def format 2", glyph)
 	for i := 0; i < cdf.count; i++ {
 		rec := cdf.classRanges.Get(i)
 		if glyph < GlyphIndex(rec.U16(0)) {

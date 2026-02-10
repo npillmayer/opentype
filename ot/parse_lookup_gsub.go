@@ -259,7 +259,7 @@ func parseConcreteGSubType5(node *LookupNode) {
 				setLookupNodeError(node, err)
 				continue
 			}
-			node.GSub.ContextFmt3.InputCoverages[i] = parseCoverage(link.Jump().Bytes())
+			node.GSub.ContextFmt3.InputCoverages[i] = parseCoverage(link.jump().Bytes())
 		}
 		records, err := parseSequenceLookupRecords(node.raw, 6+glyphCount*2, seqLookupCount)
 		if err != nil {
@@ -398,7 +398,7 @@ func parseConcreteGSubType7(node *LookupNode, depth int) {
 		setLookupNodeError(node, err)
 		return
 	}
-	resolved := parseConcreteLookupNodeWithDepth(link.Jump().Bytes(), actualType, depth+1)
+	resolved := parseConcreteLookupNodeWithDepth(link.jump().Bytes(), actualType, depth+1)
 	node.GSub.ExtensionFmt1.ResolvedType = actualType
 	node.GSub.ExtensionFmt1.Resolved = resolved
 	if resolved != nil {
@@ -447,7 +447,7 @@ func parseCoverageAt(b binarySegm, at int) (Coverage, error) {
 	if err != nil {
 		return Coverage{}, err
 	}
-	return parseCoverage(link.Jump().Bytes()), nil
+	return parseCoverage(link.jump().Bytes()), nil
 }
 
 func parseGlyphSlice16(b binarySegm, countAt int, name string) ([]GlyphIndex, error) {
@@ -729,7 +729,7 @@ func parseCoverageList(b binarySegm, at int, name string) ([]Coverage, int, erro
 		if err != nil {
 			return nil, 0, err
 		}
-		coverages[i] = parseCoverage(link.Jump().Bytes())
+		coverages[i] = parseCoverage(link.jump().Bytes())
 	}
 	return coverages, at + 2 + count*2, nil
 }

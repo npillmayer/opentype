@@ -105,8 +105,8 @@ func supportedCmapFormat(format, pid, psid uint16) bool {
 }
 
 // Dispatcher to create the correct implementation of a CMapGlyphIndex from a given format.
-func makeGlyphIndex(b binarySegm, which encodingRecord, tag Tag, offset uint32, ec *errorCollector) (CMapGlyphIndex, error) {
-	subtable := which.link.Jump()
+func makeGlyphIndex(which encodingRecord, tag Tag, offset uint32, ec *errorCollector) (CMapGlyphIndex, error) {
+	subtable := which.link.jump()
 	switch which.format {
 	case 4:
 		return makeGlyphIndexFormat4(subtable.Bytes(), tag, offset, ec)

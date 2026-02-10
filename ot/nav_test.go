@@ -6,7 +6,7 @@ import (
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
 )
 
-func TestNavLink(t *testing.T) {
+func TestNavigation1(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 	//

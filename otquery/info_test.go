@@ -51,6 +51,30 @@ func (env *InfoTestEnviron) TestGeneralInfo() {
 	env.Equal("Calibri", fam, "expected font family name 'Calibri'")
 }
 
+func (env *InfoTestEnviron) TestHeadInfo() {
+	h, ok := HeadInfo(env.otf)
+	env.Require().True(ok, "expected to decode table 'head'")
+
+	headTable := env.otf.Table(ot.T("head")).Self().AsHead()
+	env.Require().NotNil(headTable, "expected parsed HeadTable")
+
+	env.Equal(headTable.Flags, h.Flags, "expected matching Flags")
+	env.Equal(headTable.UnitsPerEm, h.UnitsPerEm, "expected matching UnitsPerEm")
+	env.Equal(int16(headTable.IndexToLocFormat), h.IndexToLocFormat, "expected matching IndexToLocFormat")
+	env.Equal(uint32(0x5F0F3CF5), h.MagicNumber, "expected OpenType head magic number")
+}
+
+func (env *InfoTestEnviron) TestMaxPInfo() {
+	m, ok := MaxPInfo(env.otf)
+	env.Require().True(ok, "expected to decode table 'maxp'")
+
+	maxpTable := env.otf.Table(ot.T("maxp")).Self().AsMaxP()
+	env.Require().NotNil(maxpTable, "expected parsed MaxPTable")
+
+	env.Equal(uint16(maxpTable.NumGlyphs), m.NumGlyphs, "expected matching numGlyphs")
+	env.NotZero(m.VersionFixed, "expected maxp version to be set")
+}
+
 func (env *InfoTestEnviron) TestLayoutInfo() {
 	layouts := LayoutTables(env.otf)
 	env.T().Logf("test font layout tables: %v", layouts)

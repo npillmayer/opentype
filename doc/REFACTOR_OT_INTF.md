@@ -739,6 +739,121 @@ This checklist follows a low-risk cut order: remove production dependencies firs
 - [ ] Keep/adjust only tests that exercise deferred `Fields()` behavior.
 
 ### Stage 6: Deferred follow-up track (`name` + `Fields`)
-- [ ] Design lightweight direct `name` table API (raw-backed, on-demand).
-- [ ] Migrate `otquery.NameInfo` from `AsNameRecords(table.Fields())` to direct API.
+- [x] Design lightweight direct `name` table API (raw-backed, on-demand).
+- [x] Migrate `otquery.NameInfo` from `AsNameRecords(table.Fields())` to direct API.
 - [ ] Re-evaluate `Table.Fields()` retention/removal after `name` migration.
+
+## Interface for OpenType Tables
+
+OpenType fonts containing CFF (Compact Font Format) outlines (commonly with a
+.otf extension) must include a specific set of required tables for the font to be structurally valid and renderable. According to Microsoft OpenType specifications, the strictly required tables for CFF-based OpenType fonts are the following:
+
+### List of required OT Tables
+
+-  head: **Font Header Table** -- This table gives global information about the font. The bounding box values should be computed using only glyphs that have contours. Uses field structure
+-  hhea: **Horizontal Header Table** -- This table contains information for horizontal layout. Uses field structure.
+-  maxp: **Maximum Profile** -- This table establishes the memory requirements for this font. Fonts with CFF or CFF2 outlines must use Version 0.5 of this table, specifying only the numGlyphs field. Uses very simple field structure (only version + one field).
+-  OS/2: **OS/2 and Windows Metrics Table** -- The OS/2 table consists of a set of metrics and other data that are required in OpenType fonts. Uses field structure.
+-  hmtx: **Horizontal Metrics Table** -- Glyph metrics used for horizontal text layout include glyph advance widths, side bearings and X-direction min and max values. Uses record structure.
+-  cmap: **Character to Glyph Index Mapping Table** -- This table defines the mapping of character codes to a default glyph index.
+-  name: **Font header**, containing global information about the font.
+-  post: **PostScript information**, specifically required in format 3.0 for CFF fonts. 
+-  CFF (or CFF2): Contains the actual **PostScript outlines** (cubic Bézier curves) and hints. Note the space character in 'CFF '.
+
+For text shaping/runtime, package `ot/` keeps concrete parsing for at least **hhea**, **OS/2**, **hmtx**, **cmap**, plus layout tables (**GSUB**, **GPOS**, **GDEF**, optional **BASE**).  
+
+Decision update:
+- **`hhea` and `OS/2` stay parsed in `ot/`** to avoid coupling `otlayout/` or `otshape/` to `otquery/` for shaping-critical metrics.
+- `maxp` remains parsed in `ot/` for core glyph-count consistency (`NumGlyphs`), even though `otquery` may expose additional query views.
+- `name` lookup is now handled via direct raw-backed decoding in `otquery` (no navigator bridge in the query path).
+- Tables such as **post**, **CFF**/**CFF2** can remain raw in `ot/` and be exposed to clients/query helpers without shaping-specific concrete parsing for now.
+
+### Other Constraints
+
+-  Table Ordering: For efficiency, recommended order is: head, hhea, maxp, OS/2, name, cmap, post, CFF.
+-  sfnt Version: Must be 'OTTO' (0x4F54544F).
+-  hmtx constraint: In CFF fonts, numberOfHMetrics in hhea must equal the number of glyphs in the font.
+-  Variable Fonts: If it is a variable font, 'fvar' and 'STAT' are also required.
+-  Layout Tables: While GSUB, GPOS, and GDEF are crucial for modern typography, they are not strictly required for the font to load, though they are needed for features like ligatures or kerning. 
+
+### Migration Spec: Move Navigator Pattern out of `ot/` and into `otquery/`
+
+#### Goal
+1. Keep `ot/` focused on:
+   1. safe binary table access,
+   2. concrete GSUB/GPOS/GDEF parsing and shaping-critical structures.
+2. Move generic table-introspection navigation to `otquery/`.
+3. Preserve package layering:
+   1. `otquery` may depend on `ot`,
+   2. `ot` must not depend on `otquery`.
+
+#### Target package responsibilities
+1. `ot/`:
+   1. `Font`, table directory, `Table(tag)` lookup, raw bytes (`Binary()`, `Extent()`),
+   2. concrete shaping model (GSUB/GPOS/GDEF and related helpers),
+   3. no generic `Navigator` API surface for table introspection.
+2. `otquery/`:
+   1. query-oriented table decoders for non-shaping tables (`head`, `maxp`, `name`, `post`, `CFF`/`CFF2`, etc.),
+   2. optional navigator-like query API for exploratory access,
+   3. all fallback/generic record walking for "tables we keep raw in `ot`".
+
+#### API migration matrix
+| Current symbol in `ot` | Action | New home / replacement |
+|---|---|---|
+| `Navigator`, `NavList`, `NavMap`, `TagRecordMap`, `NavLink` (navigation flavor, not binary offsets) | remove from `ot` public surface | reintroduce query-local equivalents in `otquery` |
+| `NavigatorFactory` | remove from `ot` | query-side factory in `otquery` (if still needed) |
+| `Table.Fields()` | deprecate then remove from `ot` | `otquery` entrypoint(s) taking `ot.Table`/`[]byte` |
+| `AsNameRecords`, `NameRecords` bridge | move semantics to `otquery` | `otquery` lightweight `name` reader API |
+| `nameNames` nav-backed implementation in `ot` | remove after cutover | raw-backed `name` reader in `otquery` |
+| `NavLink.Navigate()`-based string decode for NameRecord | remove from production path | direct decode in `otquery` |
+
+#### What stays in `ot`
+1. Binary primitives tied to safe offset/bounds handling (`binarySegm`, checked arithmetic, table slices).
+2. Concrete layout graph and lookup payloads.
+3. Low-level table structs already used by shaping/runtime (`cmap`, `hhea`, `hmtx`, `OS/2`, etc.).
+
+#### Compatibility bridge strategy
+1. Short-term bridge in `otquery`:
+   1. implement query API that can read from current `ot.Table.Binary()` immediately,
+   2. switch all `otquery` internal callsites off `table.Fields()` first.
+2. Transitional period:
+   1. keep `Table.Fields()` in `ot` temporarily but mark as deprecated in comments/docs,
+   2. no new callsites allowed.
+3. Final removal:
+   1. once `otquery` and tests are migrated, delete `Fields()` and remaining nav types from `ot`.
+
+#### Ordered cut plan
+1. Slice Q1: Introduce `otquery` table-query core.
+   1. Add `otquery` raw-table reader helpers operating on `ot.Table.Binary()`.
+   2. Add dedicated decoders for `name` first (highest existing dependency).
+2. Slice Q2: Migrate `otquery.NameInfo`.
+   1. Replace `AsNameRecords(table.Fields())` and `link.Navigate().Name()` path.
+   2. Keep behavior parity for existing tests.
+3. Slice Q3: Add query adapters for deferred tables (`head`, `maxp`, `post`, optional `CFF` metadata).
+   1. Keep outputs query-focused, not shaping-focused.
+4. Slice O1: Deprecate `ot.Table.Fields()` and nav interfaces in `ot`.
+   1. Add deprecation comments and migration notes pointing to `otquery`.
+5. Slice O2: Remove `Fields()` implementation and nav factory/types from `ot`.
+   1. Delete now-dead nav methods/helpers in `ot/factory.go` and related paths.
+   2. Keep only non-nav binary primitives required by parsers.
+6. Slice T1: Test and docs cleanup.
+   1. move/update tests that validated navigator behavior into `otquery` (if still relevant),
+   2. remove stale `ot` tests tied to legacy navigation.
+
+#### Dependency and cycle constraints
+1. `otquery` imports `ot`; `ot` never imports `otquery`.
+2. Shared helpers should remain in `ot` only if they are:
+   1. generic binary safety primitives,
+   2. not tied to query-specific navigation semantics.
+3. Do not place query interfaces in `ot` solely for `otquery` convenience.
+
+#### Acceptance criteria for this migration
+1. `otquery` has no runtime dependency on `ot.Table.Fields()`.
+2. `ot` exports no generic navigation API for table introspection.
+3. `go test ./ot ./otlayout ./otquery` passes.
+4. Query outputs for `name` and other migrated tables remain behaviorally equivalent or explicitly improved.
+
+#### Open decisions to lock during implementation
+1. Whether `otquery` keeps a formal Navigator API or uses explicit per-table query structs only.
+2. Which non-shaping tables get typed query adapters immediately vs deferred (`CFF`/`CFF2` depth especially).
+3. Whether deprecated `ot` nav symbols get a brief compatibility release window or hard removal in one change-set.

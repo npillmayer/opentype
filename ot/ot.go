@@ -18,6 +18,9 @@ type Font struct {
 	Header        *FontHeader
 	tables        map[Tag]Table
 	CMap          *CMapTable    // CMAP table is mandatory
+	HHea          *HHeaTable    // typed access to hhea
+	HMtx          *HMtxTable    // typed access to hmtx
+	OS2           *OS2Table     // typed access to OS/2
 	parseErrors   []FontError   // Errors accumulated during parsing
 	parseWarnings []FontWarning // Warnings accumulated during parsing
 	parseOptions  []ParseOption // Options to guide the parsing process
@@ -89,6 +92,30 @@ func (otf *Font) TableTags() []Tag {
 		tags = append(tags, tag)
 	}
 	return tags
+}
+
+// HorizontalHeader returns the parsed hhea table, if present.
+func (otf *Font) HorizontalHeader() *HHeaTable {
+	if otf == nil {
+		return nil
+	}
+	return otf.HHea
+}
+
+// HorizontalMetrics returns the parsed hmtx table, if present.
+func (otf *Font) HorizontalMetrics() *HMtxTable {
+	if otf == nil {
+		return nil
+	}
+	return otf.HMtx
+}
+
+// OS2Metrics returns the parsed OS/2 table, if present.
+func (otf *Font) OS2Metrics() *OS2Table {
+	if otf == nil {
+		return nil
+	}
+	return otf.OS2
 }
 
 // Errors returns all errors encountered during font parsing.
@@ -226,7 +253,7 @@ type tableBase struct {
 	name   Tag        // 4-byte name as an integer
 	offset uint32     // from offset
 	length uint32     // to offset + length
-	self   interface{}
+	self   any
 }
 
 // Offset returns offset and byte size of this table within the OpenType font.
@@ -265,7 +292,7 @@ func (tself TableSelf) NameTag() Tag {
 	return tself.tableBase.name
 }
 
-func safeSelf(tself TableSelf) interface{} {
+func safeSelf(tself TableSelf) any {
 	if tself.tableBase == nil || tself.tableBase.self == nil {
 		return TableSelf{}
 	}
@@ -347,6 +374,14 @@ func (tself TableSelf) AsHead() *HeadTable {
 // AsHHea returns this table as a hhea table, or nil.
 func (tself TableSelf) AsHHea() *HHeaTable {
 	if k, ok := safeSelf(tself).(*HHeaTable); ok {
+		return k
+	}
+	return nil
+}
+
+// AsOS2 returns this table as an OS/2 table, or nil.
+func (tself TableSelf) AsOS2() *OS2Table {
+	if k, ok := safeSelf(tself).(*OS2Table); ok {
 		return k
 	}
 	return nil
@@ -526,11 +561,47 @@ func newMaxPTable(tag Tag, b binarySegm, offset, size uint32) *MaxPTable {
 // HHeaTable contains information for horizontal layout.
 type HHeaTable struct {
 	tableBase
-	NumberOfHMetrics int
+	Ascender            int16
+	Descender           int16
+	LineGap             int16
+	AdvanceWidthMax     uint16
+	MinLeftSideBearing  int16
+	MinRightSideBearing int16
+	XMaxExtent          int16
+	CaretSlopeRise      int16
+	CaretSlopeRun       int16
+	CaretOffset         int16
+	NumberOfHMetrics    int
 }
 
 func newHHeaTable(tag Tag, b binarySegm, offset, size uint32) *HHeaTable {
 	t := &HHeaTable{}
+	base := tableBase{
+		data:   b,
+		name:   tag,
+		offset: offset,
+		length: size,
+	}
+	t.tableBase = base
+	t.self = t
+	return t
+}
+
+// OS2Table contains a small, concrete subset of metrics from table 'OS/2'
+// required for layout fallback decisions.
+type OS2Table struct {
+	tableBase
+	Version       uint16
+	XAvgCharWidth int16
+	TypoAscender  int16
+	TypoDescender int16
+	TypoLineGap   int16
+	WinAscent     uint16
+	WinDescent    uint16
+}
+
+func newOS2Table(tag Tag, b binarySegm, offset, size uint32) *OS2Table {
+	t := &OS2Table{}
 	base := tableBase{
 		data:   b,
 		name:   tag,
@@ -556,6 +627,15 @@ func newHHeaTable(tag Tag, b binarySegm, offset, size uint32) *HHeaTable {
 type HMtxTable struct {
 	tableBase
 	NumberOfHMetrics int
+	numGlyphs        int
+	longMetrics      []HMetricRecord
+	leftSideBearings []int16
+}
+
+// HMetricRecord is one long horizontal metric record from table hmtx.
+type HMetricRecord struct {
+	AdvanceWidth    uint16
+	LeftSideBearing int16
 }
 
 func newHMtxTable(tag Tag, b binarySegm, offset, size uint32) *HMtxTable {
@@ -571,18 +651,104 @@ func newHMtxTable(tag Tag, b binarySegm, offset, size uint32) *HMtxTable {
 	return t
 }
 
+func (t *HMtxTable) parseAll(numGlyphs, numberOfHMetrics int) error {
+	if t == nil {
+		return nil
+	}
+	if numGlyphs < 0 {
+		return fmt.Errorf("invalid glyph count %d", numGlyphs)
+	}
+	if numberOfHMetrics < 0 || numberOfHMetrics > numGlyphs {
+		return fmt.Errorf("invalid numberOfHMetrics %d (numGlyphs=%d)", numberOfHMetrics, numGlyphs)
+	}
+	required := numberOfHMetrics*4 + (numGlyphs-numberOfHMetrics)*2
+	if required > len(t.data) {
+		return fmt.Errorf("hmtx table too small: need %d bytes, have %d", required, len(t.data))
+	}
+	longMetrics := make([]HMetricRecord, numberOfHMetrics)
+	for i := 0; i < numberOfHMetrics; i++ {
+		aw, err := t.data.u16(i * 4)
+		if err != nil {
+			return fmt.Errorf("cannot parse hmtx long metric %d: %w", i, err)
+		}
+		lsb, err := t.data.u16(i*4 + 2)
+		if err != nil {
+			return fmt.Errorf("cannot parse hmtx long metric lsb %d: %w", i, err)
+		}
+		longMetrics[i] = HMetricRecord{
+			AdvanceWidth:    aw,
+			LeftSideBearing: int16(lsb),
+		}
+	}
+	lsbCount := numGlyphs - numberOfHMetrics
+	leftSideBearings := make([]int16, lsbCount)
+	base := numberOfHMetrics * 4
+	for i := 0; i < lsbCount; i++ {
+		lsb, err := t.data.u16(base + i*2)
+		if err != nil {
+			return fmt.Errorf("cannot parse hmtx lsb %d: %w", i, err)
+		}
+		leftSideBearings[i] = int16(lsb)
+	}
+	t.NumberOfHMetrics = numberOfHMetrics
+	t.numGlyphs = numGlyphs
+	t.longMetrics = longMetrics
+	t.leftSideBearings = leftSideBearings
+	return nil
+}
+
+// LongMetrics returns a copy of all long horizontal metrics records.
+func (t *HMtxTable) LongMetrics() []HMetricRecord {
+	if t == nil || len(t.longMetrics) == 0 {
+		return nil
+	}
+	metrics := make([]HMetricRecord, len(t.longMetrics))
+	copy(metrics, t.longMetrics)
+	return metrics
+}
+
+// LeftSideBearings returns a copy of trailing LSB records.
+func (t *HMtxTable) LeftSideBearings() []int16 {
+	if t == nil || len(t.leftSideBearings) == 0 {
+		return nil
+	}
+	lsbs := make([]int16, len(t.leftSideBearings))
+	copy(lsbs, t.leftSideBearings)
+	return lsbs
+}
+
+// GlyphCount returns the glyph count used when decoding this hmtx table.
+func (t *HMtxTable) GlyphCount() int {
+	if t == nil {
+		return 0
+	}
+	return t.numGlyphs
+}
+
+// HMetrics returns the advance width and left side bearing for a glyph.
+func (t *HMtxTable) HMetrics(g GlyphIndex) (uint16, int16, bool) {
+	if t == nil || t.numGlyphs == 0 || int(g) < 0 || int(g) >= t.numGlyphs {
+		return 0, 0, false
+	}
+	if int(g) < len(t.longMetrics) {
+		m := t.longMetrics[int(g)]
+		return m.AdvanceWidth, m.LeftSideBearing, true
+	}
+	if len(t.longMetrics) == 0 {
+		return 0, 0, false
+	}
+	i := int(g) - len(t.longMetrics)
+	if i < 0 || i >= len(t.leftSideBearings) {
+		return 0, 0, false
+	}
+	return t.longMetrics[len(t.longMetrics)-1].AdvanceWidth, t.leftSideBearings[i], true
+}
+
 // hMetrics returns the advance width and left side bearing of a glyph.
 // TODO: call from font or from HMtx ?
 func (t *HMtxTable) hMetrics(g GlyphIndex) (uint16, int16) {
-	if t.NumberOfHMetrics < int(g) {
-		a, _ := t.data.u16(int(g) * 4)
-		lsb, _ := t.data.u16(int(g)*4 + 2)
-		return a, int16(lsb)
-	}
-	diff := int(g) - t.NumberOfHMetrics
-	a, _ := t.data.u16((t.NumberOfHMetrics - 1) * 4)
-	lsb, _ := t.data.u16((t.NumberOfHMetrics-1)*4 + diff*2)
-	return a, int16(lsb)
+	a, l, _ := t.HMetrics(g)
+	return a, l
 }
 
 // Names struct for table 'name'

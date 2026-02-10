@@ -693,9 +693,48 @@ func TestParseOtherTables(t *testing.T) {
 	if hhea == nil {
 		t.Fatalf("cannot find a hhea table")
 	}
+	if otf.HHea == nil {
+		t.Fatalf("expected typed font accessor for hhea")
+	}
 	t.Logf("hhea number of metrics = %d", hhea.NumberOfHMetrics)
 	if hhea.NumberOfHMetrics != 3843 {
 		t.Errorf("expected Calibri to have 3843 metrics, but %d indicated", hhea.NumberOfHMetrics)
+	}
+	if hhea.Ascender == 0 && hhea.Descender == 0 {
+		t.Errorf("expected hhea ascender/descender to be populated")
+	}
+	if hhea.AdvanceWidthMax == 0 {
+		t.Errorf("expected hhea advanceWidthMax to be populated")
+	}
+	os2 := otf.tables[T("OS/2")].Self().AsOS2()
+	if os2 == nil {
+		t.Fatalf("cannot find an OS/2 table")
+	}
+	if otf.OS2 == nil {
+		t.Fatalf("expected typed font accessor for OS/2")
+	}
+	if os2.TypoAscender == 0 && os2.TypoDescender == 0 {
+		t.Errorf("expected OS/2 typo metrics to be populated")
+	}
+	hmtx := otf.tables[T("hmtx")].Self().AsHMtx()
+	if hmtx == nil {
+		t.Fatalf("cannot find an hmtx table")
+	}
+	if otf.HMtx == nil {
+		t.Fatalf("expected typed font accessor for hmtx")
+	}
+	if hmtx.GlyphCount() != maxp.NumGlyphs {
+		t.Errorf("expected hmtx glyph count %d, have %d", maxp.NumGlyphs, hmtx.GlyphCount())
+	}
+	if len(hmtx.LongMetrics()) != hhea.NumberOfHMetrics {
+		t.Errorf("expected %d long hmetrics, got %d", hhea.NumberOfHMetrics, len(hmtx.LongMetrics()))
+	}
+	aw, _, ok := hmtx.HMetrics(4) // glyph index for 'A' in Calibri
+	if !ok {
+		t.Fatalf("cannot resolve hmtx metric for glyph 4")
+	}
+	if aw != 1185 {
+		t.Errorf("expected advance width for glyph 4 to be 1185, got %d", aw)
 	}
 }
 

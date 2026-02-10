@@ -167,13 +167,6 @@ func Parse(font []byte, options ...ParseOption) (*Font, error) {
 			return nil, err
 		}
 	}
-	if err := extractLayoutInfo(otf, ec); err != nil {
-		return nil, err
-	}
-	// Collect and centralize font information:
-	// The number of glyphs in the font is restricted only by the value stated in the 'head' table. The order in which glyphs are placed in a font is arbitrary.
-	// Note that a font must have at least two glyphs, and that glyph index 0 musthave an outline. See Glyph Mappings for details.
-	//
 	if hh := otf.tables[T("hhea")]; hh != nil {
 		hhead := hh.Self().AsHHea()
 		if mx := otf.tables[T("hmtx")]; mx != nil {
@@ -181,6 +174,13 @@ func Parse(font []byte, options ...ParseOption) (*Font, error) {
 			hmtx.NumberOfHMetrics = hhead.NumberOfHMetrics
 		}
 	}
+	if err := extractLayoutInfo(otf, ec); err != nil {
+		return nil, err
+	}
+	// Collect and centralize font information:
+	// The number of glyphs in the font is restricted only by the value stated in the 'head' table. The order in which glyphs are placed in a font is arbitrary.
+	// Note that a font must have at least two glyphs, and that glyph index 0 musthave an outline. See Glyph Mappings for details.
+	//
 	if he := otf.Table(T("head")); he != nil {
 		head := he.Self().AsHead()
 		if lo := otf.Table(T("loca")); lo != nil {
@@ -240,6 +240,15 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 		return errFontFormat("missing required table cmap")
 	}
 	otf.CMap = otf.tables[T("cmap")].Self().AsCMap()
+	if hheaTable := otf.Table(T("hhea")); hheaTable != nil {
+		otf.HHea = hheaTable.Self().AsHHea()
+	}
+	if hmtxTable := otf.Table(T("hmtx")); hmtxTable != nil {
+		otf.HMtx = hmtxTable.Self().AsHMtx()
+	}
+	if os2Table := otf.Table(T("OS/2")); os2Table != nil {
+		otf.OS2 = os2Table.Self().AsOS2()
+	}
 
 	// Set NumGlyphs in CMap and GlyphIndexMap for glyph index validation
 	if maxpTable := otf.Table(T("maxp")); maxpTable != nil {
@@ -405,6 +414,12 @@ func validateCrossTableConsistency(otf *Font, ec *errorCollector) error {
 			return errFontFormat(fmt.Sprintf("hmtx table size (%d) insufficient for %d glyphs (need %d)",
 				hmtx.length, numGlyphs, requiredSize))
 		}
+		if err := hmtx.parseAll(numGlyphs, hhea.NumberOfHMetrics); err != nil {
+			ec.addError(T("hmtx"), "Decode",
+				fmt.Sprintf("cannot decode hmtx records: %v", err),
+				SeverityCritical, 0)
+			return errFontFormat(fmt.Sprintf("cannot decode hmtx records: %v", err))
+		}
 	}
 
 	// Validate head.IndexToLocFormat consistency with loca table
@@ -485,6 +500,8 @@ func parseTable(t Tag, b binarySegm, offset, size uint32, ec *errorCollector) (T
 		return parseLoca(t, b, offset, size, ec)
 	case T("maxp"):
 		return parseMaxP(t, b, offset, size, ec)
+	case T("OS/2"):
+		return parseOS2(t, b, offset, size, ec)
 	}
 	tracer().Infof("font contains table (%s), will not be interpreted", t)
 	// Record as minor warning - not parsed but not a problem
@@ -797,8 +814,66 @@ func parseHHea(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 		return nil, errFontFormat("hhea table incomplete")
 	}
 	t := newHHeaTable(tag, b, offset, size)
+	a, _ := b.u16(4)
+	d, _ := b.u16(6)
+	lg, _ := b.u16(8)
+	aw, _ := b.u16(10)
+	minLSB, _ := b.u16(12)
+	minRSB, _ := b.u16(14)
+	xmax, _ := b.u16(16)
+	slopeRise, _ := b.u16(18)
+	slopeRun, _ := b.u16(20)
+	caretOff, _ := b.u16(22)
 	n, _ := b.u16(34)
+	t.Ascender = int16(a)
+	t.Descender = int16(d)
+	t.LineGap = int16(lg)
+	t.AdvanceWidthMax = aw
+	t.MinLeftSideBearing = int16(minLSB)
+	t.MinRightSideBearing = int16(minRSB)
+	t.XMaxExtent = int16(xmax)
+	t.CaretSlopeRise = int16(slopeRise)
+	t.CaretSlopeRun = int16(slopeRun)
+	t.CaretOffset = int16(caretOff)
 	t.NumberOfHMetrics = int(n)
+	return t, nil
+}
+
+// --- OS/2 table ------------------------------------------------------------
+
+// parseOS2 parses the OS/2 table subset required for metrics fallback.
+// The parser is intentionally tolerant: if optional fields are truncated, zero values
+// are kept and warnings are recorded.
+func parseOS2(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
+	if size == 0 {
+		return nil, nil
+	}
+	t := newOS2Table(tag, b, offset, size)
+	if size < 2 {
+		ec.addWarning(tag, "OS/2 table too small to decode version", offset)
+		return t, nil
+	}
+	v, _ := b.u16(0)
+	t.Version = v
+	if size >= 4 {
+		xavg, _ := b.u16(2)
+		t.XAvgCharWidth = int16(xavg)
+	}
+	// OpenType OS/2 v0 and above include sTypoAscender..usWinDescent at offsets 68..76.
+	if size >= 78 {
+		typoAsc, _ := b.u16(68)
+		typoDesc, _ := b.u16(70)
+		typoGap, _ := b.u16(72)
+		winAsc, _ := b.u16(74)
+		winDesc, _ := b.u16(76)
+		t.TypoAscender = int16(typoAsc)
+		t.TypoDescender = int16(typoDesc)
+		t.TypoLineGap = int16(typoGap)
+		t.WinAscent = winAsc
+		t.WinDescent = winDesc
+	} else {
+		ec.addWarning(tag, "OS/2 table truncated before typo/win metrics fields", offset)
+	}
 	return t, nil
 }
 

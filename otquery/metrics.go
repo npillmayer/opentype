@@ -39,25 +39,28 @@ func FontSupportsScript(otf *ot.Font, scr ot.Tag, lang ot.Tag) (ot.Tag, ot.Tag) 
 // FontMetrics retrieves selected metrics of a font.
 func FontMetrics(otf *ot.Font) opentype.FontMetricsInfo {
 	metrics := opentype.FontMetricsInfo{}
-	hhea := otf.Table(ot.T("hhea"))
-	b := hhea.Binary()
-	metrics.Ascent = sfnt.Units(i16(b[4:]))
-	metrics.Descent = sfnt.Units(i16(b[6:]))
-	metrics.LineGap = sfnt.Units(i16(b[8:]))
-	metrics.MaxAdvance = sfnt.Units(u16(b[8:]))
+	if table := otf.Table(ot.T("hhea")); table != nil {
+		if hhea := table.Self().AsHHea(); hhea != nil {
+			metrics.Ascent = sfnt.Units(hhea.Ascender)
+			metrics.Descent = sfnt.Units(hhea.Descender)
+			metrics.LineGap = sfnt.Units(hhea.LineGap)
+			metrics.MaxAdvance = sfnt.Units(hhea.AdvanceWidthMax)
+		}
+	}
 	if metrics.Ascent == 0 && metrics.Descent == 0 {
-		if os2 := otf.Table(ot.T("OS/2")); os2 != nil {
-			tracer().Debugf("OS/2")
-			b := os2.Binary()
-			a := sfnt.Units(i16(b[68:]))
-			if a > metrics.Ascent {
-				tracer().Debugf("override of ascent: %d -> %d", metrics.Ascent, a)
-				metrics.Ascent = sfnt.Units(a)
-			}
-			d := sfnt.Units(i16(b[70:]))
-			if d < metrics.Descent {
-				tracer().Debugf("override of descent: %d -> %d", metrics.Descent, d)
-				metrics.Descent = sfnt.Units(d)
+		if table := otf.Table(ot.T("OS/2")); table != nil {
+			if os2 := table.Self().AsOS2(); os2 != nil {
+				tracer().Debugf("OS/2")
+				a := sfnt.Units(os2.TypoAscender)
+				if a > metrics.Ascent {
+					tracer().Debugf("override of ascent: %d -> %d", metrics.Ascent, a)
+					metrics.Ascent = a
+				}
+				d := sfnt.Units(os2.TypoDescender)
+				if d < metrics.Descent {
+					tracer().Debugf("override of descent: %d -> %d", metrics.Descent, d)
+					metrics.Descent = d
+				}
 			}
 		}
 	}
@@ -96,23 +99,11 @@ func GlyphMetrics(otf *ot.Font, gid ot.GlyphIndex) opentype.GlyphMetricsInfo {
 	//
 	// table HMtx: advance width and left side bearing
 	hmtx := otf.Table(ot.T("hmtx")).Self().AsHMtx() // required table in OpenType
-	// table MaxP: number of glyphs
-	maxp := otf.Table(ot.T("maxp")).Self().AsMaxP() // required table in OpenType
-	mtxcnt := hmtx.NumberOfHMetrics
-	diff := maxp.NumGlyphs - mtxcnt
-	//tracer().Debugf("#glyphs=%d, #hmtx=%d, diff=%d", maxp.NumGlyphs, mtxcnt, diff)
-	if gid < ot.GlyphIndex(mtxcnt) {
-		l := ot.ParseList(hmtx.Binary(), mtxcnt, 4)
-		entry := l.Get(int(gid))
-		metrics.Advance = sfnt.Units(u16(entry.Bytes()))
-		metrics.LSB = sfnt.Units(i16(entry.Bytes()[2:]))
-	} else { // advance repetition of last advance in hmtx
-		l := ot.ParseList(hmtx.Binary(), mtxcnt, 4)
-		lastEntry := l.Get(mtxcnt - 1)
-		metrics.Advance = sfnt.Units(u16(lastEntry.Bytes()))
-		l = ot.ParseList(hmtx.Binary()[mtxcnt*4:], diff, 2)
-		entry := l.Get(int(gid) - mtxcnt)
-		metrics.LSB = sfnt.Units(i16(entry.Bytes()))
+	if hmtx != nil {
+		if aw, lsb, ok := hmtx.HMetrics(gid); ok {
+			metrics.Advance = sfnt.Units(aw)
+			metrics.LSB = sfnt.Units(lsb)
+		}
 	}
 	//
 	// table glyf: bounding box
@@ -140,14 +131,6 @@ func GlyphMetrics(otf *ot.Font, gid ot.GlyphIndex) opentype.GlyphMetricsInfo {
 }
 
 // --- Helpers ----------------------------------------------------------
-
-func u16(b []byte) uint16 {
-	return uint16(b[0])<<8 | uint16(b[1])<<0
-}
-
-func i16(b []byte) int16 {
-	return int16(b[0])<<8 | int16(b[1])<<0
-}
 
 // func i32(b []byte) int32 {
 // 	return int32(b[0])<<24 | int32(b[1])<<16 | int32(b[2])<<8 | int32(b[3])<<0

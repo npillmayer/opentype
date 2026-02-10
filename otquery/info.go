@@ -26,19 +26,13 @@ func FontType(otf *ot.Font) string {
 //
 // Parameter `lang` is currently unused.
 func NameInfo(otf *ot.Font, lang ot.Tag) map[string]string {
-	table := otf.Table(ot.T("name"))
 	names := make(map[string]string)
-	if table == nil {
-		tracer().Debugf("no name table found in font %s", otf.F.Fontname)
+	entries := loadNameEntries(otf)
+	if len(entries) == 0 {
 		return names
 	}
-	nameRecs, ok := ot.AsNameRecords(table.Fields())
-	if !ok {
-		tracer().Debugf("name table does not provide NameRecords view")
-		return names
-	}
-	tracer().Debugf("table name = %q", table.Fields().Name())
-	for k, _ := range nameRecs.Range() {
+	for _, e := range entries {
+		k := e.key
 		tracer().Debugf("name key p=%d e=%d l=%d id=%d", k.PlatformID, k.EncodingID, k.LanguageID, k.NameID)
 	}
 	// font family
@@ -46,29 +40,30 @@ func NameInfo(otf *ot.Font, lang ot.Tag) map[string]string {
 		{PlatformID: 3, EncodingID: 1, NameID: 1}, // Windows platform, encoding BMP
 		{PlatformID: 0, EncodingID: 3, NameID: 1}, // Unicode platform, encoding BMP
 	}
-	findKey(nameRecs, names, "family", familyKeys)
+	findKey(entries, names, "family", familyKeys)
 	// font sub-family
 	subFamKeys := []ot.NameKey{
 		{PlatformID: 3, EncodingID: 1, NameID: 2},
 		{PlatformID: 0, EncodingID: 3, NameID: 2},
 	}
-	findKey(nameRecs, names, "subfamily", subFamKeys)
+	findKey(entries, names, "subfamily", subFamKeys)
 	// font version
 	versionKeys := []ot.NameKey{
 		{PlatformID: 3, EncodingID: 1, NameID: 5},
 		{PlatformID: 0, EncodingID: 3, NameID: 5},
 	}
-	findKey(nameRecs, names, "version", versionKeys)
+	findKey(entries, names, "version", versionKeys)
 	return names
 }
 
-func findKey(nameRecs ot.NameRecords, m map[string]string, fieldname string, keys []ot.NameKey) {
+func findKey(entries []nameEntry, m map[string]string, fieldname string, keys []ot.NameKey) {
 	for _, key := range keys {
-		for k, link := range nameRecs.Range() {
+		for _, entry := range entries {
+			k := entry.key
 			if k.PlatformID != key.PlatformID || k.EncodingID != key.EncodingID || k.NameID != key.NameID {
 				continue
 			}
-			val := link.Navigate().Name()
+			val := entry.value
 			if val != "" {
 				m[fieldname] = val
 				return

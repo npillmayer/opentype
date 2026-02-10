@@ -662,9 +662,12 @@ func TestParseKern(t *testing.T) {
 	if !hasKern {
 		t.Fatalf("expected font to have kern table, hasn't")
 	}
-	kern := otf.tables[T("kern")].Self().AsKern()
+	kern := otf.tables[T("kern")]
 	if kern == nil {
-		t.Fatalf("cannot find a kern table")
+		t.Fatalf("cannot find table kern")
+	}
+	if len(kern.Binary()) == 0 {
+		t.Fatalf("expected table kern to expose binary data")
 	}
 }
 
@@ -917,7 +920,7 @@ func TestErrorCollection(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
-	// Test with Calibri, which has a known kern table size mismatch warning
+	// Test with Calibri; non-parsed tables (including kern) should produce warnings.
 	f := loadTestdataFont(t, "Calibri")
 	otf, err := Parse(f.F.Binary)
 	if err != nil {
@@ -928,7 +931,7 @@ func TestErrorCollection(t *testing.T) {
 	warnings := otf.Warnings()
 	t.Logf("Font has %d warnings", len(warnings))
 
-	// Verify we have at least one warning for the kern table
+	// Verify we have at least one warning for the kern table.
 	foundKernWarning := false
 	for _, w := range warnings {
 		t.Logf("Warning: %s", w.String())

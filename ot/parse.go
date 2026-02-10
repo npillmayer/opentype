@@ -494,8 +494,6 @@ func parseTable(t Tag, b binarySegm, offset, size uint32, ec *errorCollector) (T
 		return parseHHea(t, b, offset, size, ec)
 	case T("hmtx"):
 		return parseHMtx(t, b, offset, size, ec)
-	case T("kern"):
-		return parseKern(t, b, offset, size, ec)
 	case T("loca"):
 		return parseLoca(t, b, offset, size, ec)
 	case T("maxp"):
@@ -687,88 +685,6 @@ type encodingRecord struct {
 	format     uint16
 	size       int
 	width      int // encoding width in bytes
-}
-
-// --- Kern table ------------------------------------------------------------
-
-type kernSubTableHeader struct {
-	directory [4]uint16 // information to support binary search on sub-table
-	offset    uint16    // start position of this sub-table's kern pairs
-	length    uint32    // size of the sub-table in bytes, without header
-	coverage  uint16    // info about type of information contained in this sub-table
-}
-
-// TrueType and OpenType slightly differ on formats of kern tables:
-// see https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6kern.html
-// and https://docs.microsoft.com/en-us/typography/opentype/spec/kern
-
-// parseKern parses the kern table. There is significant confusion with this table
-// concerning format differences between OpenType, TrueType, and fonts in the wild.
-// We currently only support kern table format 0, which should be supported on any
-// platform. In the real world, fonts usually have just one kern sub-table, and
-// older Windows versions cannot handle more than one.
-func parseKern(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
-	if size <= 4 {
-		return nil, nil
-	}
-	var N, suboffset, subheaderlen int
-	if version := u32(b); version == 0x00010000 {
-		tracer().Debugf("font has Apple TTF kern table format")
-		n, _ := b.u32(4) // number of kerning tables is uint32
-		N, suboffset, subheaderlen = int(n), 8, 16
-	} else {
-		tracer().Debugf("font has OTF (MS) kern table format")
-		n, _ := b.u16(2) // number of kerning tables is uint16
-		N, suboffset, subheaderlen = int(n), 4, 14
-	}
-	tracer().Debugf("kern table has %d sub-tables", N)
-	t := newKernTable(tag, b, offset, size)
-	for i := 0; i < N; i++ { // read in N sub-tables
-		if suboffset+subheaderlen >= int(size) { // check for sub-table header size
-			ec.addError(tag, "Format", fmt.Sprintf("sub-table %d header exceeds table size", i), SeverityCritical, offset+uint32(suboffset))
-			return nil, errFontFormat("kern table format")
-		}
-		h := kernSubTableHeader{
-			offset: uint16(suboffset + subheaderlen),
-			// sub-tables are of varying size; size may be off ⇒ see below
-			length:   uint32(u16(b[suboffset+2:]) - uint16(subheaderlen)),
-			coverage: u16(b[suboffset+4:]),
-		}
-		if format := h.coverage >> 8; format != 0 {
-			tracer().Infof("kern sub-table format %d not supported, ignoring sub-table", format)
-			continue // we only support format 0 kerning tables; skip this one
-		}
-		h.directory = [4]uint16{
-			u16(b[suboffset+subheaderlen-8:]),
-			u16(b[suboffset+subheaderlen-6:]),
-			u16(b[suboffset+subheaderlen-4:]),
-			u16(b[suboffset+subheaderlen-2:]),
-		}
-		kerncnt := uint32(h.directory[0])
-		tracer().Debugf("kern sub-table has %d entries", kerncnt)
-		// For some fonts, size calculation of kern sub-tables is off; see
-		// https://github.com/fonttools/fonttools/issues/314#issuecomment-118116527
-		// Testable with the Calibri font.
-		sz, err := checkedMulUint32(kerncnt, 6) // kern pair is of size 6
-		if err != nil {
-			ec.addError(tag, "Size", fmt.Sprintf("sub-table %d size overflow: %v", i, err), SeverityCritical, offset+uint32(suboffset))
-			return nil, errFontFormat(fmt.Sprintf("kern sub-table size overflow: %v", err))
-		}
-		if sz != h.length {
-			tracer().Infof("kern sub-table size should be 0x%x, but given as 0x%x; fixing",
-				sz, h.length)
-			// Record as warning - this is a known issue with some fonts (e.g., Calibri)
-			ec.addWarning(tag, fmt.Sprintf("kern sub-table size mismatch: expected 0x%x, got 0x%x", sz, h.length), offset+uint32(suboffset))
-		}
-		if uint32(suboffset)+sz >= size {
-			ec.addError(tag, "Bounds", fmt.Sprintf("sub-table %d exceeds table bounds", i), SeverityCritical, offset+uint32(suboffset))
-			return nil, errFontFormat("kern sub-table size exceeds kern table bounds")
-		}
-		t.headers = append(t.headers, h)
-		suboffset += int(subheaderlen + int(h.length))
-	}
-	tracer().Debugf("table kern has %d sub-table(s)", len(t.headers))
-	return t, nil
 }
 
 // --- Loca table ------------------------------------------------------------

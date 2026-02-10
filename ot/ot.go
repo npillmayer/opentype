@@ -355,14 +355,6 @@ func (tself TableSelf) AsMaxP() *MaxPTable {
 	return nil
 }
 
-// AsKern returns this table as a kern table, or nil.
-func (tself TableSelf) AsKern() *KernTable {
-	if k, ok := safeSelf(tself).(*KernTable); ok {
-		return k
-	}
-	return nil
-}
-
 // AsHead returns this table as a head table, or nil.
 func (tself TableSelf) AsHead() *HeadTable {
 	if k, ok := safeSelf(tself).(*HeadTable); ok {
@@ -424,61 +416,6 @@ func newHeadTable(tag Tag, b binarySegm, offset, size uint32) *HeadTable {
 	t.tableBase = base
 	t.self = t
 	return t
-}
-
-// KernTable gives information about kerning and kern pairs.
-// The kerning table contains the values that control the inter-character spacing for
-// the glyphs in a font. OpenType™ fonts containing CFF outlines are not supported
-// by the 'kern' table and must use the GPOS OpenType Layout table.
-type KernTable struct {
-	tableBase
-	headers []kernSubTableHeader
-}
-
-func newKernTable(tag Tag, b binarySegm, offset, size uint32) *KernTable {
-	t := &KernTable{}
-	base := tableBase{
-		data:   b,
-		name:   tag,
-		offset: offset,
-		length: size,
-	}
-	t.tableBase = base
-	t.self = t
-	return t
-}
-
-// KernSubTableInfo contains header information for a kerning sub-table.
-// Currently only format 0 of kerning tables is supported (as does MS Windows).
-type KernSubTableInfo struct {
-	IsHorizontal  bool // kern data may be horizontal or vertical
-	IsMinimum     bool // if false, table has kerning values, otherwise has minimum values
-	IsOverride    bool // if true, the value in this table should replace the value currently being accumulated
-	IsCrossStream bool // if true, kerning is perpendicular to the flow of the text
-	Offset        uint16
-	Length        uint32
-}
-
-// SubTableInfo returns information about a kerning sub-table. n is 0…N-1.
-func (t *KernTable) SubTableInfo(n int) KernSubTableInfo {
-	// Mask    Name
-	// 0x8000  kernVertical
-	// 0x4000  kernCrossStream
-	// 0x2000  kernVariation
-	// 0x1000  kernOverride
-	// 0x0F00  kernUnusedBits
-	// 0x00FF  kernFormatMask
-	info := KernSubTableInfo{}
-	if len(t.headers) >= n {
-		h := t.headers[n]
-		info.IsHorizontal = h.coverage&0x8000 == 0
-		info.IsMinimum = h.coverage&0x4000 > 0
-		info.IsCrossStream = h.coverage&0x2000 > 0
-		info.IsOverride = h.coverage&0x08 > 0
-		info.Offset = h.offset
-		info.Length = h.length
-	}
-	return info
 }
 
 // LocaTable stores the offsets to the locations of the glyphs in the font,

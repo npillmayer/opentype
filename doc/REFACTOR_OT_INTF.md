@@ -760,7 +760,7 @@ OpenType fonts containing CFF (Compact Font Format) outlines (commonly with a
 -  post: **PostScript information**, specifically required in format 3.0 for CFF fonts. 
 -  CFF (or CFF2): Contains the actual **PostScript outlines** (cubic Bézier curves) and hints. Note the space character in 'CFF '.
 
-For text shaping/runtime, package `ot/` keeps concrete parsing for at least **hhea**, **OS/2**, **hmtx**, **cmap**, plus layout tables (**GSUB**, **GPOS**, **GDEF**, optional **BASE**).  
+For text shaping/runtime, package `ot/` keeps concrete parsing for at least **hhea**, **OS/2**, **hmtx**, **cmap**, plus layout tables (**GSUB**, **GPOS**, **GDEF**, optional **BASE**, **JSTF**).  
 
 Decision update:
 - **`hhea` and `OS/2` stay parsed in `ot/`** to avoid coupling `otlayout/` or `otshape/` to `otquery/` for shaping-critical metrics.

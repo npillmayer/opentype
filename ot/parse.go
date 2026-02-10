@@ -812,40 +812,6 @@ func parseHMtx(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 	return t, nil
 }
 
-// --- Names -----------------------------------------------------------------
-
-func parseNames(b binarySegm) (nameNames, error) {
-	if len(b) < 6 {
-		return nameNames{}, errFontFormat("name section corrupt")
-	}
-	N, _ := b.u16(2)
-	names := nameNames{}
-	strOffset, _ := b.u16(4)
-
-	// Validate string offset bounds
-	if int(strOffset) > len(b) {
-		return nameNames{}, errFontFormat(fmt.Sprintf("name table string offset %d exceeds table size %d", strOffset, len(b)))
-	}
-	names.strbuf = b[strOffset:]
-	tracer().Debugf("name table has %d strings, starting at %d", N, strOffset)
-
-	// Check for arithmetic overflow in name records size calculation
-	nameRecsSize, err := checkedMulInt(12, int(N))
-	if err != nil {
-		return nameNames{}, errFontFormat(fmt.Sprintf("name table records size overflow: %v", err))
-	}
-	requiredSize, err := checkedAddInt(6, nameRecsSize)
-	if err != nil {
-		return nameNames{}, errFontFormat(fmt.Sprintf("name table size calculation overflow: %v", err))
-	}
-	if len(b) < requiredSize {
-		return nameNames{}, errFontFormat("name section corrupt")
-	}
-	recs := b[6 : 6+nameRecsSize]
-	names.nameRecs = viewArray(recs, 12)
-	return names, nil
-}
-
 // --- GDEF table ------------------------------------------------------------
 
 // The Glyph Definition (GDEF) table provides various glyph properties used in

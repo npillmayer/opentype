@@ -2,10 +2,8 @@ package ot
 
 import (
 	"fmt"
-	"iter"
 
 	"github.com/npillmayer/opentype"
-	"golang.org/x/text/encoding/unicode"
 )
 
 // Font represents the internal structure of an OpenType font.
@@ -686,84 +684,4 @@ func (t *HMtxTable) HMetrics(g GlyphIndex) (uint16, int16, bool) {
 func (t *HMtxTable) hMetrics(g GlyphIndex) (uint16, int16) {
 	a, l, _ := t.HMetrics(g)
 	return a, l
-}
-
-// Names struct for table 'name'
-type nameNames struct {
-	navBase
-	strbuf   binarySegm
-	nameRecs array
-}
-
-func (n nameNames) Name() string {
-	return "name" // name of 'name' OT table
-}
-
-func (n nameNames) IsVoid() bool {
-	return false
-}
-
-func (n nameNames) Len() int {
-	return n.nameRecs.Len()
-}
-
-func (n nameNames) LookupName(key NameKey) NavLink {
-	for i := 0; i < n.nameRecs.Len(); i++ {
-		rk, link, ok := n.record(i)
-		if !ok {
-			continue
-		}
-		if rk == key {
-			return link
-		}
-	}
-	return nullLink(fmt.Sprintf("no name for key %+v", key))
-}
-
-func (n nameNames) Range() iter.Seq2[NameKey, NavLink] {
-	return func(yield func(NameKey, NavLink) bool) {
-		for i := 0; i < n.nameRecs.Len(); i++ {
-			k, link, ok := n.record(i)
-			if !ok {
-				continue
-			}
-			if !yield(k, link) {
-				return
-			}
-		}
-	}
-}
-
-func (n nameNames) record(i int) (NameKey, NavLink, bool) {
-	var key NameKey
-	if i < 0 || i >= n.nameRecs.Len() {
-		return key, nil, false
-	}
-	nameRecord := n.nameRecs.Get(i)
-	key.PlatformID = nameRecord.U16(0)
-	key.EncodingID = nameRecord.U16(2)
-	key.LanguageID = nameRecord.U16(4)
-	key.NameID = nameRecord.U16(6)
-	// Keep current UTF-16-only behavior for name decoding.
-	if !((key.PlatformID == 0 && key.EncodingID == 3) || (key.PlatformID == 3 && key.EncodingID == 1)) {
-		return key, nil, false
-	}
-	strlen := int(nameRecord.U16(8))
-	offset := int(nameRecord.U16(10))
-	if offset < 0 || strlen < 0 || offset+strlen > len(n.strbuf) {
-		return key, nil, false
-	}
-	str := n.strbuf[offset : offset+strlen] // UTF-16 encoded string
-	link := makeLink16(0, str, "NameRecord")
-	return key, link, true
-}
-
-func decodeUtf16(str []byte) (string, error) {
-	enc := unicode.UTF16(unicode.BigEndian, unicode.IgnoreBOM)
-	decoder := enc.NewDecoder()
-	s, err := decoder.Bytes(str)
-	if err != nil {
-		return "", fmt.Errorf("decoding UTF-16 error: %v", err)
-	}
-	return string(s), nil
 }

@@ -65,24 +65,6 @@ type NameKey struct {
 	NameID     uint16
 }
 
-// NameRecords is a lightweight view over OpenType table 'name'.
-// Implementations may parse records lazily on-demand.
-type NameRecords interface {
-	Name() string
-	Len() int
-	LookupName(NameKey) NavLink
-	Range() iter.Seq2[NameKey, NavLink]
-}
-
-// AsNameRecords returns nav as NameRecords if supported.
-func AsNameRecords(nav Navigator) (NameRecords, bool) {
-	if nav == nil || nav.IsVoid() {
-		return nil, false
-	}
-	nr, ok := nav.(NameRecords)
-	return nr, ok
-}
-
 // ----------------------------------------------------------------------
 
 // NavigatorFactory creates a Navigator for a given OpenType object `obj` at location
@@ -94,18 +76,6 @@ func NavigatorFactory(obj string, loc NavLocation, base NavLocation) Navigator {
 		return null(errDanglingLink(obj))
 	case "Feature":
 		return null(errDanglingLink(obj))
-	case "name":
-		names, err := parseNames(loc.Bytes())
-		if err != nil {
-			return null(err)
-		}
-		return names
-	case "NameRecord":
-		name, err := decodeUtf16(loc.Bytes())
-		if err != nil {
-			return null(err)
-		}
-		return navName{name: name}
 	}
 	if fields, ok := tableFields[obj]; ok {
 		tracer().Debugf("object %s has fields %v", obj, fields)

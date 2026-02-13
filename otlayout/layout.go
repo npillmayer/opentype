@@ -144,14 +144,21 @@ func peekLayoutProperty[T any](table ot.Table,
 
 // get GSUB and GPOS from a font safely
 func getLayoutTables(otf *ot.Font) ([]*ot.LayoutTable, error) {
+	if otf == nil {
+		return nil, errFontFormat("font is nil")
+	}
 	var table ot.Table
 	var lytt = make([]*ot.LayoutTable, 2)
+	fontname := "<unnamed>"
+	if otf != nil && otf.F != nil && otf.F.Fontname != "" {
+		fontname = otf.F.Fontname
+	}
 	if table = otf.Table(ot.T("GSUB")); table == nil {
-		return nil, errFontFormat(fmt.Sprintf("font %s has no GSUB table", otf.F.Fontname))
+		return nil, errFontFormat(fmt.Sprintf("font %s has no GSUB table", fontname))
 	}
 	lytt[0] = &table.Self().AsGSub().LayoutTable
 	if table = otf.Table(ot.T("GPOS")); table == nil {
-		return nil, errFontFormat(fmt.Sprintf("font %s has no GPOS table", otf.F.Fontname))
+		return nil, errFontFormat(fmt.Sprintf("font %s has no GPOS table", fontname))
 	}
 	lytt[1] = &table.Self().AsGPos().LayoutTable
 	return lytt, nil

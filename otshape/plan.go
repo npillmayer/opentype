@@ -362,6 +362,138 @@ func collectUserFeatureToggles(features []FeatureRange) map[ot.Tag]userFeatureTo
 	return toggles
 }
 
+type compiledFeature struct {
+	tag     ot.Tag
+	typ     otlayout.LayoutTagType
+	lookups []int
+}
+
+func (f compiledFeature) Tag() ot.Tag                  { return f.tag }
+func (f compiledFeature) Type() otlayout.LayoutTagType { return f.typ }
+func (f compiledFeature) LookupCount() int             { return len(f.lookups) }
+func (f compiledFeature) LookupIndex(i int) int {
+	if i < 0 || i >= len(f.lookups) {
+		return -1
+	}
+	return f.lookups[i]
+}
+
+func fontFeaturesForTable(font *ot.Font, table planTable, scriptTag ot.Tag, langTag ot.Tag) ([]otlayout.Feature, error) {
+	if font == nil {
+		return nil, errShaper("font is nil")
+	}
+	var (
+		tag ot.Tag
+		typ otlayout.LayoutTagType
+		lyt *ot.LayoutTable
+	)
+	switch table {
+	case planGSUB:
+		tag = ot.T("GSUB")
+		typ = otlayout.GSubFeatureType
+		if t := font.Table(tag); t != nil {
+			if gsub := t.Self().AsGSub(); gsub != nil {
+				lyt = &gsub.LayoutTable
+			}
+		}
+	case planGPOS:
+		tag = ot.T("GPOS")
+		typ = otlayout.GPosFeatureType
+		if t := font.Table(tag); t != nil {
+			if gpos := t.Self().AsGPos(); gpos != nil {
+				lyt = &gpos.LayoutTable
+			}
+		}
+	default:
+		return nil, errShaper("invalid plan table")
+	}
+	if lyt == nil {
+		return nil, errShaper(fmt.Sprintf("font has no %s table", tag))
+	}
+	sg := lyt.ScriptGraph()
+	fg := lyt.FeatureGraph()
+	if sg == nil || fg == nil {
+		return nil, errShaper(fmt.Sprintf("%s has no script or feature graph", tag))
+	}
+	if scriptTag == 0 {
+		scriptTag = ot.DFLT
+	}
+	scr := sg.Script(scriptTag)
+	if scr == nil && scriptTag != ot.DFLT {
+		scr = sg.Script(ot.DFLT)
+	}
+	if scr == nil {
+		return []otlayout.Feature{}, nil
+	}
+	var lsys *ot.LangSys
+	if langTag != 0 {
+		lsys = scr.LangSys(langTag)
+	}
+	if lsys == nil {
+		lsys = scr.DefaultLangSys()
+	}
+	if lsys == nil {
+		return nil, errShaper(fmt.Sprintf("%s has no language system for script %s", tag, scriptTag))
+	}
+	featureByPtr := make(map[*ot.Feature]ot.Tag, fg.Len())
+	for featureTag, cf := range fg.Range() {
+		if cf != nil {
+			featureByPtr[cf] = featureTag
+		}
+	}
+	features := lsys.Features()
+	out := make([]otlayout.Feature, 0, 1+len(features))
+	if reqInx, ok := lsys.RequiredFeatureIndex(); ok {
+		cf, reqTag := featureAtConcreteIndex(fg, int(reqInx))
+		if cf != nil && reqTag != 0 {
+			out = append(out, wrapCompiledFeature(cf, reqTag, typ))
+		} else {
+			out = append(out, nil)
+		}
+	} else {
+		out = append(out, nil)
+	}
+	for _, cf := range features {
+		if cf == nil {
+			out = append(out, nil)
+			continue
+		}
+		featureTag := featureByPtr[cf]
+		if featureTag == 0 {
+			out = append(out, nil)
+			continue
+		}
+		out = append(out, wrapCompiledFeature(cf, featureTag, typ))
+	}
+	return out, nil
+}
+
+func wrapCompiledFeature(cf *ot.Feature, tag ot.Tag, typ otlayout.LayoutTagType) otlayout.Feature {
+	lookups := make([]int, 0, cf.LookupCount())
+	for i := 0; i < cf.LookupCount(); i++ {
+		lookups = append(lookups, cf.LookupIndex(i))
+	}
+	return compiledFeature{
+		tag:     tag,
+		typ:     typ,
+		lookups: lookups,
+	}
+}
+
+func featureAtConcreteIndex(fg *ot.FeatureList, inx int) (*ot.Feature, ot.Tag) {
+	if fg == nil || inx < 0 {
+		return nil, 0
+	}
+	i := 0
+	for tag, cf := range fg.Range() {
+		if i == inx {
+			return cf, tag
+		}
+		i++
+	}
+	return nil, 0
+}
+
 func compileUserFeatureMasks(features []FeatureRange) (maskLayout, error) {
 	layout := maskLayout{
 		GlobalMask: 0,
@@ -633,14 +765,24 @@ func compile(req planRequest) (*plan, error) {
 		gposFeats []otlayout.Feature
 		notes     []planNote
 	)
-	gsubFeats, gposFeats, err = otlayout.FontFeatures(req.Font, scriptTag, langTag)
+	gsubFeats, err = fontFeaturesForTable(req.Font, planGSUB, scriptTag, langTag)
 	if err != nil {
 		if policy.Strict {
 			return nil, errShaper(err.Error())
 		}
 		notes = append(notes, planNote{
 			Level:   planNoteWarning,
-			Message: fmt.Sprintf("layout feature extraction failed: %s", err),
+			Message: fmt.Sprintf("GSUB feature extraction failed: %s", err),
+		})
+	}
+	gposFeats, err = fontFeaturesForTable(req.Font, planGPOS, scriptTag, langTag)
+	if err != nil {
+		if policy.Strict && policy.ApplyGPOS {
+			return nil, errShaper(err.Error())
+		}
+		notes = append(notes, planNote{
+			Level:   planNoteWarning,
+			Message: fmt.Sprintf("GPOS feature extraction failed: %s", err),
 		})
 	}
 
@@ -721,6 +863,7 @@ func (e *planExecutor) owns() bool {
 
 func (e *planExecutor) apply(pl *plan) error {
 	assert(e.owns(), "plan executor does not own run buffer")
+	e.ensureRunMasks(pl)
 	if err := e.applyGSUB(pl); err != nil {
 		return err
 	}
@@ -747,7 +890,6 @@ func (e *planExecutor) applyTable(pl *plan, table planTable) error {
 	//
 	prog := pl.table(table)
 	assert(prog != nil, "plan returns nil program, cannot happen")
-	e.ensureRunMasks(pl)
 	if table == planGPOS {
 		e.run.EnsurePos()
 	}

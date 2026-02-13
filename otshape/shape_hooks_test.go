@@ -1,6 +1,7 @@
 package otshape
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -135,5 +136,104 @@ func TestShapeReorderHookCanSwapRunItems(t *testing.T) {
 	if sink.glyphs[0].Cluster != sink.glyphs[1].Cluster {
 		t.Fatalf("cluster merge not applied: clusters = [%d %d]",
 			sink.glyphs[0].Cluster, sink.glyphs[1].Cluster)
+	}
+}
+
+type planValidateProbeShaper struct {
+	validateErr   error
+	initCalls     int
+	validateCalls int
+}
+
+func (s *planValidateProbeShaper) Name() string { return "plan-validate-probe" }
+
+func (s *planValidateProbeShaper) Match(SelectionContext) ShaperConfidence {
+	return ShaperConfidenceCertain
+}
+
+func (s *planValidateProbeShaper) New() ShapingEngine { return s }
+
+func (s *planValidateProbeShaper) NormalizationPreference() NormalizationMode {
+	return NormalizationComposed
+}
+
+func (s *planValidateProbeShaper) ApplyGPOS() bool {
+	return true
+}
+
+func (s *planValidateProbeShaper) CollectFeatures(FeaturePlanner, SelectionContext) {}
+
+func (s *planValidateProbeShaper) OverrideFeatures(FeaturePlanner) {}
+
+func (s *planValidateProbeShaper) InitPlan(PlanContext) {
+	s.initCalls++
+}
+
+func (s *planValidateProbeShaper) ValidatePlan(PlanContext) error {
+	s.validateCalls++
+	return s.validateErr
+}
+
+func TestShapePlanValidateHookErrorStopsPipeline(t *testing.T) {
+	font := loadMiniOTFont(t, "gpos3_font1.otf")
+	engine := &planValidateProbeShaper{
+		validateErr: errors.New("plan validation failed"),
+	}
+	sink := &hookProbeSink{}
+
+	err := Shape(ShapeRequest{
+		Options: ShapeOptions{
+			Params: Params{
+				Font:      font,
+				Direction: bidi.LeftToRight,
+				Script:    language.MustParseScript("Latn"),
+				Language:  language.English,
+			},
+			FlushBoundary: FlushOnRunBoundary,
+		},
+		Source:  strings.NewReader(string([]rune{0x12})),
+		Sink:    sink,
+		Shapers: []ShapingEngine{engine},
+	})
+	if err == nil || err.Error() != "plan validation failed" {
+		t.Fatalf("shape error = %v, want plan validation failure", err)
+	}
+	if engine.initCalls != 1 || engine.validateCalls != 1 {
+		t.Fatalf("unexpected plan hook counts init=%d validate=%d, want 1/1",
+			engine.initCalls, engine.validateCalls)
+	}
+	if len(sink.glyphs) != 0 {
+		t.Fatalf("pipeline should stop before output write, got %d glyphs", len(sink.glyphs))
+	}
+}
+
+func TestShapePlanValidateHookSuccessContinues(t *testing.T) {
+	font := loadMiniOTFont(t, "gpos3_font1.otf")
+	engine := &planValidateProbeShaper{}
+	sink := &hookProbeSink{}
+
+	err := Shape(ShapeRequest{
+		Options: ShapeOptions{
+			Params: Params{
+				Font:      font,
+				Direction: bidi.LeftToRight,
+				Script:    language.MustParseScript("Latn"),
+				Language:  language.English,
+			},
+			FlushBoundary: FlushOnRunBoundary,
+		},
+		Source:  strings.NewReader(string([]rune{0x12})),
+		Sink:    sink,
+		Shapers: []ShapingEngine{engine},
+	})
+	if err != nil {
+		t.Fatalf("shape failed: %v", err)
+	}
+	if engine.initCalls != 1 || engine.validateCalls != 1 {
+		t.Fatalf("unexpected plan hook counts init=%d validate=%d, want 1/1",
+			engine.initCalls, engine.validateCalls)
+	}
+	if len(sink.glyphs) != 1 {
+		t.Fatalf("glyph count = %d, want 1", len(sink.glyphs))
 	}
 }

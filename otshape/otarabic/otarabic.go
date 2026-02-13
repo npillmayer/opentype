@@ -1,6 +1,7 @@
 package otarabic
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"unicode"
@@ -65,14 +66,14 @@ const (
 )
 
 type shaperPlanState struct {
-	font          *ot.Font
-	script        language.Script
-	maskArray     [formCount]uint32
-	formMask      uint32
-	hasStch       bool
-	stchMask      uint32
-	hasRligFbk    bool
-	fallbackGlyph map[rune]glyphForms
+	font              *ot.Font
+	script            language.Script
+	maskArray         [formCount]uint32
+	formMask          uint32
+	hasStch           bool
+	stchMask          uint32
+	hasNotdefFallback bool
+	fallbackGlyph     map[rune]glyphForms
 }
 
 // Shaper is the Arabic/Syriac shaping engine.
@@ -88,6 +89,7 @@ type Shaper struct {
 var _ otshape.ShapingEngine = (*Shaper)(nil)
 var _ otshape.ShapingEnginePolicy = (*Shaper)(nil)
 var _ otshape.ShapingEnginePlanHooks = (*Shaper)(nil)
+var _ otshape.ShapingEnginePlanValidateHook = (*Shaper)(nil)
 var _ otshape.ShapingEnginePostResolveHook = (*Shaper)(nil)
 var _ otshape.ShapingEnginePreGSUBHook = (*Shaper)(nil)
 var _ otshape.ShapingEngineReorderHook = (*Shaper)(nil)
@@ -174,20 +176,34 @@ func (Shaper) OverrideFeatures(plan otshape.FeaturePlanner) {
 
 func (s *Shaper) InitPlan(plan otshape.PlanContext) {
 	s.plan = shaperPlanState{
-		font:       plan.Font(),
-		script:     plan.Selection().Script,
-		hasStch:    plan.FeatureMask1(tagStch) != 0,
-		stchMask:   plan.FeatureMask1(tagStch),
-		hasRligFbk: plan.FeatureNeedsFallback(tagRlig),
+		font:              plan.Font(),
+		script:            plan.Selection().Script,
+		hasStch:           plan.FeatureMask1(tagStch) != 0,
+		stchMask:          plan.FeatureMask1(tagStch),
+		hasNotdefFallback: planNeedsArabicFallback(plan),
 	}
 	for i, tag := range arabicFormFeatureTags {
 		m := plan.FeatureMask1(tag)
 		s.plan.maskArray[i] = m
 		s.plan.formMask |= m
 	}
-	if s.plan.hasRligFbk {
+	if s.plan.hasNotdefFallback && hasUsableCMap(s.plan.font) {
 		s.plan.fallbackGlyph = buildFallbackGlyphMap(s.plan.font)
 	}
+}
+
+func (s *Shaper) ValidatePlan(plan otshape.PlanContext) error {
+	_ = plan
+	if !s.plan.hasNotdefFallback {
+		return nil
+	}
+	if s.plan.font == nil {
+		return fmt.Errorf("otshape/otarabic: fallback for .notdef repair requested but plan font is nil")
+	}
+	if !hasUsableCMap(s.plan.font) {
+		return fmt.Errorf("otshape/otarabic: fallback for .notdef repair requested but font cmap is unavailable")
+	}
+	return nil
 }
 
 func (s *Shaper) PostResolveFeatures(plan otshape.ResolvedFeaturePlanner, _ otshape.ResolvedFeatureView, ctx otshape.SelectionContext) {
@@ -320,7 +336,7 @@ func (s *Shaper) PostprocessRun(run otshape.RunContext) {
 			_ = expandTatweelForStch(run, tatweel, s.plan.stchMask)
 		}
 	}
-	if !s.plan.hasRligFbk || len(s.plan.fallbackGlyph) == 0 {
+	if !s.plan.hasNotdefFallback || len(s.plan.fallbackGlyph) == 0 {
 		return
 	}
 	n := run.Len()
@@ -621,12 +637,32 @@ func expandTatweelForStch(run otshape.RunContext, tatweel ot.GlyphIndex, stchMas
 func codepointsFromRun(run otshape.RunContext, font *ot.Font) []rune {
 	n := run.Len()
 	cps := make([]rune, n)
+	canReverseLookup := hasUsableCMap(font)
 	for i := 0; i < n; i++ {
 		cp := run.Codepoint(i)
-		if cp == 0 && font != nil {
+		if cp == 0 && canReverseLookup {
 			cp = otquery.CodePointForGlyph(font, run.Glyph(i))
 		}
 		cps[i] = cp
 	}
 	return cps
+}
+
+func hasUsableCMap(font *ot.Font) bool {
+	return font != nil && font.CMap != nil && font.CMap.GlyphIndexMap != nil
+}
+
+func planNeedsArabicFallback(plan otshape.PlanContext) bool {
+	if plan == nil {
+		return false
+	}
+	if plan.FeatureNeedsFallback(tagRlig) {
+		return true
+	}
+	for _, tag := range arabicFormFeatureTags {
+		if plan.FeatureNeedsFallback(tag) {
+			return true
+		}
+	}
+	return false
 }

@@ -110,7 +110,7 @@ func TestFallbackGlyphForMapsExtendedForms(t *testing.T) {
 func TestPostprocessRunAppliesFallbackGlyphsForNotdef(t *testing.T) {
 	s := &Shaper{
 		plan: shaperPlanState{
-			hasRligFbk: true,
+			hasNotdefFallback: true,
 			fallbackGlyph: map[rune]glyphForms{
 				'\u0628': {formInit: 41, formMedi: 42, formFina: 43, formIsol: 44},
 			},
@@ -137,7 +137,7 @@ func TestPostprocessRunAppliesFallbackGlyphsForNotdef(t *testing.T) {
 func TestPostprocessRunKeepsResolvedGlyphs(t *testing.T) {
 	s := &Shaper{
 		plan: shaperPlanState{
-			hasRligFbk: true,
+			hasNotdefFallback: true,
 			fallbackGlyph: map[rune]glyphForms{
 				'\u0628': {formInit: 41},
 			},
@@ -152,6 +152,80 @@ func TestPostprocessRunKeepsResolvedGlyphs(t *testing.T) {
 	s.PostprocessRun(run)
 	if run.glyphs[0] != 99 {
 		t.Fatalf("resolved glyph overwritten by fallback: got %d", run.glyphs[0])
+	}
+}
+
+func TestPostprocessRunDoesNotRepairWhenFallbackNotRequested(t *testing.T) {
+	s := &Shaper{
+		plan: shaperPlanState{
+			hasNotdefFallback: false,
+			fallbackGlyph: map[rune]glyphForms{
+				'\u0628': {formInit: 41},
+			},
+		},
+		preparedForm: []int{formInit},
+	}
+	run := &postRun{
+		glyphs: []ot.GlyphIndex{otshape.NOTDEF},
+		cps:    []rune{'\u0628'},
+		masks:  []uint32{0},
+	}
+	s.PostprocessRun(run)
+	if run.glyphs[0] != otshape.NOTDEF {
+		t.Fatalf("glyph should stay .notdef when fallback is not requested, got %d", run.glyphs[0])
+	}
+}
+
+func TestPostprocessRunKeepsNotdefWhenNoMappingExists(t *testing.T) {
+	s := &Shaper{
+		plan: shaperPlanState{
+			hasNotdefFallback: true,
+			fallbackGlyph: map[rune]glyphForms{
+				'\u0628': {formInit: 41},
+			},
+		},
+		preparedForm: []int{formFina},
+	}
+	run := &postRun{
+		glyphs: []ot.GlyphIndex{otshape.NOTDEF},
+		cps:    []rune{'\u062C'},
+		masks:  []uint32{0},
+	}
+	s.PostprocessRun(run)
+	if run.glyphs[0] != otshape.NOTDEF {
+		t.Fatalf("glyph should stay .notdef when no fallback mapping exists, got %d", run.glyphs[0])
+	}
+}
+
+type fallbackPlanProbe struct {
+	fallback map[ot.Tag]bool
+}
+
+func (p fallbackPlanProbe) Font() *ot.Font                      { return nil }
+func (p fallbackPlanProbe) Selection() otshape.SelectionContext { return otshape.SelectionContext{} }
+func (p fallbackPlanProbe) FeatureMask1(tag ot.Tag) uint32      { _ = tag; return 0 }
+func (p fallbackPlanProbe) FeatureNeedsFallback(tag ot.Tag) bool {
+	return p.fallback[tag]
+}
+
+func TestPlanNeedsArabicFallback(t *testing.T) {
+	cases := []struct {
+		name string
+		fb   map[ot.Tag]bool
+		want bool
+	}{
+		{name: "none", fb: map[ot.Tag]bool{}, want: false},
+		{name: "rlig", fb: map[ot.Tag]bool{tagRlig: true}, want: true},
+		{name: "form", fb: map[ot.Tag]bool{tagInit: true}, want: true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := planNeedsArabicFallback(fallbackPlanProbe{fallback: tc.fb})
+			if got != tc.want {
+				t.Fatalf("planNeedsArabicFallback() = %t, want %t", got, tc.want)
+			}
+		})
 	}
 }
 

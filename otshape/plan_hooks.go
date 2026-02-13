@@ -195,8 +195,8 @@ type resolvedFeatureView struct {
 func newResolvedFeatureView(
 	gsub tableProgram,
 	gpos tableProgram,
-	gsubFlags map[ot.Tag]FeatureFlags,
-	gposFlags map[ot.Tag]FeatureFlags,
+	gsubFallback map[ot.Tag]bool,
+	gposFallback map[ot.Tag]bool,
 ) *resolvedFeatureView {
 	v := &resolvedFeatureView{
 		features: map[LayoutTable][]ResolvedFeature{},
@@ -205,8 +205,8 @@ func newResolvedFeatureView(
 			LayoutGPOS: {},
 		},
 	}
-	v.features[LayoutGSUB] = collectResolvedFeatures(gsub, planGSUB, gsubFlags)
-	v.features[LayoutGPOS] = collectResolvedFeatures(gpos, planGPOS, gposFlags)
+	v.features[LayoutGSUB] = collectResolvedFeatures(gsub, gsubFallback)
+	v.features[LayoutGPOS] = collectResolvedFeatures(gpos, gposFallback)
 	for _, table := range []LayoutTable{LayoutGSUB, LayoutGPOS} {
 		for _, rf := range v.features[table] {
 			v.byTag[table][rf.Tag] = rf
@@ -336,8 +336,7 @@ func attachPauseToStage(prog *tableProgram, hooks *planHookSet, stageInx int, id
 
 func collectResolvedFeatures(
 	prog tableProgram,
-	table planTable,
-	featureFlags map[ot.Tag]FeatureFlags,
+	fallbackNeeds map[ot.Tag]bool,
 ) []ResolvedFeature {
 	stageByTag := stageIndexByTag(prog)
 	byTag := map[ot.Tag]ResolvedFeature{}
@@ -349,7 +348,7 @@ func collectResolvedFeatures(
 		rf.AutoZWJ = rf.AutoZWJ || op.Flags.has(lookupAutoZWJ)
 		rf.PerSyllable = rf.PerSyllable || op.Flags.has(lookupPerSyllable)
 		rf.SupportsRandom = rf.SupportsRandom || op.Flags.has(lookupRandom)
-		if featureFlags[op.FeatureTag]&FeatureHasFallback != 0 {
+		if fallbackNeeds[op.FeatureTag] {
 			rf.NeedsFallback = true
 		}
 		byTag[op.FeatureTag] = rf
@@ -365,6 +364,77 @@ func collectResolvedFeatures(
 		return out[i].Stage < out[j].Stage
 	})
 	return out
+}
+
+func collectFallbackNeeds(
+	prog tableProgram,
+	defaultTags []ot.Tag,
+	toggles map[ot.Tag]userFeatureToggle,
+	featureFlags map[ot.Tag]FeatureFlags,
+) map[ot.Tag]bool {
+	needs := map[ot.Tag]bool{}
+	for tag, flags := range featureFlags {
+		if flags&FeatureHasFallback == 0 {
+			continue
+		}
+		if !featureRequested(tag, defaultTags, toggles) {
+			continue
+		}
+		if hasFeatureBinding(prog, tag) {
+			continue
+		}
+		needs[tag] = true
+	}
+	return needs
+}
+
+func mergeFallbackNeeds(
+	gsub tableProgram,
+	gpos tableProgram,
+	gsubNeeds map[ot.Tag]bool,
+	gposNeeds map[ot.Tag]bool,
+) map[ot.Tag]bool {
+	merged := map[ot.Tag]bool{}
+	for tag, needed := range gsubNeeds {
+		if needed {
+			merged[tag] = true
+		}
+	}
+	for tag, needed := range gposNeeds {
+		if needed {
+			merged[tag] = true
+		}
+	}
+	for tag := range merged {
+		if hasFeatureBinding(gsub, tag) || hasFeatureBinding(gpos, tag) {
+			delete(merged, tag)
+		}
+	}
+	return merged
+}
+
+func featureRequested(tag ot.Tag, defaultTags []ot.Tag, toggles map[ot.Tag]userFeatureToggle) bool {
+	if toggle, ok := toggles[tag]; ok {
+		if toggle.hasGlobal {
+			if toggle.on {
+				return true
+			}
+			return toggle.hasRangeOn
+		}
+		if toggle.hasRangeOn {
+			return true
+		}
+	}
+	return tagInSlice(defaultTags, tag)
+}
+
+func hasFeatureBinding(prog tableProgram, tag ot.Tag) bool {
+	for _, bind := range prog.FeatureBinds {
+		if bind.Tag == tag {
+			return true
+		}
+	}
+	return false
 }
 
 func stageIndexByTag(prog tableProgram) map[ot.Tag]int {

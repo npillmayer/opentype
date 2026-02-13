@@ -847,6 +847,8 @@ func compile(req planRequest) (*plan, error) {
 	}
 
 	toggles := planner.toggles()
+	gsubFeatureFlags := planner.featureFlags(planGSUB)
+	gposFeatureFlags := planner.featureFlags(planGPOS)
 	var (
 		gsubFeats []otlayout.Feature
 		gposFeats []otlayout.Feature
@@ -878,7 +880,7 @@ func compile(req planRequest) (*plan, error) {
 		planGSUB,
 		planner.defaultTags(planGSUB),
 		toggles,
-		planner.featureFlags(planGSUB),
+		gsubFeatureFlags,
 		masks,
 		policy,
 	)
@@ -891,7 +893,7 @@ func compile(req planRequest) (*plan, error) {
 		planGPOS,
 		planner.defaultTags(planGPOS),
 		toggles,
-		planner.featureFlags(planGPOS),
+		gposFeatureFlags,
 		masks,
 		policy,
 	)
@@ -901,7 +903,10 @@ func compile(req planRequest) (*plan, error) {
 	notes = append(notes, gposNotes...)
 	planner.applyDirectGSUBPauses(&gsubProg)
 
-	resolvedView := newResolvedFeatureView(gsubProg, gposProg, planner.featureFlags(planGSUB), planner.featureFlags(planGPOS))
+	gsubFallbackNeeds := collectFallbackNeeds(gsubProg, planner.defaultTags(planGSUB), toggles, gsubFeatureFlags)
+	gposFallbackNeeds := collectFallbackNeeds(gposProg, planner.defaultTags(planGPOS), toggles, gposFeatureFlags)
+	planFallbackNeeds := mergeFallbackNeeds(gsubProg, gposProg, gsubFallbackNeeds, gposFallbackNeeds)
+	resolvedView := newResolvedFeatureView(gsubProg, gposProg, gsubFallbackNeeds, gposFallbackNeeds)
 	if postResolve, ok := req.Engine.(ShapingEnginePostResolveHook); ok {
 		postPlanner := newResolvedPausePlanner(req.Font, &hooks, &gsubProg)
 		postResolve.PostResolveFeatures(postPlanner, resolvedView, selection)
@@ -927,17 +932,17 @@ func compile(req planRequest) (*plan, error) {
 		for tag, ms := range p.Masks.ByFeature {
 			pc.mask1[tag] = ms.Mask & -ms.Mask
 		}
-		for _, feats := range []map[ot.Tag]ResolvedFeature{
-			resolvedView.byTag[LayoutGSUB],
-			resolvedView.byTag[LayoutGPOS],
-		} {
-			for tag, rf := range feats {
-				if rf.NeedsFallback {
-					pc.fallback[tag] = true
-				}
+		for tag, needed := range planFallbackNeeds {
+			if needed {
+				pc.fallback[tag] = true
 			}
 		}
 		planHooks.InitPlan(pc)
+		if planValidate, ok := req.Engine.(ShapingEnginePlanValidateHook); ok {
+			if err := planValidate.ValidatePlan(pc); err != nil {
+				return nil, err
+			}
+		}
 	}
 	err = p.validate()
 	assert(err == nil, "newly created plan does not validate")

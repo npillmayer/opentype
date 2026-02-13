@@ -45,6 +45,9 @@ func TestShaperHookSurface(t *testing.T) {
 	if _, ok := engine.(otshape.ShapingEnginePlanHooks); !ok {
 		t.Fatal("arabic shaper must implement plan hooks")
 	}
+	if _, ok := engine.(otshape.ShapingEnginePlanValidateHook); !ok {
+		t.Fatal("arabic shaper must implement plan validation hooks")
+	}
 	if _, ok := engine.(otshape.ShapingEnginePostResolveHook); !ok {
 		t.Fatal("arabic shaper must implement post-resolve hooks")
 	}
@@ -135,12 +138,13 @@ func TestCollectFeaturesAddsArabicPipelineFeatures(t *testing.T) {
 }
 
 type planCtxProbe struct {
+	font      *ot.Font
 	selection otshape.SelectionContext
 	mask1     map[ot.Tag]uint32
 	fallback  map[ot.Tag]bool
 }
 
-func (p planCtxProbe) Font() *ot.Font { return nil }
+func (p planCtxProbe) Font() *ot.Font { return p.font }
 func (p planCtxProbe) Selection() otshape.SelectionContext {
 	return p.selection
 }
@@ -155,6 +159,11 @@ type runProbe struct {
 	codepoints []rune
 	masks      []uint32
 }
+
+type fakeCMapIndex struct{}
+
+func (fakeCMapIndex) Lookup(rune) ot.GlyphIndex        { return 0 }
+func (fakeCMapIndex) ReverseLookup(ot.GlyphIndex) rune { return 0 }
 
 func (r *runProbe) Len() int { return len(r.codepoints) }
 func (r *runProbe) Glyph(i int) ot.GlyphIndex {
@@ -236,5 +245,63 @@ func TestPrepareGSUBPrecomputesFormsUsedBySetupMasks(t *testing.T) {
 	}
 	if run.masks[2] != 0x8002 {
 		t.Fatalf("mask[2]=0x%X, want fina 0x8002", run.masks[2])
+	}
+}
+
+func TestValidatePlanFailsForFallbackWithoutCMap(t *testing.T) {
+	s := otarabic.New().(*otarabic.Shaper)
+	ctx := planCtxProbe{
+		font: &ot.Font{},
+		selection: otshape.SelectionContext{
+			Script: language.MustParseScript("Arab"),
+		},
+		fallback: map[ot.Tag]bool{
+			ot.T("rlig"): true,
+		},
+		mask1: map[ot.Tag]uint32{},
+	}
+	s.InitPlan(ctx)
+	if err := s.ValidatePlan(ctx); err == nil {
+		t.Fatalf("expected ValidatePlan failure for missing cmap")
+	}
+}
+
+func TestValidatePlanFailsForFormFallbackWithoutCMap(t *testing.T) {
+	s := otarabic.New().(*otarabic.Shaper)
+	ctx := planCtxProbe{
+		font: &ot.Font{},
+		selection: otshape.SelectionContext{
+			Script: language.MustParseScript("Arab"),
+		},
+		fallback: map[ot.Tag]bool{
+			ot.T("init"): true,
+		},
+		mask1: map[ot.Tag]uint32{},
+	}
+	s.InitPlan(ctx)
+	if err := s.ValidatePlan(ctx); err == nil {
+		t.Fatalf("expected ValidatePlan failure for form fallback without cmap")
+	}
+}
+
+func TestValidatePlanAllowsFallbackQualityMisses(t *testing.T) {
+	s := otarabic.New().(*otarabic.Shaper)
+	ctx := planCtxProbe{
+		font: &ot.Font{
+			CMap: &ot.CMapTable{
+				GlyphIndexMap: fakeCMapIndex{},
+			},
+		},
+		selection: otshape.SelectionContext{
+			Script: language.MustParseScript("Arab"),
+		},
+		fallback: map[ot.Tag]bool{
+			ot.T("rlig"): true,
+		},
+		mask1: map[ot.Tag]uint32{},
+	}
+	s.InitPlan(ctx)
+	if err := s.ValidatePlan(ctx); err != nil {
+		t.Fatalf("unexpected ValidatePlan error for quality-only fallback miss: %v", err)
 	}
 }

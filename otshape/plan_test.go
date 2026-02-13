@@ -61,6 +61,45 @@ func (p *planHookProbe) PostResolveFeatures(plan ResolvedFeaturePlanner, view Re
 	}
 }
 
+type fallbackProbe struct {
+	tag          ot.Tag
+	fallbackFlag bool
+	initCalled   bool
+	needsFbk     bool
+}
+
+func (p *fallbackProbe) Name() string { return "fallback-probe" }
+func (p *fallbackProbe) Match(SelectionContext) ShaperConfidence {
+	return ShaperConfidenceLow
+}
+func (p *fallbackProbe) New() ShapingEngine { return p }
+
+func (p *fallbackProbe) CollectFeatures(plan FeaturePlanner, _ SelectionContext) {
+	flags := FeatureNone
+	if p.fallbackFlag {
+		flags |= FeatureHasFallback
+	}
+	plan.AddFeature(p.tag, flags, 1)
+}
+
+func (p *fallbackProbe) OverrideFeatures(FeaturePlanner) {}
+
+func (p *fallbackProbe) InitPlan(plan PlanContext) {
+	p.initCalled = true
+	p.needsFbk = plan.FeatureNeedsFallback(p.tag)
+}
+
+type validatingProbe struct {
+	fallbackProbe
+	validateCalled bool
+	validateErr    error
+}
+
+func (p *validatingProbe) ValidatePlan(PlanContext) error {
+	p.validateCalled = true
+	return p.validateErr
+}
+
 func TestPlanCompileLookupOrdering(t *testing.T) {
 	otf := loadLocalFont(t, "Calibri.ttf")
 	req := planRequest{
@@ -232,6 +271,116 @@ func TestCompilePostResolveCanAnchorGSUBPause(t *testing.T) {
 	}
 	if !hasPause {
 		t.Fatalf("expected post-resolve anchor to attach at least one GSUB pause stage")
+	}
+}
+
+func TestCompileSetsFallbackNeedForMissingFallbackFeature(t *testing.T) {
+	otf := loadLocalFont(t, "Calibri.ttf")
+	probe := &fallbackProbe{
+		tag:          ot.T("init"),
+		fallbackFlag: true,
+	}
+	req := planRequest{
+		Font:      otf,
+		ScriptTag: ot.T("latn"),
+		LangTag:   ot.T("ENG"),
+		Props: segmentProps{
+			Direction: bidi.LeftToRight,
+		},
+		Engine: probe,
+		Policy: planPolicy{ApplyGPOS: true},
+	}
+	if _, err := compile(req); err != nil {
+		t.Fatalf("compile failed: %v", err)
+	}
+	if !probe.initCalled {
+		t.Fatalf("InitPlan was not called")
+	}
+	if !probe.needsFbk {
+		t.Fatalf("expected fallback-needed=true for missing fallback feature %s", probe.tag)
+	}
+}
+
+func TestCompileDoesNotSetFallbackNeedWhenFallbackFeatureIsResolved(t *testing.T) {
+	otf := loadLocalFont(t, "Calibri.ttf")
+	probe := &fallbackProbe{
+		tag:          ot.T("liga"),
+		fallbackFlag: true,
+	}
+	req := planRequest{
+		Font:      otf,
+		ScriptTag: ot.T("latn"),
+		LangTag:   ot.T("ENG"),
+		Props: segmentProps{
+			Direction: bidi.LeftToRight,
+		},
+		Engine: probe,
+		Policy: planPolicy{ApplyGPOS: true},
+	}
+	if _, err := compile(req); err != nil {
+		t.Fatalf("compile failed: %v", err)
+	}
+	if !probe.initCalled {
+		t.Fatalf("InitPlan was not called")
+	}
+	if probe.needsFbk {
+		t.Fatalf("expected fallback-needed=false for resolved feature %s", probe.tag)
+	}
+}
+
+func TestCompileDoesNotSetFallbackNeedForUnknownTagResolvedInOneTable(t *testing.T) {
+	otf := loadMiniOTFont(t, "gsub3_1_simple_f1.otf")
+	probe := &fallbackProbe{
+		tag:          ot.T("test"),
+		fallbackFlag: true,
+	}
+	req := planRequest{
+		Font:      otf,
+		ScriptTag: ot.T("latn"),
+		LangTag:   ot.T("ENG"),
+		Props: segmentProps{
+			Direction: bidi.LeftToRight,
+		},
+		Engine: probe,
+		Policy: planPolicy{ApplyGPOS: true},
+	}
+	if _, err := compile(req); err != nil {
+		t.Fatalf("compile failed: %v", err)
+	}
+	if !probe.initCalled {
+		t.Fatalf("InitPlan was not called")
+	}
+	if probe.needsFbk {
+		t.Fatalf("expected fallback-needed=false when feature %s resolves in one table", probe.tag)
+	}
+}
+
+func TestCompileInvokesPlanValidateHook(t *testing.T) {
+	otf := loadLocalFont(t, "Calibri.ttf")
+	wantErr := errShaper("validate hook failure")
+	probe := &validatingProbe{
+		fallbackProbe: fallbackProbe{
+			tag:          ot.T("init"),
+			fallbackFlag: true,
+		},
+		validateErr: wantErr,
+	}
+	req := planRequest{
+		Font:      otf,
+		ScriptTag: ot.T("latn"),
+		LangTag:   ot.T("ENG"),
+		Props: segmentProps{
+			Direction: bidi.LeftToRight,
+		},
+		Engine: probe,
+		Policy: planPolicy{ApplyGPOS: true},
+	}
+	_, err := compile(req)
+	if err == nil || err.Error() != wantErr.Error() {
+		t.Fatalf("compile error = %v, want %v", err, wantErr)
+	}
+	if !probe.validateCalled {
+		t.Fatalf("expected ValidatePlan to be called")
 	}
 }
 

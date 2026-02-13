@@ -4,7 +4,7 @@ Our `otshape/` shaper should be much simpler than Harfbuzz for a variety of reas
 
 - We do OpenType (GSUB/GPOS) shaping exclusively; other font formats or font tables are disregarded (e.g., not `kern` table).
 - We do not strive to cache shaping plans (at least for the near future), but rather focus on constructing plans on the fly each time the shaper is called (or some important property in the rune input stream changes).
-- We will be less lenient for broken or incomplete fonts than Harfbuzz is. I except our shaper to more often flag an error than Harfbuzz in cases where Harfbuzz would try to apply some fallback behaviour.
+- We will be less lenient for broken or incomplete fonts than Harfbuzz is. I expect our shaper to more often flag an error than Harfbuzz in cases where Harfbuzz would try to apply some fallback behaviour.
 - We will outsource complex script shaping (Hebrew, Arabic, and others) into their own shaper packages (already done for the Harfbuzz copy included in this package `opentype/`. The core shaper pipeline should be more or less agnostic of the script/language and its special requirements for shaping.
 
 # Harfbuzz Shaper Plan
@@ -391,3 +391,12 @@ Given current `otshape` constraints (OT-only, no plan cache for now, stricter er
 4. PR 4.4: harden GPOS mask/range semantics (ranged feature toggles, feature args, overlap behavior) with focused tests.
 5. PR 4.5: finalize streaming/run-boundary semantics for positioning and test flush behavior (`FlushOnRunBoundary`, cluster boundaries).
 
+## 7. Strict Arabic Fallback Policy (Implemented)
+
+The Arabic shaper now uses a strict, deficiency-driven `.notdef` fallback model:
+
+1. Fallback is requested only when compile-time feature resolution marks Arabic shaping features as unresolved (`FeatureNeedsFallback`), not merely when a feature carries `FeatureHasFallback`.
+2. Structural defects are fail-fast: if fallback is requested but the font has no usable cmap, plan validation fails during compile.
+3. Runtime fallback repair is narrow: only unresolved glyphs (`gid == .notdef`) are candidates for replacement.
+4. Quality misses are non-fatal: if no presentation-form mapping exists for a `.notdef`, the glyph stays `.notdef` and shaping continues.
+5. Fallback activation considers both `rlig` and Arabic form features (`isol`, `fina`, `fin2`, `fin3`, `medi`, `med2`, `init`).

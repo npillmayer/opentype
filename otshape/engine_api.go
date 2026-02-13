@@ -158,6 +158,14 @@ type ShapingEnginePlanHooks interface {
 	InitPlan(plan PlanContext)
 }
 
+// ShapingEnginePlanValidateHook exposes a post-init validation hook.
+//
+// It allows script shapers to fail compilation for structural defects that
+// would otherwise surface only at runtime.
+type ShapingEnginePlanValidateHook interface {
+	ValidatePlan(plan PlanContext) error
+}
+
 // ShapingEnginePostResolveHook exposes post-resolution stage anchoring.
 type ShapingEnginePostResolveHook interface {
 	PostResolveFeatures(plan ResolvedFeaturePlanner, view ResolvedFeatureView, ctx SelectionContext)

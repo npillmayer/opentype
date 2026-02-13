@@ -400,3 +400,23 @@ The Arabic shaper now uses a strict, deficiency-driven `.notdef` fallback model:
 3. Runtime fallback repair is narrow: only unresolved glyphs (`gid == .notdef`) are candidates for replacement.
 4. Quality misses are non-fatal: if no presentation-form mapping exists for a `.notdef`, the glyph stays `.notdef` and shaping continues.
 5. Fallback activation considers both `rlig` and Arabic form features (`isol`, `fina`, `fin2`, `fin3`, `medi`, `med2`, `init`).
+
+# Where `otshape` is now close to Harfbuzz
+
+1.  Same split-shaper model (core, Hebrew, Arabic) with hook-based integration.
+2.  Plan compile + staged GSUB/GPOS application with feature masks and pause hooks.
+3.  Arabic shaping includes joining/form masks, mark reordering, stch handling (simplified), and strict .notdef fallback repair.
+4.  GPOS is exercised end-to-end for key cases (single, pair, mark-to-base, cursive) in otshape/otcore.
+
+### Main differences (intentional or pending):
+
+1.  Strictness policy differs: otshape now fails early on structural fallback defects; HarfBuzz is more lenient. (**intentional**)
+2.  Fallback scope is narrower: otshape only repairs recoverable `.notdef`; no broad quality fallback heuristics. (**intentional**)
+3.  Streaming API target is not fully realized yet: current Shape still reads the full rune source before shaping.
+4.  Plan caching is absent in otshape; HarfBuzz caches shape plans.
+5.  Some advanced/long-tail behavior still has less depth than HarfBuzz (especially broader fallback sophistication and edge-case polish). (**intentional**)
+
+For supported scripts and structurally sound fonts, this implementation is now solid and much closer; HarfBuzz remains broader and more forgiving overall.
+
+
+

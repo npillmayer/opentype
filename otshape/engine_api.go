@@ -2,6 +2,7 @@ package otshape
 
 import (
 	"github.com/npillmayer/opentype/ot"
+	"github.com/npillmayer/opentype/otlayout"
 	"golang.org/x/text/language"
 	"golang.org/x/text/unicode/bidi"
 )
@@ -97,10 +98,16 @@ type RunContext interface {
 	Glyph(i int) ot.GlyphIndex
 	SetGlyph(i int, gid ot.GlyphIndex)
 	Codepoint(i int) rune
+	SetCodepoint(i int, cp rune)
 	Cluster(i int) uint32
+	SetCluster(i int, cluster uint32)
 	MergeClusters(start, end int)
+	Pos(i int) otlayout.PosItem
+	SetPos(i int, pos otlayout.PosItem)
 	Mask(i int) uint32
 	SetMask(i int, mask uint32)
+	InsertGlyphs(index int, glyphs []ot.GlyphIndex)
+	InsertGlyphCopies(index int, source int, count int)
 	Swap(i, j int)
 }
 

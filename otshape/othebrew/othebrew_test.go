@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/npillmayer/opentype/ot"
+	"github.com/npillmayer/opentype/otlayout"
 	"github.com/npillmayer/opentype/otshape"
 	"github.com/npillmayer/opentype/otshape/othebrew"
 	"golang.org/x/text/language"
@@ -97,7 +98,13 @@ func (p *runProbe) SetGlyph(i int, gid ot.GlyphIndex) {
 	_, _ = i, gid
 }
 func (p *runProbe) Codepoint(i int) rune { return p.codepoints[i] }
+func (p *runProbe) SetCodepoint(i int, cp rune) {
+	p.codepoints[i] = cp
+}
 func (p *runProbe) Cluster(i int) uint32 { return p.clusters[i] }
+func (p *runProbe) SetCluster(i int, cluster uint32) {
+	p.clusters[i] = cluster
+}
 func (p *runProbe) MergeClusters(start, end int) {
 	if start < 0 {
 		start = 0
@@ -118,12 +125,25 @@ func (p *runProbe) MergeClusters(start, end int) {
 		p.clusters[i] = min
 	}
 }
+func (p *runProbe) Pos(i int) otlayout.PosItem {
+	_ = i
+	return otlayout.PosItem{AttachTo: -1}
+}
+func (p *runProbe) SetPos(i int, pos otlayout.PosItem) {
+	_, _ = i, pos
+}
 func (p *runProbe) Mask(i int) uint32 {
 	_ = i
 	return 0
 }
 func (p *runProbe) SetMask(i int, mask uint32) {
 	_, _ = i, mask
+}
+func (p *runProbe) InsertGlyphs(index int, glyphs []ot.GlyphIndex) {
+	_, _ = index, glyphs
+}
+func (p *runProbe) InsertGlyphCopies(index int, source int, count int) {
+	_, _, _ = index, source, count
 }
 func (p *runProbe) Swap(i, j int) {
 	p.codepoints[i], p.codepoints[j] = p.codepoints[j], p.codepoints[i]

@@ -30,18 +30,18 @@ func (b GlyphBuffer) Set(i int, g ot.GlyphIndex) {
 }
 
 func (b GlyphBuffer) Replace(i, j int, repl []ot.GlyphIndex) GlyphBuffer {
-	out := append(b[:i], repl...)
+	out := append(b[:i:i], repl...)
 	out = append(out, b[j:]...)
 	return GlyphBuffer(out)
 }
 
 func (b GlyphBuffer) Insert(i int, glyphs []ot.GlyphIndex) GlyphBuffer {
-	out := append(b[:i], glyphs...)
+	out := append(b[:i:i], glyphs...)
 	out = append(out, b[i:]...)
 	return GlyphBuffer(out)
 }
 
 func (b GlyphBuffer) Delete(i, j int) GlyphBuffer {
-	out := append(b[:i], b[j:]...)
+	out := append(b[:i:i], b[j:]...)
 	return GlyphBuffer(out)
 }

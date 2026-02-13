@@ -1,6 +1,8 @@
 package otarabic
 
 import (
+	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/npillmayer/opentype/ot"
@@ -8,6 +10,8 @@ import (
 	"github.com/npillmayer/opentype/otshape"
 	"golang.org/x/text/language"
 	"golang.org/x/text/unicode/bidi"
+	"golang.org/x/text/unicode/norm"
+	"golang.org/x/text/unicode/runenames"
 )
 
 var (
@@ -39,15 +43,15 @@ var arabicFormFeatureTags = [...]ot.Tag{
 }
 
 const (
-	formNone = -1
-	formIsol = iota
-	formFina
-	formFin2
-	formFin3
-	formMedi
-	formMed2
-	formInit
-	formCount
+	formNone  = -1
+	formIsol  = 0
+	formFina  = 1
+	formFin2  = 2
+	formFin3  = 3
+	formMedi  = 4
+	formMed2  = 5
+	formInit  = 6
+	formCount = 7
 )
 
 type joiningType uint8
@@ -61,12 +65,14 @@ const (
 )
 
 type shaperPlanState struct {
-	font       *ot.Font
-	script     language.Script
-	maskArray  [formCount]uint32
-	formMask   uint32
-	hasStch    bool
-	hasRligFbk bool
+	font          *ot.Font
+	script        language.Script
+	maskArray     [formCount]uint32
+	formMask      uint32
+	hasStch       bool
+	stchMask      uint32
+	hasRligFbk    bool
+	fallbackGlyph map[rune]glyphForms
 }
 
 // Shaper is the Arabic/Syriac shaping engine.
@@ -75,7 +81,8 @@ type shaperPlanState struct {
 // assignment. Joining details are intentionally conservative and may be
 // extended in follow-up steps.
 type Shaper struct {
-	plan shaperPlanState
+	plan         shaperPlanState
+	preparedForm []int
 }
 
 var _ otshape.ShapingEngine = (*Shaper)(nil)
@@ -83,6 +90,7 @@ var _ otshape.ShapingEnginePolicy = (*Shaper)(nil)
 var _ otshape.ShapingEnginePlanHooks = (*Shaper)(nil)
 var _ otshape.ShapingEnginePostResolveHook = (*Shaper)(nil)
 var _ otshape.ShapingEnginePreGSUBHook = (*Shaper)(nil)
+var _ otshape.ShapingEngineReorderHook = (*Shaper)(nil)
 var _ otshape.ShapingEngineMaskHook = (*Shaper)(nil)
 var _ otshape.ShapingEnginePostprocessHook = (*Shaper)(nil)
 
@@ -169,12 +177,16 @@ func (s *Shaper) InitPlan(plan otshape.PlanContext) {
 		font:       plan.Font(),
 		script:     plan.Selection().Script,
 		hasStch:    plan.FeatureMask1(tagStch) != 0,
+		stchMask:   plan.FeatureMask1(tagStch),
 		hasRligFbk: plan.FeatureNeedsFallback(tagRlig),
 	}
 	for i, tag := range arabicFormFeatureTags {
 		m := plan.FeatureMask1(tag)
 		s.plan.maskArray[i] = m
 		s.plan.formMask |= m
+	}
+	if s.plan.hasRligFbk {
+		s.plan.fallbackGlyph = buildFallbackGlyphMap(s.plan.font)
 	}
 }
 
@@ -186,22 +198,93 @@ func (s *Shaper) PostResolveFeatures(plan otshape.ResolvedFeaturePlanner, _ otsh
 }
 
 func (s *Shaper) PrepareGSUB(run otshape.RunContext) {
-	_ = run
+	n := run.Len()
+	if n == 0 {
+		s.preparedForm = s.preparedForm[:0]
+		return
+	}
+	cps := codepointsFromRun(run, s.plan.font)
+	forms := resolveJoiningForms(cps)
+	if cap(s.preparedForm) < len(forms) {
+		s.preparedForm = make([]int, len(forms))
+	}
+	s.preparedForm = s.preparedForm[:len(forms)]
+	copy(s.preparedForm, forms)
+}
+
+var modifierCombiningMarks = map[rune]struct{}{
+	0x0654: {}, // ARABIC HAMZA ABOVE
+	0x0655: {}, // ARABIC HAMZA BELOW
+	0x0658: {}, // ARABIC MARK NOON GHUNNA
+	0x06DC: {}, // ARABIC SMALL HIGH SEEN
+	0x06E3: {}, // ARABIC SMALL LOW SEEN
+	0x06E7: {}, // ARABIC SMALL HIGH YEH
+	0x06E8: {}, // ARABIC SMALL HIGH NOON
+	0x08CA: {}, // ARABIC SMALL HIGH FARSI YEH
+	0x08CB: {}, // ARABIC SMALL HIGH YEH BARREE WITH TWO DOTS BELOW
+	0x08CD: {}, // ARABIC SMALL HIGH ZAH
+	0x08CE: {}, // ARABIC LARGE ROUND DOT ABOVE
+	0x08CF: {}, // ARABIC LARGE ROUND DOT BELOW
+	0x08D3: {}, // ARABIC SMALL LOW WAW
+	0x08F3: {}, // ARABIC SMALL HIGH WAW
+}
+
+func (s *Shaper) ReorderMarks(run otshape.RunContext, start, end int) {
+	_ = s
+	if run == nil {
+		return
+	}
+	n := run.Len()
+	if start < 0 {
+		start = 0
+	}
+	if end > n {
+		end = n
+	}
+	if end-start < 2 {
+		return
+	}
+	i := start
+	for _, cc := range []uint8{220, 230} {
+		for i < end && arabicModifiedCombiningClass(run.Codepoint(i)) < cc {
+			i++
+		}
+		if i == end {
+			break
+		}
+		if arabicModifiedCombiningClass(run.Codepoint(i)) > cc {
+			continue
+		}
+		j := i
+		for j < end &&
+			arabicModifiedCombiningClass(run.Codepoint(j)) == cc &&
+			isModifierCombiningMark(run.Codepoint(j)) {
+			j++
+		}
+		if i == j {
+			continue
+		}
+		run.MergeClusters(start, j)
+		moveBlockToFront(run, start, i, j)
+		moved := j - i
+		start += moved
+		i = j
+	}
 }
 
 func (s *Shaper) SetupMasks(run otshape.RunContext) {
-	if s.plan.font == nil || s.plan.formMask == 0 {
+	if s.plan.formMask == 0 {
 		return
 	}
 	n := run.Len()
 	if n == 0 {
 		return
 	}
-	cps := make([]rune, n)
-	for i := 0; i < n; i++ {
-		cps[i] = otquery.CodePointForGlyph(s.plan.font, run.Glyph(i))
+	forms := s.preparedForm
+	if len(forms) != n {
+		cps := codepointsFromRun(run, s.plan.font)
+		forms = resolveJoiningForms(cps)
 	}
-	forms := resolveJoiningForms(cps)
 	for i := 0; i < n; i++ {
 		m := run.Mask(i) &^ s.plan.formMask
 		mask := s.maskForForm(forms[i])
@@ -220,9 +303,51 @@ func (s *Shaper) maskForForm(form int) uint32 {
 }
 
 func (s *Shaper) PostprocessRun(run otshape.RunContext) {
-	_ = run
-	_ = s.plan.hasStch
-	_ = s.plan.hasRligFbk
+	defer func() {
+		if s.preparedForm != nil {
+			s.preparedForm = s.preparedForm[:0]
+		}
+	}()
+	if run == nil {
+		return
+	}
+	if s.plan.hasStch {
+		tatweel := otshape.NOTDEF
+		if s.plan.font != nil {
+			tatweel = otquery.GlyphIndex(s.plan.font, '\u0640')
+		}
+		if tatweel != otshape.NOTDEF {
+			_ = expandTatweelForStch(run, tatweel, s.plan.stchMask)
+		}
+	}
+	if !s.plan.hasRligFbk || len(s.plan.fallbackGlyph) == 0 {
+		return
+	}
+	n := run.Len()
+	if n == 0 {
+		return
+	}
+	forms := s.preparedForm
+	if len(forms) != n {
+		cps := codepointsFromRun(run, s.plan.font)
+		forms = resolveJoiningForms(cps)
+	}
+	for i := 0; i < n; i++ {
+		if run.Glyph(i) != otshape.NOTDEF {
+			continue
+		}
+		cp := run.Codepoint(i)
+		if cp == 0 {
+			continue
+		}
+		form := formIsol
+		if i < len(forms) {
+			form = forms[i]
+		}
+		if gid, ok := fallbackGlyphFor(s.plan.fallbackGlyph, cp, form); ok {
+			run.SetGlyph(i, gid)
+		}
+	}
 }
 
 func resolveJoiningForms(cps []rune) []int {
@@ -330,4 +455,178 @@ var rightJoiningRunes = map[rune]struct{}{
 func isRightJoining(cp rune) bool {
 	_, ok := rightJoiningRunes[cp]
 	return ok
+}
+
+func isModifierCombiningMark(cp rune) bool {
+	_, ok := modifierCombiningMarks[cp]
+	return ok
+}
+
+func arabicModifiedCombiningClass(cp rune) uint8 {
+	if cp == 0 {
+		return 0
+	}
+	return norm.NFD.PropertiesString(string(cp)).CCC()
+}
+
+func moveBlockToFront(run otshape.RunContext, start, i, j int) {
+	moved := 0
+	for k := i; k < j; k++ {
+		target := start + moved
+		for p := k; p > target; p-- {
+			run.Swap(p-1, p)
+		}
+		moved++
+	}
+}
+
+type glyphForms [formCount]ot.GlyphIndex
+type presentationForms [formCount]rune
+
+var (
+	presentationFormsOnce sync.Once
+	presentationByBase    map[rune]presentationForms
+)
+
+func buildFallbackGlyphMap(font *ot.Font) map[rune]glyphForms {
+	if font == nil {
+		return nil
+	}
+	presentationFormsOnce.Do(func() {
+		presentationByBase = buildPresentationFormMap()
+	})
+	if len(presentationByBase) == 0 {
+		return nil
+	}
+	out := make(map[rune]glyphForms, len(presentationByBase))
+	for base, forms := range presentationByBase {
+		var gfs glyphForms
+		hasAny := false
+		for formInx, pres := range forms {
+			if pres == 0 {
+				continue
+			}
+			gid := otquery.GlyphIndex(font, pres)
+			if gid == otshape.NOTDEF {
+				continue
+			}
+			gfs[formInx] = gid
+			hasAny = true
+		}
+		if hasAny {
+			out[base] = gfs
+		}
+	}
+	return out
+}
+
+func buildPresentationFormMap() map[rune]presentationForms {
+	out := make(map[rune]presentationForms, 256)
+	addRange := func(from, to rune) {
+		for u := from; u <= to; u++ {
+			form, ok := presentationFormFromName(u)
+			if !ok {
+				continue
+			}
+			base := presentationBaseRune(u)
+			if base == 0 {
+				continue
+			}
+			forms := out[base]
+			forms[form] = u
+			out[base] = forms
+		}
+	}
+	addRange(0xFB50, 0xFDFF) // Arabic Presentation Forms-A
+	addRange(0xFE70, 0xFEFF) // Arabic Presentation Forms-B
+	return out
+}
+
+func presentationFormFromName(u rune) (int, bool) {
+	name := runenames.Name(u)
+	if name == "" || !strings.Contains(name, "ARABIC") {
+		return 0, false
+	}
+	switch {
+	case strings.Contains(name, "ISOLATED FORM"):
+		return formIsol, true
+	case strings.Contains(name, "FINAL FORM"):
+		return formFina, true
+	case strings.Contains(name, "INITIAL FORM"):
+		return formInit, true
+	case strings.Contains(name, "MEDIAL FORM"):
+		return formMedi, true
+	default:
+		return 0, false
+	}
+}
+
+func presentationBaseRune(u rune) rune {
+	// NFKD compatibility decomposition for Arabic presentation forms starts with
+	// the base Arabic/Syriac letter.
+	for _, x := range []rune(norm.NFKD.String(string(u))) {
+		if unicode.Is(unicode.M, x) {
+			continue
+		}
+		if unicode.In(x, unicode.Arabic) || unicode.In(x, unicode.Syriac) {
+			return x
+		}
+	}
+	return 0
+}
+
+func fallbackGlyphFor(table map[rune]glyphForms, cp rune, form int) (ot.GlyphIndex, bool) {
+	forms, ok := table[cp]
+	if !ok {
+		return otshape.NOTDEF, false
+	}
+	switch form {
+	case formFin2, formFin3:
+		form = formFina
+	case formMed2:
+		form = formMedi
+	case formNone:
+		form = formIsol
+	}
+	if form >= 0 && form < formCount {
+		if gid := forms[form]; gid != otshape.NOTDEF {
+			return gid, true
+		}
+	}
+	if gid := forms[formIsol]; gid != otshape.NOTDEF {
+		return gid, true
+	}
+	return otshape.NOTDEF, false
+}
+
+func expandTatweelForStch(run otshape.RunContext, tatweel ot.GlyphIndex, stchMask uint32) int {
+	if run == nil || tatweel == otshape.NOTDEF {
+		return 0
+	}
+	inserted := 0
+	for i := 0; i < run.Len(); i++ {
+		if run.Glyph(i) != tatweel {
+			continue
+		}
+		if stchMask != 0 && run.Mask(i)&stchMask == 0 {
+			continue
+		}
+		run.InsertGlyphCopies(i+1, i, 1)
+		inserted++
+		i++ // skip the freshly inserted copy to avoid geometric growth
+	}
+	return inserted
+}
+
+func codepointsFromRun(run otshape.RunContext, font *ot.Font) []rune {
+	n := run.Len()
+	cps := make([]rune, n)
+	for i := 0; i < n; i++ {
+		cp := run.Codepoint(i)
+		if cp == 0 && font != nil {
+			cp = otquery.CodePointForGlyph(font, run.Glyph(i))
+		}
+		cps[i] = cp
+	}
+	return cps
 }

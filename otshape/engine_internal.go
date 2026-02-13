@@ -2,6 +2,7 @@ package otshape
 
 import (
 	"github.com/npillmayer/opentype/ot"
+	"github.com/npillmayer/opentype/otlayout"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -42,11 +43,27 @@ func (rc runContext) Codepoint(i int) rune {
 	return rc.run.Codepoints[i]
 }
 
+func (rc runContext) SetCodepoint(i int, cp rune) {
+	if rc.run == nil || i < 0 || i >= rc.run.Len() {
+		return
+	}
+	rc.run.EnsureCodepoints()
+	rc.run.Codepoints[i] = cp
+}
+
 func (rc runContext) Cluster(i int) uint32 {
 	if rc.run == nil || i < 0 || i >= rc.run.Len() || len(rc.run.Clusters) != rc.run.Len() {
 		return 0
 	}
 	return rc.run.Clusters[i]
+}
+
+func (rc runContext) SetCluster(i int, cluster uint32) {
+	if rc.run == nil || i < 0 || i >= rc.run.Len() {
+		return
+	}
+	rc.run.EnsureClusters()
+	rc.run.Clusters[i] = cluster
 }
 
 func (rc runContext) MergeClusters(start, end int) {
@@ -74,6 +91,21 @@ func (rc runContext) MergeClusters(start, end int) {
 	}
 }
 
+func (rc runContext) Pos(i int) otlayout.PosItem {
+	if rc.run == nil || i < 0 || i >= rc.run.Len() || len(rc.run.Pos) != rc.run.Len() {
+		return otlayout.PosItem{AttachTo: -1}
+	}
+	return rc.run.Pos[i]
+}
+
+func (rc runContext) SetPos(i int, pos otlayout.PosItem) {
+	if rc.run == nil || i < 0 || i >= rc.run.Len() {
+		return
+	}
+	rc.run.EnsurePos()
+	rc.run.Pos[i] = pos
+}
+
 func (rc runContext) Mask(i int) uint32 {
 	if rc.run == nil || i < 0 || i >= rc.run.Len() || len(rc.run.Masks) != rc.run.Len() {
 		return 0
@@ -87,6 +119,20 @@ func (rc runContext) SetMask(i int, mask uint32) {
 	}
 	rc.run.EnsureMasks()
 	rc.run.Masks[i] = mask
+}
+
+func (rc runContext) InsertGlyphs(index int, glyphs []ot.GlyphIndex) {
+	if rc.run == nil {
+		return
+	}
+	rc.run.InsertGlyphs(index, glyphs)
+}
+
+func (rc runContext) InsertGlyphCopies(index int, source int, count int) {
+	if rc.run == nil {
+		return
+	}
+	rc.run.InsertGlyphCopies(index, source, count)
 }
 
 func (rc runContext) Swap(i, j int) {

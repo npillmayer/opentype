@@ -24,10 +24,10 @@ import (
 // LookupList, into which Features link by maintaining a list of indices into the LookupList.
 // The order of the lookup indices matters.
 type Feature interface {
-	Tag() ot.Tag          // e.g., 'liga'
-	Type() LayoutTagType  // GSUB or GPOS ?
-	LookupCount() int     // number of Lookups for this feature
-	LookupIndex(int) int  // get index of lookup #i
+	Tag() ot.Tag         // e.g., 'liga'
+	Type() LayoutTagType // GSUB or GPOS ?
+	LookupCount() int    // number of Lookups for this feature
+	LookupIndex(int) int // get index of lookup #i
 }
 
 // feature is the default implementation of Feature. Other, more spezialized Feature
@@ -458,7 +458,7 @@ func (pb PosBuffer) ApplyEdit(edit *EditSpan) PosBuffer {
 	for i := range repl {
 		repl[i].AttachTo = -1
 	}
-	out := append(pb[:edit.From], repl...)
+	out := append(pb[:edit.From:edit.From], repl...)
 	out = append(out, pb[edit.To:]...)
 	return out
 }

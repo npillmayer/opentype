@@ -208,30 +208,153 @@ func (rb *runBuffer) ApplyEdit(edit *otlayout.EditSpan) {
 	}
 }
 
+// InsertGlyphs inserts glyphs at index and keeps all active side arrays aligned.
+// Inserted side-array slots are initialized to defaults (or inherited cluster id).
+func (rb *runBuffer) InsertGlyphs(index int, glyphs []ot.GlyphIndex) (int, int) {
+	if rb == nil || len(glyphs) == 0 {
+		return 0, 0
+	}
+	n := rb.Len()
+	if index < 0 {
+		index = 0
+	}
+	if index > n {
+		index = n
+	}
+	insertLen := len(glyphs)
+
+	clusterSeed := uint32(0)
+	if len(rb.Clusters) == n {
+		switch {
+		case index > 0:
+			clusterSeed = rb.Clusters[index-1]
+		case n > 0:
+			clusterSeed = rb.Clusters[0]
+		}
+	}
+
+	edit := &otlayout.EditSpan{From: index, To: index, Len: insertLen}
+	rb.ApplyEdit(edit)
+	copy(rb.Glyphs[index:index+insertLen], glyphs)
+
+	if len(rb.Clusters) == rb.Len() {
+		for i := index; i < index+insertLen; i++ {
+			rb.Clusters[i] = clusterSeed
+		}
+	}
+	return index, index + insertLen
+}
+
+// InsertGlyphCopies inserts `count` copies of a source index at `index`.
+// All active side arrays are copied from the source record for inserted slots.
+func (rb *runBuffer) InsertGlyphCopies(index int, source int, count int) (int, int) {
+	if rb == nil || count <= 0 {
+		return 0, 0
+	}
+	n := rb.Len()
+	if source < 0 || source >= n {
+		return 0, 0
+	}
+	if index < 0 {
+		index = 0
+	}
+	if index > n {
+		index = n
+	}
+
+	gid := rb.Glyphs[source]
+	insertGlyphs := make([]ot.GlyphIndex, count)
+	for i := range insertGlyphs {
+		insertGlyphs[i] = gid
+	}
+
+	hasPos := len(rb.Pos) == n
+	var pos otlayout.PosItem
+	if hasPos {
+		pos = rb.Pos[source]
+	}
+	hasCodepoints := len(rb.Codepoints) == n
+	var cp rune
+	if hasCodepoints {
+		cp = rb.Codepoints[source]
+	}
+	hasClusters := len(rb.Clusters) == n
+	var cluster uint32
+	if hasClusters {
+		cluster = rb.Clusters[source]
+	}
+	hasMasks := len(rb.Masks) == n
+	var mask uint32
+	if hasMasks {
+		mask = rb.Masks[source]
+	}
+	hasUnsafe := len(rb.UnsafeFlags) == n
+	var unsafe uint16
+	if hasUnsafe {
+		unsafe = rb.UnsafeFlags[source]
+	}
+	hasSyllables := len(rb.Syllables) == n
+	var syllable uint16
+	if hasSyllables {
+		syllable = rb.Syllables[source]
+	}
+	hasJoiners := len(rb.Joiners) == n
+	var joiner uint8
+	if hasJoiners {
+		joiner = rb.Joiners[source]
+	}
+
+	start, end := rb.InsertGlyphs(index, insertGlyphs)
+	for i := start; i < end; i++ {
+		if hasPos {
+			rb.Pos[i] = pos
+		}
+		if hasCodepoints {
+			rb.Codepoints[i] = cp
+		}
+		if hasClusters {
+			rb.Clusters[i] = cluster
+		}
+		if hasMasks {
+			rb.Masks[i] = mask
+		}
+		if hasUnsafe {
+			rb.UnsafeFlags[i] = unsafe
+		}
+		if hasSyllables {
+			rb.Syllables[i] = syllable
+		}
+		if hasJoiners {
+			rb.Joiners[i] = joiner
+		}
+	}
+	return start, end
+}
+
 func applyEditUint32(s []uint32, edit *otlayout.EditSpan) []uint32 {
 	repl := make([]uint32, edit.Len)
-	out := append(s[:edit.From], repl...)
+	out := append(s[:edit.From:edit.From], repl...)
 	out = append(out, s[edit.To:]...)
 	return out
 }
 
 func applyEditUint16(s []uint16, edit *otlayout.EditSpan) []uint16 {
 	repl := make([]uint16, edit.Len)
-	out := append(s[:edit.From], repl...)
+	out := append(s[:edit.From:edit.From], repl...)
 	out = append(out, s[edit.To:]...)
 	return out
 }
 
 func applyEditUint8(s []uint8, edit *otlayout.EditSpan) []uint8 {
 	repl := make([]uint8, edit.Len)
-	out := append(s[:edit.From], repl...)
+	out := append(s[:edit.From:edit.From], repl...)
 	out = append(out, s[edit.To:]...)
 	return out
 }
 
 func applyEditRunes(s []rune, edit *otlayout.EditSpan) []rune {
 	repl := make([]rune, edit.Len)
-	out := append(s[:edit.From], repl...)
+	out := append(s[:edit.From:edit.From], repl...)
 	out = append(out, s[edit.To:]...)
 	return out
 }

@@ -39,9 +39,9 @@ import (
 // NODEF represents OpenType `.notdef`.
 const NOTDEF = ot.GlyphIndex(0)
 
-// tracer writes to trace with key 'tyse.fonts'
+// tracer writes to trace with key 'opentype.shaper'
 func tracer() tracing.Trace {
-	return tracing.Select("tyse.fonts")
+	return tracing.Select("opentype.shaper")
 }
 
 // errShaper produces user level errors for text shaping.

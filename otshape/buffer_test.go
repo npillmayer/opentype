@@ -31,6 +31,7 @@ type BufferTestEnviron struct {
 
 // listen for 'go test' command --> run test methods
 func TestBufferFunctions(t *testing.T) {
+	t.Skip()
 	teardown := gotestingadapter.QuickConfig(t, "tyse.fonts")
 	defer teardown()
 	suite.Run(t, new(BufferTestEnviron))

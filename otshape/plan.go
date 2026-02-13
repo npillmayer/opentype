@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/bits"
 	"sort"
+	"unicode"
 
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otlayout"
@@ -253,6 +254,8 @@ type planRequest struct {
 	Props        segmentProps
 	ScriptTag    ot.Tag
 	LangTag      ot.Tag
+	Selection    SelectionContext
+	Engine       ShapingEngine
 	UserFeatures []FeatureRange
 	VarIndex     [2]int
 	Policy       planPolicy
@@ -340,10 +343,14 @@ func lookupFlagsForFeature(table planTable, tag ot.Tag) lookupRunFlags {
 }
 
 type userFeatureToggle struct {
-	on        bool
-	arg       int
-	hasRange  bool
-	mentioned bool
+	on          bool // global on/off if hasGlobal=true
+	arg         int  // global arg if hasGlobal=true
+	hasGlobal   bool
+	hasRange    bool
+	hasRangeOn  bool
+	hasRangeOff bool
+	hasAnyOn    bool
+	mentioned   bool
 }
 
 func collectUserFeatureToggles(features []FeatureRange) map[ot.Tag]userFeatureToggle {
@@ -352,12 +359,25 @@ func collectUserFeatureToggles(features []FeatureRange) map[ot.Tag]userFeatureTo
 		if f.Feature == 0 {
 			continue
 		}
-		toggles[f.Feature] = userFeatureToggle{
-			on:        f.On,
-			arg:       f.Arg,
-			hasRange:  f.Start != 0 || f.End != 0,
-			mentioned: true,
+		t := toggles[f.Feature]
+		isGlobal := f.Start == 0 && f.End == 0
+		t.mentioned = true
+		if isGlobal {
+			t.hasGlobal = true
+			t.on = f.On
+			t.arg = f.Arg
+		} else {
+			t.hasRange = true
+			if f.On {
+				t.hasRangeOn = true
+			} else {
+				t.hasRangeOff = true
+			}
 		}
+		if f.On {
+			t.hasAnyOn = true
+		}
+		toggles[f.Feature] = t
 	}
 	return toggles
 }
@@ -502,22 +522,58 @@ func compileUserFeatureMasks(features []FeatureRange) (maskLayout, error) {
 	if len(features) == 0 {
 		return layout, nil
 	}
-	var nextBit uint8
+	type featureMaskState struct {
+		tag         ot.Tag
+		maxValue    uint32
+		hasGlobal   bool
+		globalOn    bool
+		globalArg   int
+		hasRangeOn  bool
+		hasRangeOff bool
+	}
+	states := make(map[ot.Tag]*featureMaskState)
+	order := make([]ot.Tag, 0, len(features))
 	for _, f := range features {
 		if f.Feature == 0 {
 			continue
 		}
-		if _, exists := layout.ByFeature[f.Feature]; exists {
-			continue // first occurrence wins in this scaffold
-		}
-		if nextBit >= 31 {
-			return maskLayout{}, errShaper("too many user features for uint32 mask layout")
+		st, ok := states[f.Feature]
+		if !ok {
+			st = &featureMaskState{
+				tag:      f.Feature,
+				maxValue: 1,
+			}
+			states[f.Feature] = st
+			order = append(order, f.Feature)
 		}
 		maxValue := uint32(1)
 		if f.Arg > 0 {
 			maxValue = uint32(f.Arg)
 		}
-		bitsNeeded := bitStorage32(maxValue)
+		if maxValue > st.maxValue {
+			st.maxValue = maxValue
+		}
+		isGlobal := f.Start == 0 && f.End == 0
+		if isGlobal {
+			st.hasGlobal = true
+			st.globalOn = f.On
+			st.globalArg = f.Arg
+		} else if f.On {
+			st.hasRangeOn = true
+		} else {
+			st.hasRangeOff = true
+		}
+	}
+	var nextBit uint8
+	for _, tag := range order {
+		st := states[tag]
+		if st == nil {
+			continue
+		}
+		if nextBit >= 31 {
+			return maskLayout{}, errShaper("too many user features for uint32 mask layout")
+		}
+		bitsNeeded := bitStorage32(st.maxValue)
 		if bitsNeeded == 0 {
 			bitsNeeded = 1
 		}
@@ -529,15 +585,21 @@ func compileUserFeatureMasks(features []FeatureRange) (maskLayout, error) {
 		}
 		mask := uint32((1<<bitsNeeded)-1) << nextBit
 		def := uint32(0)
-		if f.On {
-			if f.Arg > 0 {
-				def = uint32(f.Arg)
-			} else {
-				def = 1
+		if st.hasGlobal {
+			if st.globalOn {
+				if st.globalArg > 0 {
+					def = uint32(st.globalArg)
+				} else {
+					def = 1
+				}
 			}
+		} else if st.hasRangeOff && !st.hasRangeOn {
+			def = 1
+		}
+		if def != 0 {
 			layout.GlobalMask |= (def << nextBit) & mask
 		}
-		layout.ByFeature[f.Feature] = maskSpec{
+		layout.ByFeature[tag] = maskSpec{
 			Mask:         mask,
 			Shift:        nextBit,
 			DefaultValue: def,
@@ -552,6 +614,7 @@ func compileTableProgram(
 	table planTable,
 	defaultTags []ot.Tag,
 	toggles map[ot.Tag]userFeatureToggle,
+	featureFlags map[ot.Tag]FeatureFlags,
 	masks maskLayout,
 	policy planPolicy,
 ) (tableProgram, []planNote, error) {
@@ -589,7 +652,7 @@ func compileTableProgram(
 	for tag, t := range toggles {
 		_, ok := available[tag]
 		if !ok {
-			if t.on && policy.Strict {
+			if t.hasAnyOn && policy.Strict {
 				return prog, notes, errShaper(fmt.Sprintf("feature %s requested but not available in %s", tag, table))
 			}
 			if t.mentioned {
@@ -600,14 +663,19 @@ func compileTableProgram(
 			}
 			continue
 		}
-		if required[tag] && !t.on {
+		if required[tag] && t.hasGlobal && !t.on {
 			notes = append(notes, planNote{
 				Level:   planNoteWarning,
 				Message: fmt.Sprintf("required feature %s in %s cannot be disabled", tag, table),
 			})
 			continue
 		}
-		active[tag] = t.on
+		if t.hasGlobal {
+			active[tag] = t.on
+		}
+		if t.hasRangeOn {
+			active[tag] = true
+		}
 	}
 
 	stageByTag := make(map[ot.Tag]int, len(available))
@@ -672,6 +740,7 @@ func compileTableProgram(
 			Required:     required[tag],
 		})
 		flags := lookupFlagsForFeature(table, tag)
+		flags = applyFeatureFlags(flags, featureFlags[tag], table)
 		for j := 0; j < feat.LookupCount(); j++ {
 			inx := feat.LookupIndex(j)
 			if inx < 0 {
@@ -746,10 +815,6 @@ func compile(req planRequest) (*plan, error) {
 	if langTag == 0 {
 		langTag = LanguageTagForLanguage(req.Props.Language, language.Low)
 	}
-	masks, err := compileUserFeatureMasks(req.UserFeatures)
-	if err != nil {
-		return nil, err
-	}
 	policy := req.Policy
 	if policy == (planPolicy{}) {
 		policy.ApplyGPOS = true
@@ -758,8 +823,30 @@ func compile(req planRequest) (*plan, error) {
 	if len(hooks.pause) == 0 {
 		hooks = newPlanHookSet()
 	}
+	selection := req.Selection
+	if selection.ScriptTag == 0 {
+		selection = SelectionContext{
+			Direction: req.Props.Direction,
+			Script:    req.Props.Script,
+			Language:  req.Props.Language,
+			ScriptTag: scriptTag,
+			LangTag:   langTag,
+		}
+	}
+	planner := newPlanFeaturePlanner(req.Font, selection, &hooks, req.UserFeatures)
+	if engineHooks, ok := req.Engine.(ShapingEnginePlanHooks); ok {
+		engineHooks.CollectFeatures(planner, selection)
+		engineHooks.OverrideFeatures(planner)
+	}
 
-	toggles := collectUserFeatureToggles(req.UserFeatures)
+	maskFeatures := append([]FeatureRange(nil), req.UserFeatures...)
+	maskFeatures = append(maskFeatures, planner.maskFeatures()...)
+	masks, err := compileUserFeatureMasks(maskFeatures)
+	if err != nil {
+		return nil, err
+	}
+
+	toggles := planner.toggles()
 	var (
 		gsubFeats []otlayout.Feature
 		gposFeats []otlayout.Feature
@@ -786,16 +873,39 @@ func compile(req planRequest) (*plan, error) {
 		})
 	}
 
-	gsubProg, gsubNotes, err := compileTableProgram(gsubFeats, planGSUB, defaultGSUBFeatures, toggles, masks, policy)
+	gsubProg, gsubNotes, err := compileTableProgram(
+		gsubFeats,
+		planGSUB,
+		planner.defaultTags(planGSUB),
+		toggles,
+		planner.featureFlags(planGSUB),
+		masks,
+		policy,
+	)
 	if err != nil {
 		return nil, err
 	}
 	notes = append(notes, gsubNotes...)
-	gposProg, gposNotes, err := compileTableProgram(gposFeats, planGPOS, defaultGPOSFeatures, toggles, masks, policy)
+	gposProg, gposNotes, err := compileTableProgram(
+		gposFeats,
+		planGPOS,
+		planner.defaultTags(planGPOS),
+		toggles,
+		planner.featureFlags(planGPOS),
+		masks,
+		policy,
+	)
 	if err != nil {
 		return nil, err
 	}
 	notes = append(notes, gposNotes...)
+	planner.applyDirectGSUBPauses(&gsubProg)
+
+	resolvedView := newResolvedFeatureView(gsubProg, gposProg, planner.featureFlags(planGSUB), planner.featureFlags(planGPOS))
+	if postResolve, ok := req.Engine.(ShapingEnginePostResolveHook); ok {
+		postPlanner := newResolvedPausePlanner(req.Font, &hooks, &gsubProg)
+		postResolve.PostResolveFeatures(postPlanner, resolvedView, selection)
+	}
 
 	p := &plan{
 		font:             req.Font,
@@ -809,8 +919,25 @@ func compile(req planRequest) (*plan, error) {
 		Policy:           policy,
 		Hooks:            hooks,
 		Notes:            notes,
-		featureRanges:    append([]FeatureRange(nil), req.UserFeatures...),
+		featureRanges:    maskFeatures,
 		joinerGlyphClass: compileJoinerGlyphClass(req.Font),
+	}
+	if planHooks, ok := req.Engine.(ShapingEnginePlanHooks); ok {
+		pc := newPlanContext(req.Font, selection)
+		for tag, ms := range p.Masks.ByFeature {
+			pc.mask1[tag] = ms.Mask & -ms.Mask
+		}
+		for _, feats := range []map[ot.Tag]ResolvedFeature{
+			resolvedView.byTag[LayoutGSUB],
+			resolvedView.byTag[LayoutGPOS],
+		} {
+			for tag, rf := range feats {
+				if rf.NeedsFallback {
+					pc.fallback[tag] = true
+				}
+			}
+		}
+		planHooks.InitPlan(pc)
 	}
 	err = p.validate()
 	assert(err == nil, "newly created plan does not validate")
@@ -867,9 +994,14 @@ func (e *planExecutor) apply(pl *plan) error {
 	if err := e.applyGSUB(pl); err != nil {
 		return err
 	}
+	appliedGPOS := false
 	if pl != nil && pl.Policy.ApplyGPOS {
-		return e.applyGPOS(pl)
+		if err := e.applyGPOS(pl); err != nil {
+			return err
+		}
+		appliedGPOS = true
 	}
+	e.applyPositionPolicies(pl, appliedGPOS)
 	return nil
 }
 
@@ -912,6 +1044,100 @@ func (e *planExecutor) applyTable(pl *plan, table planTable) error {
 		}
 	}
 	return nil
+}
+
+func (e *planExecutor) applyPositionPolicies(pl *plan, appliedGPOS bool) {
+	if e == nil || e.run == nil || pl == nil {
+		return
+	}
+	if !pl.Policy.ZeroMarks && !pl.Policy.FallbackMarkPos {
+		return
+	}
+	e.run.EnsurePos()
+	if pl.Policy.FallbackMarkPos && !appliedGPOS {
+		e.applyFallbackMarkPosition(pl)
+	}
+	if pl.Policy.ZeroMarks {
+		adjustOffsets := !appliedGPOS && pl.Props.Direction == bidi.LeftToRight
+		e.zeroMarkAdvances(pl, adjustOffsets)
+	}
+}
+
+func (e *planExecutor) zeroMarkAdvances(pl *plan, adjustOffsets bool) {
+	if e == nil || e.run == nil {
+		return
+	}
+	for i := range e.run.Pos {
+		if !e.isMarkGlyph(pl, i) {
+			continue
+		}
+		if adjustOffsets {
+			e.run.Pos[i].XOffset -= e.run.Pos[i].XAdvance
+			e.run.Pos[i].YOffset -= e.run.Pos[i].YAdvance
+		}
+		e.run.Pos[i].XAdvance = 0
+		e.run.Pos[i].YAdvance = 0
+	}
+}
+
+func (e *planExecutor) applyFallbackMarkPosition(pl *plan) {
+	if e == nil || e.run == nil {
+		return
+	}
+	for i := range e.run.Pos {
+		if !e.isMarkByClass(pl, i) {
+			continue
+		}
+		if e.run.Pos[i].AttachTo >= 0 {
+			continue
+		}
+		base := e.prevBaseGlyph(pl, i)
+		if base < 0 {
+			continue
+		}
+		e.run.Pos[i].AttachKind = otlayout.AttachMarkToBase
+		e.run.Pos[i].AttachTo = int32(base)
+	}
+}
+
+func (e *planExecutor) prevBaseGlyph(pl *plan, from int) int {
+	for i := from - 1; i >= 0; i-- {
+		if !e.isMarkByClass(pl, i) {
+			return i
+		}
+	}
+	return -1
+}
+
+func (e *planExecutor) isMarkGlyph(pl *plan, inx int) bool {
+	if e == nil || e.run == nil || inx < 0 || inx >= e.run.Len() {
+		return false
+	}
+	if len(e.run.Pos) == e.run.Len() {
+		switch e.run.Pos[inx].AttachKind {
+		case otlayout.AttachMarkToBase, otlayout.AttachMarkToLigature, otlayout.AttachMarkToMark:
+			return true
+		}
+	}
+	return e.isMarkByClass(pl, inx)
+}
+
+func (e *planExecutor) isMarkByClass(pl *plan, inx int) bool {
+	if e == nil || e.run == nil || inx < 0 || inx >= e.run.Len() {
+		return false
+	}
+	gid := e.run.Glyphs[inx]
+	if pl != nil && pl.font != nil && pl.font.Layout.GDef != nil {
+		if ot.GlyphClassDefEnum(pl.font.Layout.GDef.GlyphClassDef.Lookup(gid)) == ot.MarkGlyph {
+			return true
+		}
+	}
+	if pl != nil && pl.font != nil {
+		if cp := otquery.CodePointForGlyph(pl.font, gid); cp != 0 && unicode.Is(unicode.M, cp) {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Helpers ----------------------------------------------------------

@@ -54,6 +54,9 @@ func (e *planExecutor) realignSideArrays(pl *plan, st *otlayout.BufferState) {
 	assert(st != nil, "buffer state is nil")
 	e.run.Glyphs = st.Glyphs
 	e.run.Pos = st.Pos
+	if e.run.Codepoints != nil && len(e.run.Codepoints) != e.run.Len() {
+		e.run.Codepoints = resizeRunes(e.run.Codepoints, e.run.Len())
+	}
 	if e.run.Clusters != nil && len(e.run.Clusters) != e.run.Len() {
 		e.run.Clusters = resizeUint32(e.run.Clusters, e.run.Len())
 	}

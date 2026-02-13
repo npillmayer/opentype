@@ -8,8 +8,58 @@ import (
 
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otlayout"
+	"github.com/npillmayer/opentype/otquery"
 	"golang.org/x/text/unicode/bidi"
 )
+
+type planHookProbe struct {
+	collectCalled     bool
+	overrideCalled    bool
+	initCalled        bool
+	postResolveCalled bool
+
+	lastSelection SelectionContext
+	lastInitMask  uint32
+	postSeenGSUB  bool
+	postSeenGPOS  bool
+
+	postAddBeforeTag ot.Tag
+	postAddAfterTag  ot.Tag
+}
+
+func (p *planHookProbe) Name() string { return "plan-hook-probe" }
+func (p *planHookProbe) Match(SelectionContext) ShaperConfidence {
+	return ShaperConfidenceLow
+}
+func (p *planHookProbe) New() ShapingEngine { return p }
+
+func (p *planHookProbe) CollectFeatures(plan FeaturePlanner, ctx SelectionContext) {
+	p.collectCalled = true
+	p.lastSelection = ctx
+	plan.EnableFeature(ot.T("test"))
+}
+
+func (p *planHookProbe) OverrideFeatures(plan FeaturePlanner) {
+	p.overrideCalled = true
+	plan.DisableFeature(ot.T("liga"))
+}
+
+func (p *planHookProbe) InitPlan(plan PlanContext) {
+	p.initCalled = true
+	p.lastInitMask = plan.FeatureMask1(ot.T("test"))
+}
+
+func (p *planHookProbe) PostResolveFeatures(plan ResolvedFeaturePlanner, view ResolvedFeatureView, _ SelectionContext) {
+	p.postResolveCalled = true
+	p.postSeenGSUB = view.HasSelectedFeature(LayoutGSUB, ot.T("test"))
+	p.postSeenGPOS = view.HasSelectedFeature(LayoutGPOS, ot.T("test"))
+	if p.postAddBeforeTag != 0 {
+		plan.AddGSUBPauseBefore(p.postAddBeforeTag, func(PauseContext) error { return nil })
+	}
+	if p.postAddAfterTag != 0 {
+		plan.AddGSUBPauseAfter(p.postAddAfterTag, func(PauseContext) error { return nil })
+	}
+}
 
 func TestPlanCompileLookupOrdering(t *testing.T) {
 	otf := loadLocalFont(t, "Calibri.ttf")
@@ -108,6 +158,83 @@ func TestPlanCompileRangeFeatureDoesNotEmitGlobalOnlyWarning(t *testing.T) {
 	}
 }
 
+func TestCompileInvokesPlanHooksAndSelectsHookEnabledFeature(t *testing.T) {
+	otf := loadMiniOTFont(t, "gpos3_font1.otf")
+	probe := &planHookProbe{}
+	req := planRequest{
+		Font:      otf,
+		ScriptTag: ot.T("latn"),
+		LangTag:   ot.T("ENG"),
+		Props: segmentProps{
+			Direction: bidi.LeftToRight,
+		},
+		Selection: SelectionContext{
+			Direction: bidi.LeftToRight,
+			ScriptTag: ot.T("latn"),
+			LangTag:   ot.T("ENG"),
+		},
+		Engine: probe,
+		Policy: planPolicy{ApplyGPOS: true},
+	}
+	p, err := compile(req)
+	if err != nil {
+		t.Fatalf("compile failed: %v", err)
+	}
+	if !probe.collectCalled || !probe.overrideCalled || !probe.postResolveCalled || !probe.initCalled {
+		t.Fatalf("plan hook calls: collect=%t override=%t postResolve=%t init=%t",
+			probe.collectCalled, probe.overrideCalled, probe.postResolveCalled, probe.initCalled)
+	}
+	if !probe.postSeenGPOS {
+		t.Fatalf("post-resolve view did not report selected GPOS feature 'test'")
+	}
+	if probe.lastSelection.ScriptTag != ot.T("latn") || probe.lastSelection.LangTag != ot.T("ENG") {
+		t.Fatalf("unexpected selection context propagated to CollectFeatures: script=%s lang=%s",
+			probe.lastSelection.ScriptTag, probe.lastSelection.LangTag)
+	}
+	if p.GPOS.lookupCount() == 0 {
+		t.Fatalf("expected hook-enabled GPOS feature to produce lookup program")
+	}
+}
+
+func TestCompilePostResolveCanAnchorGSUBPause(t *testing.T) {
+	otf := loadMiniOTFont(t, "gsub3_1_simple_f1.otf")
+	probe := &planHookProbe{
+		postAddAfterTag: ot.T("test"),
+	}
+	req := planRequest{
+		Font:      otf,
+		ScriptTag: ot.T("latn"),
+		LangTag:   ot.T("ENG"),
+		Props: segmentProps{
+			Direction: bidi.LeftToRight,
+		},
+		Selection: SelectionContext{
+			Direction: bidi.LeftToRight,
+			ScriptTag: ot.T("latn"),
+			LangTag:   ot.T("ENG"),
+		},
+		Engine: probe,
+		Policy: planPolicy{ApplyGPOS: true},
+	}
+	p, err := compile(req)
+	if err != nil {
+		t.Fatalf("compile failed: %v", err)
+	}
+	if !probe.postSeenGSUB {
+		t.Fatalf("post-resolve view did not report selected GSUB feature 'test'")
+	}
+	hasPause := false
+	for _, st := range p.GSUB.Stages {
+		if st.Pause != noPauseHook {
+			hasPause = true
+			break
+		}
+	}
+	if !hasPause {
+		t.Fatalf("expected post-resolve anchor to attach at least one GSUB pause stage")
+	}
+}
+
 func TestPlanExecutorStagePauseOrder(t *testing.T) {
 	run := newRunBuffer(0)
 	exec := &planExecutor{}
@@ -143,6 +270,88 @@ func TestPlanExecutorStagePauseOrder(t *testing.T) {
 	}
 	if len(order) != 2 || order[0] != 1 || order[1] != 2 {
 		t.Fatalf("pause hook order = %v, want [1 2]", order)
+	}
+}
+
+func TestPlanExecutorZeroMarksByAttachment(t *testing.T) {
+	run := newRunBuffer(0)
+	run.Glyphs = append(run.Glyphs, 10, 11)
+	run.Pos = otlayout.NewPosBuffer(2)
+	run.Pos[0].XAdvance = 500
+	run.Pos[1].XAdvance = 80
+	run.Pos[1].YAdvance = 12
+	run.Pos[1].AttachKind = otlayout.AttachMarkToBase
+	run.Pos[1].AttachTo = 0
+
+	exec := &planExecutor{}
+	exec.acquireBuffer(run)
+	defer exec.releaseBuffer()
+
+	p := &plan{
+		Masks: maskLayout{ByFeature: map[ot.Tag]maskSpec{}},
+		Hooks: newPlanHookSet(),
+		Policy: planPolicy{
+			ApplyGPOS: true,
+			ZeroMarks: true,
+		},
+	}
+	if err := exec.apply(p); err != nil {
+		t.Fatalf("executor apply failed: %v", err)
+	}
+	if run.Pos[0].XAdvance != 500 {
+		t.Fatalf("base advance changed unexpectedly: got %d, want 500", run.Pos[0].XAdvance)
+	}
+	if run.Pos[1].XAdvance != 0 || run.Pos[1].YAdvance != 0 {
+		t.Fatalf("mark advances not zeroed: got xa=%d ya=%d, want 0/0",
+			run.Pos[1].XAdvance, run.Pos[1].YAdvance)
+	}
+}
+
+func TestPlanExecutorFallbackMarkPositionAndZeroing(t *testing.T) {
+	otf := loadLocalFont(t, "Calibri.ttf")
+	base := otquery.GlyphIndex(otf, 'A')
+	mark := otquery.GlyphIndex(otf, '\u0301')
+	if base == NOTDEF || mark == NOTDEF {
+		t.Skip("font does not expose expected base/mark glyphs for fallback test")
+	}
+
+	run := newRunBuffer(0)
+	run.Glyphs = append(run.Glyphs, base, mark)
+	run.Pos = otlayout.NewPosBuffer(2)
+	run.Pos[0].XAdvance = 620
+	run.Pos[1].XAdvance = 40
+
+	exec := &planExecutor{}
+	exec.acquireBuffer(run)
+	defer exec.releaseBuffer()
+
+	p := &plan{
+		font:  otf,
+		Masks: maskLayout{ByFeature: map[ot.Tag]maskSpec{}},
+		Hooks: newPlanHookSet(),
+		Props: segmentProps{
+			Direction: bidi.LeftToRight,
+		},
+		Policy: planPolicy{
+			ApplyGPOS:       false,
+			ZeroMarks:       true,
+			FallbackMarkPos: true,
+		},
+	}
+	if err := exec.apply(p); err != nil {
+		t.Fatalf("executor apply failed: %v", err)
+	}
+	markPos := run.Pos[1]
+	if markPos.AttachKind != otlayout.AttachMarkToBase || markPos.AttachTo != 0 {
+		t.Fatalf("fallback mark attachment not applied: kind=%d to=%d",
+			markPos.AttachKind, markPos.AttachTo)
+	}
+	if markPos.XAdvance != 0 || markPos.YAdvance != 0 {
+		t.Fatalf("mark advances not zeroed: got xa=%d ya=%d, want 0/0",
+			markPos.XAdvance, markPos.YAdvance)
+	}
+	if markPos.XOffset != -40 {
+		t.Fatalf("mark offset not adjusted while zeroing: got %d, want -40", markPos.XOffset)
 	}
 }
 
@@ -182,6 +391,7 @@ func TestCompileTableProgramBuildsMultipleStagesAndRandomFlag(t *testing.T) {
 		planGSUB,
 		[]ot.Tag{ot.T("liga"), ot.T("calt"), ot.T("rand")},
 		map[ot.Tag]userFeatureToggle{},
+		map[ot.Tag]FeatureFlags{},
 		masks,
 		planPolicy{},
 	)
@@ -217,6 +427,7 @@ func TestCompileTableProgramAssignsJoinerAndSyllableFlags(t *testing.T) {
 		planGSUB,
 		[]ot.Tag{ot.T("mark"), ot.T("rphf"), ot.T("rand")},
 		map[ot.Tag]userFeatureToggle{},
+		map[ot.Tag]FeatureFlags{},
 		maskLayout{ByFeature: map[ot.Tag]maskSpec{}},
 		planPolicy{},
 	)
@@ -274,6 +485,86 @@ func TestApplyFeatureRangesToMasks(t *testing.T) {
 		if masks[i] != want[i] {
 			t.Fatalf("mask[%d] = 0x%x, want 0x%x", i, masks[i], want[i])
 		}
+	}
+}
+
+func TestCollectUserFeatureTogglesSeparatesGlobalAndRange(t *testing.T) {
+	toggles := collectUserFeatureToggles([]FeatureRange{
+		{Feature: ot.T("kern"), On: false, Start: 1, End: 3},
+		{Feature: ot.T("kern"), On: true, Start: 3, End: 5},
+		{Feature: ot.T("liga"), On: false},
+	})
+	kern, ok := toggles[ot.T("kern")]
+	if !ok {
+		t.Fatalf("kern toggle missing")
+	}
+	if kern.hasGlobal {
+		t.Fatalf("range-only kern toggle must not be global")
+	}
+	if !kern.hasRange || !kern.hasRangeOn || !kern.hasRangeOff || !kern.hasAnyOn {
+		t.Fatalf("unexpected kern range flags: %+v", kern)
+	}
+	liga, ok := toggles[ot.T("liga")]
+	if !ok {
+		t.Fatalf("liga toggle missing")
+	}
+	if !liga.hasGlobal || liga.on {
+		t.Fatalf("expected global liga off toggle, got %+v", liga)
+	}
+}
+
+func TestCompileUserFeatureMasksRangeDefaults(t *testing.T) {
+	layout, err := compileUserFeatureMasks([]FeatureRange{
+		{Feature: ot.T("kern"), On: true, Start: 1, End: 3},
+		{Feature: ot.T("liga"), On: false, Start: 1, End: 3},
+	})
+	if err != nil {
+		t.Fatalf("compileUserFeatureMasks failed: %v", err)
+	}
+	kern, ok := layout.ByFeature[ot.T("kern")]
+	if !ok {
+		t.Fatalf("kern mask spec missing")
+	}
+	liga, ok := layout.ByFeature[ot.T("liga")]
+	if !ok {
+		t.Fatalf("liga mask spec missing")
+	}
+	if kern.DefaultValue != 0 {
+		t.Fatalf("range-on-only feature should default to off, got %d", kern.DefaultValue)
+	}
+	if liga.DefaultValue != 1 {
+		t.Fatalf("range-off-only feature should default to on, got %d", liga.DefaultValue)
+	}
+	kernDefaultBits := (layout.GlobalMask & kern.Mask) >> kern.Shift
+	ligaDefaultBits := (layout.GlobalMask & liga.Mask) >> liga.Shift
+	if kernDefaultBits != 0 || ligaDefaultBits != 1 {
+		t.Fatalf("unexpected global defaults kern=%d liga=%d", kernDefaultBits, ligaDefaultBits)
+	}
+}
+
+func TestCompileTableProgramRangeOnKeepsFeatureActive(t *testing.T) {
+	features := []otlayout.Feature{
+		fakeFeature{tag: ot.T("test"), typ: otlayout.GPosFeatureType, lookups: []int{0}},
+	}
+	toggles := collectUserFeatureToggles([]FeatureRange{
+		{Feature: ot.T("test"), On: true, Start: 1, End: 2},
+	})
+	prog, _, err := compileTableProgram(
+		features,
+		planGPOS,
+		nil,
+		toggles,
+		map[ot.Tag]FeatureFlags{},
+		maskLayout{ByFeature: map[ot.Tag]maskSpec{
+			ot.T("test"): {Mask: 1, Shift: 0, DefaultValue: 0},
+		}},
+		planPolicy{},
+	)
+	if err != nil {
+		t.Fatalf("compileTableProgram failed: %v", err)
+	}
+	if len(prog.Lookups) == 0 {
+		t.Fatalf("range-on feature should remain active in program")
 	}
 }
 

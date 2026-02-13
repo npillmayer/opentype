@@ -7,6 +7,7 @@ import (
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otquery"
 	"golang.org/x/text/language"
+	"golang.org/x/text/unicode/norm"
 )
 
 var (
@@ -15,6 +16,7 @@ var (
 	ErrNilFont                    = errors.New("otshape: nil font in shape options")
 	ErrNilRuneSource              = errors.New("otshape: nil rune source")
 	ErrNilGlyphSink               = errors.New("otshape: nil glyph sink")
+	ErrFlushExplicitUnsupported   = errors.New("otshape: FlushExplicit is not supported yet")
 	ErrShapePipelineUnimplemented = errors.New("otshape: streaming shape pipeline not implemented yet")
 )
 
@@ -61,18 +63,13 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 	if sink == nil {
 		return ErrNilGlyphSink
 	}
+	if opts.FlushBoundary == FlushExplicit {
+		return ErrFlushExplicitUnsupported
+	}
 	ctx := selectionContextFromOptions(opts)
 	engine, err := selectShapingEngine(s.shapers, ctx)
 	if err != nil {
 		return err
-	}
-
-	run, err := readRunesToRunBuffer(src, opts.Font)
-	if err != nil {
-		return err
-	}
-	if run.Len() == 0 {
-		return nil
 	}
 
 	pl, err := compileShapePlan(opts, ctx, engine)
@@ -80,9 +77,25 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 		return err
 	}
 
+	runes, clusters, err := readRuneStream(src)
+	if err != nil {
+		return err
+	}
+	if len(runes) == 0 {
+		return nil
+	}
+	runes, clusters = normalizeRuneStream(runes, clusters, opts, ctx, engine, pl)
+	run := mapRunesToRunBuffer(runes, clusters, opts.Font)
+	if run.Len() == 0 {
+		return nil
+	}
+
 	rc := newRunContext(run)
 	if hook, ok := engine.(ShapingEnginePreprocessHook); ok {
 		hook.PreprocessRun(rc)
+	}
+	if hook, ok := engine.(ShapingEngineReorderHook); ok {
+		hook.ReorderMarks(rc, 0, rc.Len())
 	}
 	if hook, ok := engine.(ShapingEnginePreGSUBHook); ok {
 		hook.PrepareGSUB(rc)
@@ -102,7 +115,7 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 	if hook, ok := engine.(ShapingEnginePostprocessHook); ok {
 		hook.PostprocessRun(rc)
 	}
-	return writeRunBufferToSink(run, sink)
+	return writeRunBufferToSink(run, sink, opts.FlushBoundary)
 }
 
 func selectionContextFromOptions(opts ShapeOptions) SelectionContext {
@@ -160,39 +173,227 @@ func compileShapePlan(opts ShapeOptions, ctx SelectionContext, engine ShapingEng
 		Props:     segmentProps{Direction: opts.Direction, Script: opts.Script, Language: opts.Language},
 		ScriptTag: ctx.ScriptTag,
 		LangTag:   ctx.LangTag,
+		Selection: ctx,
+		Engine:    engine,
 		Policy:    policy,
 	}
 	req.UserFeatures = append(req.UserFeatures, opts.Features...)
 	return compile(req)
 }
 
-func readRunesToRunBuffer(src RuneSource, font *ot.Font) (*runBuffer, error) {
-	run := newRunBuffer(32)
+func readRuneStream(src RuneSource) ([]rune, []uint32, error) {
+	runes := make([]rune, 0, 32)
+	clusters := make([]uint32, 0, 32)
 	for cluster := uint32(0); ; cluster++ {
 		r, _, err := src.ReadRune()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		gid := otquery.GlyphIndex(font, r)
-		run.Glyphs = append(run.Glyphs, gid)
-		run.Clusters = append(run.Clusters, cluster)
+		runes = append(runes, r)
+		clusters = append(clusters, cluster)
 	}
-	return run, nil
+	return runes, clusters, nil
 }
 
-func writeRunBufferToSink(run *runBuffer, sink GlyphSink) error {
+func mapRunesToRunBuffer(runes []rune, clusters []uint32, font *ot.Font) *runBuffer {
+	run := newRunBuffer(32)
+	for i, r := range runes {
+		gid := otquery.GlyphIndex(font, r)
+		run.Glyphs = append(run.Glyphs, gid)
+		if len(clusters) == len(runes) {
+			run.Clusters = append(run.Clusters, clusters[i])
+		} else {
+			run.Clusters = append(run.Clusters, uint32(i))
+		}
+		run.Codepoints = append(run.Codepoints, r)
+	}
+	return run
+}
+
+func normalizeRuneStream(
+	runes []rune,
+	clusters []uint32,
+	opts ShapeOptions,
+	ctx SelectionContext,
+	engine ShapingEngine,
+	pl *plan,
+) ([]rune, []uint32) {
+	if len(runes) == 0 {
+		return runes, clusters
+	}
+	mode := NormalizationAuto
+	if ep, ok := engine.(ShapingEnginePolicy); ok {
+		mode = ep.NormalizationPreference()
+	}
+	if mode == NormalizationAuto {
+		if prefersDecomposed(ctx.ScriptTag, ctx.LangTag) {
+			mode = NormalizationDecomposed
+		} else {
+			mode = NormalizationComposed
+		}
+	}
+	if mode == NormalizationNone {
+		return runes, clusters
+	}
+
+	if mode == NormalizationDecomposed {
+		runes, clusters = decomposeRuneStream(runes, clusters)
+	}
+
+	composeHook, hasComposeHook := engine.(ShapingEngineComposeHook)
+	if !hasComposeHook && mode != NormalizationComposed {
+		return runes, clusters
+	}
+	nctx := newNormalizeContext(opts.Font, ctx, planHasGposMark(pl))
+	return composeRuneStream(runes, clusters, nctx, composeHook, hasComposeHook, mode == NormalizationComposed)
+}
+
+func decomposeRuneStream(runes []rune, clusters []uint32) ([]rune, []uint32) {
+	outRunes := make([]rune, 0, len(runes))
+	outClusters := make([]uint32, 0, len(clusters))
+	for i, r := range runes {
+		var cluster uint32
+		if len(clusters) == len(runes) {
+			cluster = clusters[i]
+		} else {
+			cluster = uint32(i)
+		}
+		s := norm.NFD.String(string(r))
+		for _, dr := range s {
+			outRunes = append(outRunes, dr)
+			outClusters = append(outClusters, cluster)
+		}
+	}
+	return outRunes, outClusters
+}
+
+func composeRuneStream(
+	runes []rune,
+	clusters []uint32,
+	nctx normalizeContext,
+	hook ShapingEngineComposeHook,
+	hasHook bool,
+	allowUnicode bool,
+) ([]rune, []uint32) {
+	if len(runes) <= 1 {
+		return runes, clusters
+	}
+	outRunes := make([]rune, 0, len(runes))
+	outClusters := make([]uint32, 0, len(clusters))
+	for i, r := range runes {
+		cluster := uint32(i)
+		if len(clusters) == len(runes) {
+			cluster = clusters[i]
+		}
+		if len(outRunes) == 0 {
+			outRunes = append(outRunes, r)
+			outClusters = append(outClusters, cluster)
+			continue
+		}
+		last := len(outRunes) - 1
+		a := outRunes[last]
+		if hasHook {
+			if composed, ok := hook.Compose(nctx, a, r); ok {
+				outRunes[last] = composed
+				if cluster < outClusters[last] {
+					outClusters[last] = cluster
+				}
+				continue
+			}
+		}
+		if allowUnicode {
+			if composed, ok := nctx.ComposeUnicode(a, r); ok {
+				outRunes[last] = composed
+				if cluster < outClusters[last] {
+					outClusters[last] = cluster
+				}
+				continue
+			}
+		}
+		outRunes = append(outRunes, r)
+		outClusters = append(outClusters, cluster)
+	}
+	return outRunes, outClusters
+}
+
+func planHasGposMark(pl *plan) bool {
+	if pl == nil {
+		return false
+	}
+	if ms, ok := pl.maskForFeature(ot.T("mark")); ok && ms.Mask != 0 {
+		return true
+	}
+	if ms, ok := pl.maskForFeature(ot.T("mkmk")); ok && ms.Mask != 0 {
+		return true
+	}
+	return false
+}
+
+func writeRunBufferToSink(run *runBuffer, sink GlyphSink, boundary FlushBoundary) error {
+	switch boundary {
+	case FlushOnRunBoundary:
+		return writeRunBufferRange(run, sink, 0, run.Len())
+	case FlushOnClusterBoundary:
+		for _, span := range clusterSpans(run) {
+			if err := writeRunBufferRange(run, sink, span.start, span.end); err != nil {
+				return err
+			}
+		}
+		return nil
+	case FlushExplicit:
+		return ErrFlushExplicitUnsupported
+	default:
+		return writeRunBufferRange(run, sink, 0, run.Len())
+	}
+}
+
+type runSpan struct {
+	start int
+	end   int
+}
+
+func clusterSpans(run *runBuffer) []runSpan {
 	n := run.Len()
 	if n == 0 {
 		return nil
+	}
+	if len(run.Clusters) != n {
+		return []runSpan{{start: 0, end: n}}
+	}
+	spans := make([]runSpan, 0, n)
+	start := 0
+	current := run.Clusters[0]
+	for i := 1; i < n; i++ {
+		if run.Clusters[i] == current {
+			continue
+		}
+		spans = append(spans, runSpan{start: start, end: i})
+		start = i
+		current = run.Clusters[i]
+	}
+	spans = append(spans, runSpan{start: start, end: n})
+	return spans
+}
+
+func writeRunBufferRange(run *runBuffer, sink GlyphSink, start int, end int) error {
+	n := run.Len()
+	if n == 0 || start >= end {
+		return nil
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end > n {
+		end = n
 	}
 	hasPos := len(run.Pos) == n
 	hasClusters := len(run.Clusters) == n
 	hasMasks := len(run.Masks) == n
 	hasUnsafe := len(run.UnsafeFlags) == n
-	for i := 0; i < n; i++ {
+	for i := start; i < end; i++ {
 		record := GlyphRecord{GID: run.Glyphs[i]}
 		if hasPos {
 			record.Pos = run.Pos[i]

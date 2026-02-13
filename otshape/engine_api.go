@@ -85,6 +85,7 @@ type ResolvedFeatureView interface {
 
 // PlanContext is the narrow plan view available to shaper hooks.
 type PlanContext interface {
+	Font() *ot.Font
 	Selection() SelectionContext
 	FeatureMask1(tag ot.Tag) uint32
 	FeatureNeedsFallback(tag ot.Tag) bool
@@ -94,9 +95,21 @@ type PlanContext interface {
 type RunContext interface {
 	Len() int
 	Glyph(i int) ot.GlyphIndex
+	SetGlyph(i int, gid ot.GlyphIndex)
+	Codepoint(i int) rune
 	Cluster(i int) uint32
+	MergeClusters(start, end int)
 	Mask(i int) uint32
 	SetMask(i int, mask uint32)
+	Swap(i, j int)
+}
+
+// NormalizeContext is the callback context for custom normalization hooks.
+type NormalizeContext interface {
+	Font() *ot.Font
+	Selection() SelectionContext
+	ComposeUnicode(a, b rune) (rune, bool)
+	HasGposMark() bool
 }
 
 // PauseContext is the callback context for GSUB stage pauses.
@@ -151,6 +164,16 @@ type ShapingEnginePreprocessHook interface {
 // ShapingEnginePreGSUBHook exposes a hook after normalization and before GSUB.
 type ShapingEnginePreGSUBHook interface {
 	PrepareGSUB(run RunContext)
+}
+
+// ShapingEngineComposeHook exposes custom pair-composition during normalization.
+type ShapingEngineComposeHook interface {
+	Compose(ctx NormalizeContext, a, b rune) (rune, bool)
+}
+
+// ShapingEngineReorderHook exposes mark-reordering before GSUB.
+type ShapingEngineReorderHook interface {
+	ReorderMarks(run RunContext, start, end int)
 }
 
 // ShapingEngineMaskHook exposes a hook to customize runtime mask values.

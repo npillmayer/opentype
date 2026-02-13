@@ -1,8 +1,7 @@
 package otcore_test
 
 import (
-	"os"
-	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -67,16 +66,15 @@ func TestShapeAppliesGSUBFromCoreShaper(t *testing.T) {
 	}
 }
 
-func loadMiniOTFont(t *testing.T, filename string) *ot.Font {
-	t.Helper()
-	path := filepath.Join("..", "..", "testdata", "fonttools-tests", filename)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read mini font %s: %v", path, err)
+func TestShapeFlushModesProduceSameOutput(t *testing.T) {
+	font := loadMiniOTFont(t, "gpos3_font1.otf")
+	input := []rune{0x12, 0x13}
+	features := []otshape.FeatureRange{
+		{Feature: ot.T("test"), On: true},
 	}
-	otf, err := ot.Parse(data, ot.IsTestfont)
-	if err != nil {
-		t.Fatalf("parse mini font %s: %v", path, err)
+	runOut := shapeRunesWithBoundary(t, font, input, features, otshape.FlushOnRunBoundary)
+	clusterOut := shapeRunesWithBoundary(t, font, input, features, otshape.FlushOnClusterBoundary)
+	if !reflect.DeepEqual(runOut, clusterOut) {
+		t.Fatalf("flush modes produced different output:\nrun=%#v\ncluster=%#v", runOut, clusterOut)
 	}
-	return otf
 }

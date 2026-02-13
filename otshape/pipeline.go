@@ -31,12 +31,16 @@ type GlyphsSink interface {
 	WriteGlyphPos(gid ot.GlyphIndex, pos otlayout.PosItem, cluster int) error
 }
 
-// FlushBoundary controls when shaped glyphs should be emitted.
+// FlushBoundary controls when shaped glyphs are emitted to the sink.
 type FlushBoundary uint8
 
 const (
+	// FlushOnRunBoundary emits only after the complete shaped run is ready.
 	FlushOnRunBoundary FlushBoundary = iota
+	// FlushOnClusterBoundary emits run output cluster by cluster in glyph order.
 	FlushOnClusterBoundary
+	// FlushExplicit is reserved for future explicit flush signaling from RuneSource.
+	// It is currently unsupported.
 	FlushExplicit
 )
 

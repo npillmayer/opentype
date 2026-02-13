@@ -16,6 +16,7 @@ type runBuffer struct {
 	Glyphs otlayout.GlyphBuffer
 	Pos    otlayout.PosBuffer // optional until positioning becomes necessary
 
+	Codepoints  []rune   // optional codepoint alignment for normalization/reorder hooks
 	Clusters    []uint32 // optional rune->glyph mapping
 	Masks       []uint32 // optional feature/shaping flags
 	UnsafeFlags []uint16 // optional line-break/concat safety flags
@@ -56,6 +57,9 @@ func (rb *runBuffer) Reset() {
 	if rb.Pos != nil {
 		rb.Pos = rb.Pos[:0]
 	}
+	if rb.Codepoints != nil {
+		rb.Codepoints = rb.Codepoints[:0]
+	}
 	if rb.Clusters != nil {
 		rb.Clusters = rb.Clusters[:0]
 	}
@@ -84,6 +88,20 @@ func (rb *runBuffer) EnsurePos() {
 	}
 	if len(rb.Pos) != rb.Len() {
 		rb.Pos = rb.Pos.ResizeLike(rb.Glyphs)
+	}
+}
+
+// EnsureCodepoints allocates/aligns codepoint storage.
+func (rb *runBuffer) EnsureCodepoints() {
+	if rb == nil {
+		return
+	}
+	if rb.Codepoints == nil {
+		rb.Codepoints = make([]rune, rb.Len())
+		return
+	}
+	if len(rb.Codepoints) != rb.Len() {
+		rb.Codepoints = resizeRunes(rb.Codepoints, rb.Len())
 	}
 }
 
@@ -170,6 +188,9 @@ func (rb *runBuffer) ApplyEdit(edit *otlayout.EditSpan) {
 	if rb.Pos != nil {
 		rb.Pos = rb.Pos.ApplyEdit(edit)
 	}
+	if rb.Codepoints != nil {
+		rb.Codepoints = applyEditRunes(rb.Codepoints, edit)
+	}
 	if rb.Clusters != nil {
 		rb.Clusters = applyEditUint32(rb.Clusters, edit)
 	}
@@ -208,6 +229,13 @@ func applyEditUint8(s []uint8, edit *otlayout.EditSpan) []uint8 {
 	return out
 }
 
+func applyEditRunes(s []rune, edit *otlayout.EditSpan) []rune {
+	repl := make([]rune, edit.Len)
+	out := append(s[:edit.From], repl...)
+	out = append(out, s[edit.To:]...)
+	return out
+}
+
 func resizeUint32(s []uint32, n int) []uint32 {
 	if n <= len(s) {
 		return s[:n]
@@ -231,6 +259,15 @@ func resizeUint8(s []uint8, n int) []uint8 {
 		return s[:n]
 	}
 	out := make([]uint8, n)
+	copy(out, s)
+	return out
+}
+
+func resizeRunes(s []rune, n int) []rune {
+	if n <= len(s) {
+		return s[:n]
+	}
+	out := make([]rune, n)
 	copy(out, s)
 	return out
 }

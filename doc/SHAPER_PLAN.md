@@ -383,4 +383,11 @@ Given current `otshape` constraints (OT-only, no plan cache for now, stricter er
 2. PR 2: edit-span plumbing + ranged feature masks + side-array alignment.
 3. PR 3: advanced flags (autoZWJ, autoZWNJ, perSyllable, random) and stricter script-module integration.
 
+## 6. Next GPOS-Focused PRs
+
+1. PR 4.1: lock GPOS behavior with end-to-end tests in shaper packages (`otshape/otcore`), covering single-adjust, pair-adjust, mark attachment, and cursive attachment with assertions on `GlyphRecord.Pos`.
+2. PR 4.2: wire plan-time shaper hooks into compile (`CollectFeatures`, `OverrideFeatures`, `PostResolveFeatures`, `InitPlan`) so script shapers can influence GPOS feature/stage selection.
+3. PR 4.3: implement runtime GPOS policy execution (`ZeroMarks`, `FallbackMarkPos`) in the plan executor.
+4. PR 4.4: harden GPOS mask/range semantics (ranged feature toggles, feature args, overlap behavior) with focused tests.
+5. PR 4.5: finalize streaming/run-boundary semantics for positioning and test flush behavior (`FlushOnRunBoundary`, cluster boundaries).
 

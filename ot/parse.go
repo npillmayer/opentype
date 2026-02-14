@@ -692,8 +692,10 @@ func parseLoca(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (
 // must use Version 0.5 of this table, specifying only the numGlyphs field. Fonts
 // with TrueType outlines must use Version 1.0 of this table, where all data is required.
 func parseMaxP(tag Tag, b binarySegm, offset, size uint32, ec *errorCollector) (Table, error) {
-	if size <= 6 {
-		return nil, nil
+	// CFF OpenType fonts legitimately use maxp version 0.5 with exactly 6 bytes.
+	if size < 6 {
+		ec.addError(tag, "Size", fmt.Sprintf("maxp table too small: %d bytes (need at least 6)", size), SeverityCritical, offset)
+		return nil, errFontFormat("maxp table incomplete")
 	}
 	t := newMaxPTable(tag, b, offset, size)
 	n, _ := b.u16(4)

@@ -1,6 +1,7 @@
 package ot
 
 import (
+	"os"
 	"sync"
 	"testing"
 
@@ -732,6 +733,40 @@ func TestParseOtherTables(t *testing.T) {
 	}
 	if aw != 1185 {
 		t.Errorf("expected advance width for glyph 4 to be 1185, got %d", aw)
+	}
+}
+
+func TestParseMaxPVersion05Size6(t *testing.T) {
+	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
+	defer teardown()
+
+	raw, err := os.ReadFile("../testdata/Go-Regular.otf")
+	if err != nil {
+		t.Fatalf("read Go-Regular.otf: %v", err)
+	}
+	otf, err := Parse(raw, IsTestfont)
+	if err != nil {
+		t.Fatalf("parse Go-Regular.otf failed: %v", err)
+	}
+	maxpTable := otf.Table(T("maxp"))
+	if maxpTable == nil {
+		t.Fatalf("maxp table missing after parse")
+	}
+	_, size := maxpTable.Extent()
+	if size != 6 {
+		t.Fatalf("expected Go-Regular.otf maxp size 6, got %d", size)
+	}
+	maxp := maxpTable.Self().AsMaxP()
+	if maxp == nil {
+		t.Fatalf("maxp table cannot be decoded")
+	}
+	if maxp.NumGlyphs <= 0 {
+		t.Fatalf("maxp.NumGlyphs should be > 0, got %d", maxp.NumGlyphs)
+	}
+	for _, pe := range otf.Errors() {
+		if pe.Table == T("maxp") && pe.Section == "Missing" {
+			t.Fatalf("unexpected missing maxp error for a font that contains maxp size 6: %v", pe)
+		}
 	}
 }
 

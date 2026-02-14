@@ -96,15 +96,20 @@ var _ otshape.ShapingEngineReorderHook = (*Shaper)(nil)
 var _ otshape.ShapingEngineMaskHook = (*Shaper)(nil)
 var _ otshape.ShapingEnginePostprocessHook = (*Shaper)(nil)
 
-// New returns the Arabic shaping engine.
+// New returns a new Arabic/Syriac shaping engine instance.
 func New() otshape.ShapingEngine {
 	return &Shaper{}
 }
 
+// Name returns the stable engine name.
 func (Shaper) Name() string {
 	return "arabic"
 }
 
+// Match reports how suitable this engine is for ctx.
+//
+// It supports Arabic and Syriac scripts in left-to-right or right-to-left
+// segment directions and returns a confidence score used for engine selection.
 func (Shaper) Match(ctx otshape.SelectionContext) otshape.ShaperConfidence {
 	if ctx.Direction != bidi.LeftToRight && ctx.Direction != bidi.RightToLeft {
 		return otshape.ShaperConfidenceNone
@@ -118,14 +123,17 @@ func (Shaper) Match(ctx otshape.SelectionContext) otshape.ShaperConfidence {
 	return otshape.ShaperConfidenceNone
 }
 
+// New returns a new independent Arabic/Syriac engine instance.
 func (Shaper) New() otshape.ShapingEngine {
 	return &Shaper{}
 }
 
+// NormalizationPreference reports the engine's normalization policy.
 func (Shaper) NormalizationPreference() otshape.NormalizationMode {
 	return otshape.NormalizationAuto
 }
 
+// ApplyGPOS reports whether the engine wants GPOS applied.
 func (Shaper) ApplyGPOS() bool {
 	return true
 }
@@ -138,6 +146,10 @@ func noPauseHook(otshape.PauseContext) error {
 	return nil
 }
 
+// CollectFeatures registers Arabic/Syriac GSUB feature stages for ctx.
+//
+// It defines feature order, lookup flags, and pause boundaries that are later
+// compiled into the plan program.
 func (s *Shaper) CollectFeatures(plan otshape.FeaturePlanner, ctx otshape.SelectionContext) {
 	plan.AddFeature(tagStch, otshape.FeatureNone, 1)
 	plan.AddGSUBPause(noPauseHook)
@@ -170,10 +182,16 @@ func (s *Shaper) CollectFeatures(plan otshape.FeaturePlanner, ctx otshape.Select
 	plan.AddFeature(tagMset, otshape.FeatureManualZWJ, 1)
 }
 
+// OverrideFeatures allows a shaper to force feature toggles after collection.
+//
+// The current Arabic engine does not override user or collected features.
 func (Shaper) OverrideFeatures(plan otshape.FeaturePlanner) {
 	_ = plan
 }
 
+// InitPlan initializes shaper-local plan state from the compiled plan context.
+//
+// It caches masks, fallback requirements, and optional fallback glyph mappings.
 func (s *Shaper) InitPlan(plan otshape.PlanContext) {
 	s.plan = shaperPlanState{
 		font:              plan.Font(),
@@ -192,6 +210,10 @@ func (s *Shaper) InitPlan(plan otshape.PlanContext) {
 	}
 }
 
+// ValidatePlan validates that required plan dependencies are present.
+//
+// It returns an error for structural preconditions required by strict Arabic
+// fallback behavior, such as missing cmap when fallback is required.
 func (s *Shaper) ValidatePlan(plan otshape.PlanContext) error {
 	_ = plan
 	if !s.plan.hasNotdefFallback {
@@ -206,6 +228,7 @@ func (s *Shaper) ValidatePlan(plan otshape.PlanContext) error {
 	return nil
 }
 
+// PostResolveFeatures inserts additional pause anchors after feature resolution.
 func (s *Shaper) PostResolveFeatures(plan otshape.ResolvedFeaturePlanner, _ otshape.ResolvedFeatureView, ctx otshape.SelectionContext) {
 	_ = plan.AddGSUBPauseAfter(tagStch, noPauseHook)
 	if ctx.Script == arabicScript {
@@ -213,6 +236,7 @@ func (s *Shaper) PostResolveFeatures(plan otshape.ResolvedFeaturePlanner, _ otsh
 	}
 }
 
+// PrepareGSUB computes per-glyph joining forms for the current run.
 func (s *Shaper) PrepareGSUB(run otshape.RunContext) {
 	n := run.Len()
 	if n == 0 {
@@ -245,6 +269,7 @@ var modifierCombiningMarks = map[rune]struct{}{
 	0x08F3: {}, // ARABIC SMALL HIGH WAW
 }
 
+// ReorderMarks reorders Arabic modifier combining marks in run[start:end].
 func (s *Shaper) ReorderMarks(run otshape.RunContext, start, end int) {
 	_ = s
 	if run == nil {
@@ -288,6 +313,7 @@ func (s *Shaper) ReorderMarks(run otshape.RunContext, start, end int) {
 	}
 }
 
+// SetupMasks writes Arabic joining-form masks into run glyph masks.
 func (s *Shaper) SetupMasks(run otshape.RunContext) {
 	if s.plan.formMask == 0 {
 		return
@@ -318,6 +344,10 @@ func (s *Shaper) maskForForm(form int) uint32 {
 	return s.plan.maskArray[form]
 }
 
+// PostprocessRun applies post-GSUB Arabic adjustments to run.
+//
+// This includes optional tatweel expansion for "stch" and strict ".notdef"
+// replacement for recoverable Arabic fallback cases.
 func (s *Shaper) PostprocessRun(run otshape.RunContext) {
 	defer func() {
 		if s.preparedForm != nil {

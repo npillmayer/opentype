@@ -7,20 +7,20 @@ import (
 	"github.com/npillmayer/opentype/ot"
 )
 
-// Params collects shaping parameters.
+// Params bundles font and segment metadata used for one shaping request.
 type Params struct {
-	Font      *ot.Font        // use a font at a given point-size
-	Direction bidi.Direction  // writing direction
-	Script    language.Script // 4-letter ISO 15924 script identifier
-	Language  language.Tag    // BCP 47 language tag
-	Features  []FeatureRange  // OpenType features to apply
+	Font      *ot.Font        // Font is the OpenType font used for mapping and layout.
+	Direction bidi.Direction  // Direction is the segment writing direction.
+	Script    language.Script // Script is the ISO 15924 script for shaper selection.
+	Language  language.Tag    // Language is the BCP 47 language tag for language-system lookup.
+	Features  []FeatureRange  // Features requests per-feature on/off state and optional ranges.
 }
 
-// FeatureRange tells a shaper to turn a certain OpenType feature on or off for a
-// run of code-points.
+// FeatureRange toggles one OpenType feature for an optional codepoint span.
 type FeatureRange struct {
-	Feature    ot.Tag // 4-letter feature tag
-	Arg        int    // optional argument for this feature
-	On         bool   // turn it on or off?
-	Start, End int    // position of code-points to apply feature for
+	Feature ot.Tag // Feature is the 4-byte OpenType feature tag.
+	Arg     int    // Arg is an optional feature value (0 means default-on value when On is true).
+	On      bool   // On enables (true) or disables (false) the feature for the selected range.
+	Start   int    // Start is the inclusive codepoint index; values <= 0 mean start of run.
+	End     int    // End is the exclusive codepoint index; values <= 0 mean end of run.
 }

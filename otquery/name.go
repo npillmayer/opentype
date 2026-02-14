@@ -43,7 +43,7 @@ func loadNameEntries(otf *ot.Font) []nameEntry {
 		return nil
 	}
 	entries := make([]nameEntry, 0, count)
-	for i := 0; i < count; i++ {
+	for i := range count {
 		rec := b[nameHeaderSize+i*nameRecordSize : nameHeaderSize+(i+1)*nameRecordSize]
 		key := nameKey{
 			PlatformID: u16(rec[0:2]),

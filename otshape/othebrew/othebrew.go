@@ -52,6 +52,9 @@ const (
 )
 
 // Shaper is the Hebrew shaping engine.
+//
+// It adds Hebrew-specific composition and mark reordering behavior on top of
+// the shared otshape pipeline.
 type Shaper struct{}
 
 var _ otshape.ShapingEngine = Shaper{}
@@ -59,15 +62,19 @@ var _ otshape.ShapingEnginePolicy = Shaper{}
 var _ otshape.ShapingEngineComposeHook = Shaper{}
 var _ otshape.ShapingEngineReorderHook = Shaper{}
 
-// New returns the Hebrew shaping engine.
+// New returns a new Hebrew shaping engine instance.
 func New() otshape.ShapingEngine {
 	return Shaper{}
 }
 
+// Name returns the stable engine name.
 func (Shaper) Name() string {
 	return "hebrew"
 }
 
+// Match reports how suitable this engine is for ctx.
+//
+// It returns certain confidence for Hebrew script and no confidence otherwise.
 func (Shaper) Match(ctx otshape.SelectionContext) otshape.ShaperConfidence {
 	if ctx.Script == hebrewScript || ctx.ScriptTag == ot.T("hebr") {
 		return otshape.ShaperConfidenceCertain
@@ -75,22 +82,30 @@ func (Shaper) Match(ctx otshape.SelectionContext) otshape.ShaperConfidence {
 	return otshape.ShaperConfidenceNone
 }
 
+// New returns a new independent Hebrew engine instance.
 func (Shaper) New() otshape.ShapingEngine {
 	return Shaper{}
 }
 
+// NormalizationPreference reports the engine's normalization policy.
 func (Shaper) NormalizationPreference() otshape.NormalizationMode {
 	return otshape.NormalizationAuto
 }
 
+// ApplyGPOS reports whether GPOS should be applied for Hebrew shaping.
 func (Shaper) ApplyGPOS() bool {
 	return true
 }
 
+// Compose attempts to compose runes a and b for Hebrew shaping.
+//
+// It first delegates to Unicode composition and then applies Hebrew-specific
+// fallback compositions when appropriate. The returned bool reports success.
 func (Shaper) Compose(c otshape.NormalizeContext, a, b rune) (rune, bool) {
 	return hebrewCompose(c, a, b)
 }
 
+// ReorderMarks reorders Hebrew marks in run[start:end] when required.
 func (Shaper) ReorderMarks(run otshape.RunContext, start, end int) {
 	hebrewReorderMarks(run, start, end)
 }

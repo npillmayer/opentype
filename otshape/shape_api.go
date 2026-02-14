@@ -11,21 +11,28 @@ import (
 )
 
 var (
-	ErrNoShaper                   = errors.New("otshape: no shaping engine supplied")
-	ErrNoMatchingShaper           = errors.New("otshape: no supplied shaping engine matches selection context")
-	ErrNilFont                    = errors.New("otshape: nil font in shape options")
-	ErrNilRuneSource              = errors.New("otshape: nil rune source")
-	ErrNilGlyphSink               = errors.New("otshape: nil glyph sink")
-	ErrFlushExplicitUnsupported   = errors.New("otshape: FlushExplicit is not supported yet")
+	// ErrNoShaper indicates that no candidate shaping engine was supplied.
+	ErrNoShaper = errors.New("otshape: no shaping engine supplied")
+	// ErrNoMatchingShaper indicates that none of the supplied engines matched the segment context.
+	ErrNoMatchingShaper = errors.New("otshape: no supplied shaping engine matches selection context")
+	// ErrNilFont indicates that ShapeOptions.Font is nil.
+	ErrNilFont = errors.New("otshape: nil font in shape options")
+	// ErrNilRuneSource indicates that the shape input source is nil.
+	ErrNilRuneSource = errors.New("otshape: nil rune source")
+	// ErrNilGlyphSink indicates that the shape output sink is nil.
+	ErrNilGlyphSink = errors.New("otshape: nil glyph sink")
+	// ErrFlushExplicitUnsupported indicates that FlushExplicit is not yet implemented.
+	ErrFlushExplicitUnsupported = errors.New("otshape: FlushExplicit is not supported yet")
+	// ErrShapePipelineUnimplemented is reserved for incomplete pipeline phases.
 	ErrShapePipelineUnimplemented = errors.New("otshape: streaming shape pipeline not implemented yet")
 )
 
-// ShapeRequest bundles all inputs needed for a streaming shape operation.
+// ShapeRequest bundles all inputs required by [Shape].
 type ShapeRequest struct {
-	Options ShapeOptions
-	Source  RuneSource
-	Sink    GlyphSink
-	Shapers []ShapingEngine
+	Options ShapeOptions    // Options configures script/language/font and streaming behavior.
+	Source  RuneSource      // Source provides input runes.
+	Sink    GlyphSink       // Sink receives shaped glyph records.
+	Shapers []ShapingEngine // Shapers lists candidate engines used for selection.
 }
 
 // Shaper is the injectable top-level shaping orchestrator.
@@ -35,7 +42,10 @@ type Shaper struct {
 	shapers []ShapingEngine
 }
 
-// NewShaper creates a shaping orchestrator from explicitly injected engines.
+// NewShaper creates a shaper from explicit candidate engines.
+//
+// Nil entries in shapers are ignored. The returned value keeps the candidate
+// list and selects the best matching engine per [Shape] call.
 func NewShaper(shapers ...ShapingEngine) *Shaper {
 	list := make([]ShapingEngine, 0, len(shapers))
 	for _, sh := range shapers {
@@ -46,13 +56,24 @@ func NewShaper(shapers ...ShapingEngine) *Shaper {
 	return &Shaper{shapers: list}
 }
 
-// Shape is a convenience wrapper around NewShaper(...).Shape(...).
+// Shape shapes req.Source into req.Sink using req.Options and req.Shapers.
+//
+// Shape is a convenience wrapper around [NewShaper] followed by [Shaper.Shape].
+// It returns the first source/sink/pipeline error encountered.
 func Shape(req ShapeRequest) error {
 	s := NewShaper(req.Shapers...)
 	return s.Shape(req.Options, req.Source, req.Sink)
 }
 
-// Shape shapes a rune stream into a glyph stream for one request.
+// Shape shapes src into sink according to opts.
+//
+// Parameters:
+//   - opts selects font, segment metadata, feature ranges and streaming thresholds.
+//   - src is read incrementally until EOF.
+//   - sink receives shaped glyph records in output order.
+//
+// Returns nil on success, or an error for invalid inputs, source/sink failures,
+// missing/invalid shaper selection, plan compilation failure, or pipeline failure.
 func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error {
 	if opts.Font == nil {
 		return ErrNilFont
@@ -76,20 +97,70 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 	if err != nil {
 		return err
 	}
-
-	runes, clusters, err := readRuneStream(src)
+	cfg, err := resolveStreamingConfig(opts)
 	if err != nil {
 		return err
 	}
-	if len(runes) == 0 {
-		return nil
-	}
-	runes, clusters = normalizeRuneStream(runes, clusters, opts, ctx, engine, pl)
-	run := mapRunesToRunBuffer(runes, clusters, opts.Font)
-	if run.Len() == 0 {
-		return nil
-	}
+	st := newStreamingState(cfg)
 
+	for {
+		if _, err := fillUntilHighWatermark(src, st); err != nil {
+			return err
+		}
+		if len(st.rawRunes) == 0 {
+			if st.eof {
+				return nil
+			}
+			continue
+		}
+
+		runes := append([]rune(nil), st.rawRunes...)
+		clusters := append([]uint32(nil), st.rawClusters...)
+		runes, clusters = normalizeRuneStream(runes, clusters, opts, ctx, engine, pl)
+		run := mapRunesToRunBuffer(runes, clusters, opts.Font)
+		if run.Len() == 0 {
+			compactCarry(st, len(st.rawRunes))
+			if st.eof {
+				return nil
+			}
+			continue
+		}
+
+		if err := shapeMappedRun(run, engine, pl); err != nil {
+			return err
+		}
+		cut := findFlushCut(run, st)
+		if !cut.ready {
+			if _, err := fillUntilBufferLimit(src, st, st.cfg.maxBuffer); err != nil {
+				return err
+			}
+			continue
+		}
+		assert(cut.glyphCut >= 0 && cut.glyphCut <= run.Len(), "flush decision glyph cut out of bounds")
+		assert(cut.rawFlush >= 0 && cut.rawFlush <= len(st.rawRunes), "flush decision raw cut out of bounds")
+		if cut.glyphCut == 0 {
+			// No flushable prefix yet; attempt to read more.
+			if _, err := fillUntilBufferLimit(src, st, st.cfg.maxBuffer); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := writeRunBufferPrefixToSink(run, sink, opts.FlushBoundary, cut.glyphCut); err != nil {
+			return err
+		}
+		compactCarry(st, cut.rawFlush)
+		if st.eof {
+			if len(st.rawRunes) == 0 {
+				return nil
+			}
+		}
+	}
+}
+
+func shapeMappedRun(run *runBuffer, engine ShapingEngine, pl *plan) error {
+	if run == nil || run.Len() == 0 {
+		return nil
+	}
 	rc := newRunContext(run)
 	if hook, ok := engine.(ShapingEnginePreprocessHook); ok {
 		hook.PreprocessRun(rc)
@@ -115,7 +186,44 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 	if hook, ok := engine.(ShapingEnginePostprocessHook); ok {
 		hook.PostprocessRun(rc)
 	}
-	return writeRunBufferToSink(run, sink, opts.FlushBoundary)
+	return nil
+}
+
+func writeRunBufferPrefixToSink(run *runBuffer, sink GlyphSink, boundary FlushBoundary, end int) error {
+	if run == nil {
+		return nil
+	}
+	n := run.Len()
+	if end < 0 {
+		end = 0
+	}
+	if end > n {
+		end = n
+	}
+	if end == 0 {
+		return nil
+	}
+	switch boundary {
+	case FlushOnRunBoundary:
+		return writeRunBufferRange(run, sink, 0, end)
+	case FlushOnClusterBoundary:
+		for _, span := range clusterSpans(run) {
+			if span.start >= end {
+				break
+			}
+			if span.end > end {
+				return errShaper("streaming prefix cut is not at a cluster boundary")
+			}
+			if err := writeRunBufferRange(run, sink, span.start, span.end); err != nil {
+				return err
+			}
+		}
+		return nil
+	case FlushExplicit:
+		return ErrFlushExplicitUnsupported
+	default:
+		return writeRunBufferRange(run, sink, 0, end)
+	}
 }
 
 func selectionContextFromOptions(opts ShapeOptions) SelectionContext {

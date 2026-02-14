@@ -145,7 +145,7 @@ If omitted/zero, use internal defaults.
 
 ### PR B: Replace one-shot read with loop
 
-1. Replace full `readRuneStream`-then-shape flow in `Shaper.Shape`.
+1. Replace one-shot full-input read/shape flow in `Shaper.Shape`.
 2. Keep shaping internals unchanged per iteration.
 3. Ensure EOF empty-input semantics remain unchanged.
 

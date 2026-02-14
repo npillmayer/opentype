@@ -2,7 +2,6 @@ package otshape
 
 import (
 	"errors"
-	"io"
 
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otquery"
@@ -23,8 +22,6 @@ var (
 	ErrNilGlyphSink = errors.New("otshape: nil glyph sink")
 	// ErrFlushExplicitUnsupported indicates that FlushExplicit is not yet implemented.
 	ErrFlushExplicitUnsupported = errors.New("otshape: FlushExplicit is not supported yet")
-	// ErrShapePipelineUnimplemented is reserved for incomplete pipeline phases.
-	ErrShapePipelineUnimplemented = errors.New("otshape: streaming shape pipeline not implemented yet")
 )
 
 // ShapeRequest bundles all inputs required by [Shape].
@@ -271,10 +268,6 @@ func selectShapingEngine(candidates []ShapingEngine, ctx SelectionContext) (Shap
 	return inst, nil
 }
 
-func compileShapePlan(opts ShapeOptions, ctx SelectionContext, engine ShapingEngine) (*plan, error) {
-	return compileShapePlanWithFeatures(opts, ctx, engine, opts.Features)
-}
-
 func compileShapePlanWithFeatures(opts ShapeOptions, ctx SelectionContext, engine ShapingEngine, features []FeatureRange) (*plan, error) {
 	policy := planPolicy{
 		ApplyGPOS: true,
@@ -293,23 +286,6 @@ func compileShapePlanWithFeatures(opts ShapeOptions, ctx SelectionContext, engin
 	}
 	req.UserFeatures = append(req.UserFeatures, features...)
 	return compile(req)
-}
-
-func readRuneStream(src RuneSource) ([]rune, []uint32, error) {
-	runes := make([]rune, 0, 32)
-	clusters := make([]uint32, 0, 32)
-	for cluster := uint32(0); ; cluster++ {
-		r, _, err := src.ReadRune()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-		runes = append(runes, r)
-		clusters = append(clusters, cluster)
-	}
-	return runes, clusters, nil
 }
 
 func mapRunesToRunBuffer(runes []rune, clusters []uint32, font *ot.Font) *runBuffer {

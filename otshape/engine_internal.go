@@ -152,6 +152,9 @@ func (rc runContext) Swap(i, j int) {
 	if len(rc.run.Masks) == rc.run.Len() {
 		rc.run.Masks[i], rc.run.Masks[j] = rc.run.Masks[j], rc.run.Masks[i]
 	}
+	if len(rc.run.PlanIDs) == rc.run.Len() {
+		rc.run.PlanIDs[i], rc.run.PlanIDs[j] = rc.run.PlanIDs[j], rc.run.PlanIDs[i]
+	}
 	if len(rc.run.UnsafeFlags) == rc.run.Len() {
 		rc.run.UnsafeFlags[i], rc.run.UnsafeFlags[j] = rc.run.UnsafeFlags[j], rc.run.UnsafeFlags[i]
 	}

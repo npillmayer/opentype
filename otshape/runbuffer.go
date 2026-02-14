@@ -18,6 +18,7 @@ type runBuffer struct {
 
 	Codepoints  []rune   // optional codepoint alignment for normalization/reorder hooks
 	Clusters    []uint32 // optional rune->glyph mapping
+	PlanIDs     []uint16 // optional plan-boundary marker: active plan id per glyph
 	Masks       []uint32 // optional feature/shaping flags
 	UnsafeFlags []uint16 // optional line-break/concat safety flags
 	Syllables   []uint16 // optional pre-segmented syllable ids (contiguous runs)
@@ -62,6 +63,9 @@ func (rb *runBuffer) Reset() {
 	}
 	if rb.Clusters != nil {
 		rb.Clusters = rb.Clusters[:0]
+	}
+	if rb.PlanIDs != nil {
+		rb.PlanIDs = rb.PlanIDs[:0]
 	}
 	if rb.Masks != nil {
 		rb.Masks = rb.Masks[:0]
@@ -116,6 +120,20 @@ func (rb *runBuffer) EnsureClusters() {
 	}
 	if len(rb.Clusters) != rb.Len() {
 		rb.Clusters = resizeUint32(rb.Clusters, rb.Len())
+	}
+}
+
+// EnsurePlanIDs allocates/aligns per-glyph plan ids.
+func (rb *runBuffer) EnsurePlanIDs() {
+	if rb == nil {
+		return
+	}
+	if rb.PlanIDs == nil {
+		rb.PlanIDs = make([]uint16, rb.Len())
+		return
+	}
+	if len(rb.PlanIDs) != rb.Len() {
+		rb.PlanIDs = resizeUint16(rb.PlanIDs, rb.Len())
 	}
 }
 
@@ -194,6 +212,9 @@ func (rb *runBuffer) ApplyEdit(edit *otlayout.EditSpan) {
 	if rb.Clusters != nil {
 		rb.Clusters = applyEditUint32(rb.Clusters, edit)
 	}
+	if rb.PlanIDs != nil {
+		rb.PlanIDs = applyEditUint16(rb.PlanIDs, edit)
+	}
 	if rb.Masks != nil {
 		rb.Masks = applyEditUint32(rb.Masks, edit)
 	}
@@ -232,6 +253,15 @@ func (rb *runBuffer) InsertGlyphs(index int, glyphs []ot.GlyphIndex) (int, int) 
 			clusterSeed = rb.Clusters[0]
 		}
 	}
+	planSeed := uint16(0)
+	if len(rb.PlanIDs) == n {
+		switch {
+		case index > 0:
+			planSeed = rb.PlanIDs[index-1]
+		case n > 0:
+			planSeed = rb.PlanIDs[0]
+		}
+	}
 
 	edit := &otlayout.EditSpan{From: index, To: index, Len: insertLen}
 	rb.ApplyEdit(edit)
@@ -240,6 +270,11 @@ func (rb *runBuffer) InsertGlyphs(index int, glyphs []ot.GlyphIndex) (int, int) 
 	if len(rb.Clusters) == rb.Len() {
 		for i := index; i < index+insertLen; i++ {
 			rb.Clusters[i] = clusterSeed
+		}
+	}
+	if len(rb.PlanIDs) == rb.Len() {
+		for i := index; i < index+insertLen; i++ {
+			rb.PlanIDs[i] = planSeed
 		}
 	}
 	return index, index + insertLen
@@ -288,6 +323,11 @@ func (rb *runBuffer) InsertGlyphCopies(index int, source int, count int) (int, i
 	if hasMasks {
 		mask = rb.Masks[source]
 	}
+	hasPlanIDs := len(rb.PlanIDs) == n
+	var planID uint16
+	if hasPlanIDs {
+		planID = rb.PlanIDs[source]
+	}
 	hasUnsafe := len(rb.UnsafeFlags) == n
 	var unsafe uint16
 	if hasUnsafe {
@@ -317,6 +357,9 @@ func (rb *runBuffer) InsertGlyphCopies(index int, source int, count int) (int, i
 		}
 		if hasMasks {
 			rb.Masks[i] = mask
+		}
+		if hasPlanIDs {
+			rb.PlanIDs[i] = planID
 		}
 		if hasUnsafe {
 			rb.UnsafeFlags[i] = unsafe

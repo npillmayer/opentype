@@ -60,6 +60,7 @@ func resolveStreamingConfig(opts ShapeOptions) (streamingConfig, error) {
 type streamingState struct {
 	rawRunes    []rune
 	rawClusters []uint32
+	rawPlanIDs  []uint16
 	nextCluster uint32
 	eof         bool
 	cfg         streamingConfig
@@ -82,6 +83,9 @@ func (st *streamingState) assertInvariants() {
 	assert(st != nil, "streaming state is nil")
 	assert(st.cfg.valid(), "invalid streaming config in state")
 	assert(len(st.rawRunes) == len(st.rawClusters), "raw rune/cluster arrays out of alignment")
+	if len(st.rawPlanIDs) != 0 {
+		assert(len(st.rawPlanIDs) == len(st.rawRunes), "raw rune/plan arrays out of alignment")
+	}
 	assert(len(st.rawRunes) <= st.cfg.maxBuffer, "raw buffer exceeds maxBuffer")
 	for i := 1; i < len(st.rawClusters); i++ {
 		assert(st.rawClusters[i] > st.rawClusters[i-1], "raw clusters are not strictly monotonic")
@@ -135,6 +139,9 @@ func compactCarry(st *streamingState, flushedCodepoints int) {
 	}
 	st.rawRunes = append(st.rawRunes[:0], st.rawRunes[flushedCodepoints:]...)
 	st.rawClusters = append(st.rawClusters[:0], st.rawClusters[flushedCodepoints:]...)
+	if len(st.rawPlanIDs) != 0 {
+		st.rawPlanIDs = append(st.rawPlanIDs[:0], st.rawPlanIDs[flushedCodepoints:]...)
+	}
 	st.assertInvariants()
 }
 

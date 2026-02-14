@@ -6,6 +6,9 @@ The package API is centered around [Shape] and [NewShaper]:
   - runes are consumed from a [RuneSource],
   - shaped glyph records are emitted to a [GlyphSink].
 
+Advanced clients may use [ShapeEvents] with an [InputEventSource] to provide
+explicit feature push/pop boundaries in-band with rune input.
+
 The pipeline compiles a per-request plan, applies GSUB/GPOS lookups, and supports
 script-specific shaper engines through hook interfaces defined in this package.
 */

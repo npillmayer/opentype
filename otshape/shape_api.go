@@ -93,7 +93,7 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 		return err
 	}
 
-	pl, err := compileShapePlan(opts, ctx, engine)
+	plan, err := compileShapePlan(opts, ctx, engine)
 	if err != nil {
 		return err
 	}
@@ -101,46 +101,46 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 	if err != nil {
 		return err
 	}
-	st := newStreamingState(cfg)
+	strState := newStreamingState(cfg)
 
 	for {
-		if _, err := fillUntilHighWatermark(src, st); err != nil {
+		if _, err := fillUntilHighWatermark(src, strState); err != nil {
 			return err
 		}
-		if len(st.rawRunes) == 0 {
-			if st.eof {
+		if len(strState.rawRunes) == 0 {
+			if strState.eof {
 				return nil
 			}
 			continue
 		}
 
-		runes := append([]rune(nil), st.rawRunes...)
-		clusters := append([]uint32(nil), st.rawClusters...)
-		runes, clusters = normalizeRuneStream(runes, clusters, opts, ctx, engine, pl)
+		runes := append([]rune(nil), strState.rawRunes...)
+		clusters := append([]uint32(nil), strState.rawClusters...)
+		runes, clusters = normalizeRuneStream(runes, clusters, opts, ctx, engine, plan)
 		run := mapRunesToRunBuffer(runes, clusters, opts.Font)
 		if run.Len() == 0 {
-			compactCarry(st, len(st.rawRunes))
-			if st.eof {
+			compactCarry(strState, len(strState.rawRunes))
+			if strState.eof {
 				return nil
 			}
 			continue
 		}
 
-		if err := shapeMappedRun(run, engine, pl); err != nil {
+		if err := shapeMappedRun(run, engine, plan); err != nil {
 			return err
 		}
-		cut := findFlushCut(run, st)
+		cut := findFlushCut(run, strState)
 		if !cut.ready {
-			if _, err := fillUntilBufferLimit(src, st, st.cfg.maxBuffer); err != nil {
+			if _, err := fillUntilBufferLimit(src, strState, strState.cfg.maxBuffer); err != nil {
 				return err
 			}
 			continue
 		}
 		assert(cut.glyphCut >= 0 && cut.glyphCut <= run.Len(), "flush decision glyph cut out of bounds")
-		assert(cut.rawFlush >= 0 && cut.rawFlush <= len(st.rawRunes), "flush decision raw cut out of bounds")
+		assert(cut.rawFlush >= 0 && cut.rawFlush <= len(strState.rawRunes), "flush decision raw cut out of bounds")
 		if cut.glyphCut == 0 {
 			// No flushable prefix yet; attempt to read more.
-			if _, err := fillUntilBufferLimit(src, st, st.cfg.maxBuffer); err != nil {
+			if _, err := fillUntilBufferLimit(src, strState, strState.cfg.maxBuffer); err != nil {
 				return err
 			}
 			continue
@@ -148,9 +148,9 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 		if err := writeRunBufferPrefixToSink(run, sink, opts.FlushBoundary, cut.glyphCut); err != nil {
 			return err
 		}
-		compactCarry(st, cut.rawFlush)
-		if st.eof {
-			if len(st.rawRunes) == 0 {
+		compactCarry(strState, cut.rawFlush)
+		if strState.eof {
+			if len(strState.rawRunes) == 0 {
 				return nil
 			}
 		}
@@ -270,6 +270,10 @@ func selectShapingEngine(candidates []ShapingEngine, ctx SelectionContext) (Shap
 }
 
 func compileShapePlan(opts ShapeOptions, ctx SelectionContext, engine ShapingEngine) (*plan, error) {
+	return compileShapePlanWithFeatures(opts, ctx, engine, opts.Features)
+}
+
+func compileShapePlanWithFeatures(opts ShapeOptions, ctx SelectionContext, engine ShapingEngine, features []FeatureRange) (*plan, error) {
 	policy := planPolicy{
 		ApplyGPOS: true,
 	}
@@ -285,7 +289,7 @@ func compileShapePlan(opts ShapeOptions, ctx SelectionContext, engine ShapingEng
 		Engine:    engine,
 		Policy:    policy,
 	}
-	req.UserFeatures = append(req.UserFeatures, opts.Features...)
+	req.UserFeatures = append(req.UserFeatures, features...)
 	return compile(req)
 }
 
@@ -307,6 +311,10 @@ func readRuneStream(src RuneSource) ([]rune, []uint32, error) {
 }
 
 func mapRunesToRunBuffer(runes []rune, clusters []uint32, font *ot.Font) *runBuffer {
+	return mapRunesToRunBufferWithPlanIDs(runes, clusters, nil, font)
+}
+
+func mapRunesToRunBufferWithPlanIDs(runes []rune, clusters []uint32, planIDs []uint16, font *ot.Font) *runBuffer {
 	run := newRunBuffer(32)
 	for i, r := range runes {
 		gid := otquery.GlyphIndex(font, r)
@@ -315,6 +323,9 @@ func mapRunesToRunBuffer(runes []rune, clusters []uint32, font *ot.Font) *runBuf
 			run.Clusters = append(run.Clusters, clusters[i])
 		} else {
 			run.Clusters = append(run.Clusters, uint32(i))
+		}
+		if len(planIDs) == len(runes) {
+			run.PlanIDs = append(run.PlanIDs, planIDs[i])
 		}
 		run.Codepoints = append(run.Codepoints, r)
 	}

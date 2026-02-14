@@ -59,10 +59,74 @@ Please refer to
 Features:
 - Create PNG images of text shaping results
 
+This sub-command will need the following Go packages:
+
+- `https://pkg.go.dev/golang.org/x/image/font`
+- `https://pkg.go.dev/golang.org/x/image/font/opentype`
+
+It seems fairly cryptic. At least there is this example:
+[Example](https://pkg.go.dev/golang.org/x/image/font/opentype#example-NewFace)
+
+### Findings on `x/image` Usage
+
+There are two viable paths:
+
+1. `font/opentype` + `font.Drawer`
+2. `font/sfnt` + `vector.Rasterizer`
+
+For our `ot-tools view` use-case (already shaped glyph stream), path 2 is the correct one.
+
+Why:
+
+- `font.Drawer` draws runes (`DrawString`) and internally does its own rune→glyph mapping.
+- Our pipeline already produced glyph IDs and GPOS offsets/advances.
+- We must therefore render **glyph IDs directly**, not runes.
+
+Concrete API path (validated with a local probe):
+
+1. Shape input with `otshape.Shape` to `[]GlyphRecord`.
+2. Parse font bytes with `sfnt.Parse`.
+3. Pick rendering scale:
+   - `ppem` (pixels-per-em), e.g. 72
+   - `scale := fixed.I(ppem)`
+4. For each glyph:
+   - `segments, err := sfntFont.LoadGlyph(&buf, sfnt.GlyphIndex(gid), scale, nil)`
+   - feed segments into a `vector.Rasterizer` (`MoveTo`, `LineTo`, `QuadTo`, `CubeTo`)
+   - draw into RGBA/Alpha target using `rasterizer.Draw(...)`
+5. Advance pen position using shaper advances:
+   - `penX += XAdvance * ppem / unitsPerEm`
+   - apply offsets similarly for glyph-local placement.
+6. Encode output with `image/png`.
+
+Important conversion notes:
+
+- `otshape` position values are in font units.
+- `sfnt.LoadGlyph` path coordinates are returned at the chosen ppem scale in `fixed.Int26_6`.
+- Convert `fixed.Int26_6` to float pixels by dividing by `64`.
+
 ### Initial Implementation Status
 
-- command is registered, but currently intentionally unimplemented
-- returns a clear error message placeholder
+Implemented as rudimentary baseline:
+
+- command: `ot-tools view <font> <text...>`
+- shapes input text first, then renders:
+  - one selected glyph from shaped output, or
+  - the full shaped glyph run (`--all`)
+- default output: `ot-tools-view.png`
+- optional flags:
+  - `--index,-i` glyph index in shaped output (default `0`)
+  - `--all,-a` render all shaped glyphs
+  - `--show-bboxes,-B` draw red outline of each glyph bounding box
+  - `--output,-o` output PNG path
+  - `--ppem,-p` render scale (pixels-per-em, default `96`)
+  - `--width,-W`, `--height,-H` image size
+  - script/language/direction/feature/codepoint/testfont flags like `shape`
+
+Current scope:
+
+- single-glyph mode centers one glyph on a white canvas
+- full-run mode composes all shaped glyphs using advances and offsets
+- intended as a diagnostics/proof tool, not final text layout rendering
 
 ## `ot-tools font`: OpenType Font Diagnostics
 

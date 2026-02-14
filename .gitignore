@@ -1,9 +1,12 @@
 .DS_Store
 out.txt
 harfbuzz/
+proofs/
+ot-tools/ot-tools
+*.png
 
 # Claude Code (AI) memory
-# CLAUDE.md
+CLAUDE.md
 # AGENTS.md
 
 # If you prefer the allow list template instead of the deny list, see community template:

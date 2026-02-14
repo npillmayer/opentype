@@ -9,8 +9,9 @@ import (
 var (
 	// ErrNilEventSource indicates that the event-based input source is nil.
 	ErrNilEventSource = errors.New("otshape: nil input event source")
-	// ErrEventIndexedFeatureRange indicates event mode only supports global feature defaults.
-	ErrEventIndexedFeatureRange = errors.New("otshape: event input mode does not support indexed FeatureRange values")
+	// ErrEventIndexedFeatureRange indicates ShapeEvents forbids indexed
+	// FeatureRange values (Start/End must both be 0).
+	ErrEventIndexedFeatureRange = errors.New("otshape: ShapeEvents requires global-only FeatureRange values")
 )
 
 // ShapeEventsRequest bundles all inputs required by [ShapeEvents].
@@ -40,6 +41,10 @@ func ShapeEvents(req ShapeEventsRequest) error {
 //
 // Returns nil on success, or an error for invalid inputs, source/sink failures,
 // invalid event sequences, plan compilation failures, or pipeline failures.
+//
+// In ShapeEvents, opts.Features is restricted to global defaults only:
+// each FeatureRange must have Start==0 and End==0. Feature scoping is performed
+// exclusively via InputEventPushFeatures/InputEventPopFeatures events.
 func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink GlyphSink) error {
 	if opts.Font == nil {
 		return ErrNilFont

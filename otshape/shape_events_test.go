@@ -131,6 +131,34 @@ func TestShapeEventsUnclosedStackAtEOFIsError(t *testing.T) {
 	}
 }
 
+func TestShapeEventsRejectsIndexedFeatureRangeInOptions(t *testing.T) {
+	font := loadMiniOTFont(t, "gpos3_font1.otf")
+	opts := ShapeOptions{
+		Params: Params{
+			Font:      font,
+			Direction: bidi.LeftToRight,
+			Script:    language.MustParseScript("Latn"),
+			Language:  language.English,
+			Features: []FeatureRange{
+				{Feature: ot.T("liga"), On: true, Start: 1, End: 3},
+			},
+		},
+		FlushBoundary: FlushOnRunBoundary,
+		HighWatermark: 2,
+		LowWatermark:  1,
+		MaxBuffer:     8,
+	}
+	err := ShapeEvents(ShapeEventsRequest{
+		Options: opts,
+		Source:  NewInputEventSource(strings.NewReader("ab")),
+		Sink:    &collectSink{},
+		Shapers: []ShapingEngine{&hookProbeShaper{}},
+	})
+	if !errors.Is(err, ErrEventIndexedFeatureRange) {
+		t.Fatalf("ShapeEvents error=%v, want %v", err, ErrEventIndexedFeatureRange)
+	}
+}
+
 func TestFillEventsStoresPlanIDsInCarryBuffer(t *testing.T) {
 	cfg := streamingConfig{
 		highWatermark: 8,

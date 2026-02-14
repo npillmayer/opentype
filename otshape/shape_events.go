@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-
-	"github.com/npillmayer/opentype/otlayout"
 )
 
 var (
@@ -64,9 +62,10 @@ func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink Glyph
 	if err != nil {
 		return err
 	}
+	compiler := newPlanCompiler(opts, ctx, engine)
 
 	rootFeatures := newFeatureSet(opts.Features).asGlobalFeatureRanges()
-	rootPlan, err := compileShapePlanWithFeatures(opts, ctx, engine, rootFeatures)
+	rootPlan, err := compiler.compile(rootFeatures)
 	if err != nil {
 		return err
 	}
@@ -74,17 +73,19 @@ func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink Glyph
 	if err != nil {
 		return err
 	}
-	st := newStreamingState(cfg)
+	ing := newStreamIngestor(cfg)
+	st := ing.state()
+	ws := newShapeWorkspace(cfg.maxBuffer)
 	stack := newPlanStack(rootFeatures, rootPlan)
 	plansByID := map[uint16]*plan{
 		stack.currentPlanID(): rootPlan,
 	}
 	build := func(features []FeatureRange) (*plan, error) {
-		return compileShapePlanWithFeatures(opts, ctx, engine, features)
+		return compiler.compile(features)
 	}
 
 	for {
-		if _, err := fillEventsUntilHighWatermark(src, st, stack, plansByID, build); err != nil {
+		if _, err := ing.fillEvents(src, stack, plansByID, build); err != nil {
 			return err
 		}
 		if len(st.rawRunes) == 0 {
@@ -94,12 +95,12 @@ func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink Glyph
 			continue
 		}
 
-		run, err := shapeEventCarry(st, opts, ctx, engine, plansByID)
+		run, err := shapeEventCarry(ws, st, opts, ctx, engine, plansByID)
 		if err != nil {
 			return err
 		}
 		if run.Len() == 0 {
-			compactCarry(st, len(st.rawRunes))
+			ing.compact(len(st.rawRunes))
 			if st.eof {
 				return stack.ensureClosed()
 			}
@@ -108,7 +109,7 @@ func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink Glyph
 
 		cut := findFlushCut(run, st)
 		if !cut.ready {
-			if _, err := fillEventsUntilBufferLimit(src, st, stack, plansByID, build, st.cfg.maxBuffer); err != nil {
+			if _, err := ing.fillEventsLimit(src, stack, plansByID, build, st.cfg.maxBuffer); err != nil {
 				return err
 			}
 			continue
@@ -116,7 +117,7 @@ func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink Glyph
 		assert(cut.glyphCut >= 0 && cut.glyphCut <= run.Len(), "flush decision glyph cut out of bounds")
 		assert(cut.rawFlush >= 0 && cut.rawFlush <= len(st.rawRunes), "flush decision raw cut out of bounds")
 		if cut.glyphCut == 0 {
-			if _, err := fillEventsUntilBufferLimit(src, st, stack, plansByID, build, st.cfg.maxBuffer); err != nil {
+			if _, err := ing.fillEventsLimit(src, stack, plansByID, build, st.cfg.maxBuffer); err != nil {
 				return err
 			}
 			continue
@@ -124,7 +125,7 @@ func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink Glyph
 		if err := writeRunBufferPrefixToSink(run, sink, opts.FlushBoundary, cut.glyphCut); err != nil {
 			return err
 		}
-		compactCarry(st, cut.rawFlush)
+		ing.compact(cut.rawFlush)
 		if st.eof && len(st.rawRunes) == 0 {
 			return stack.ensureClosed()
 		}
@@ -209,25 +210,25 @@ func fillEventsUntilBufferLimit(
 }
 
 func shapeEventCarry(
+	ws *shapeWorkspace,
 	st *streamingState,
 	opts ShapeOptions,
 	ctx SelectionContext,
 	engine ShapingEngine,
 	plansByID map[uint16]*plan,
 ) (*runBuffer, error) {
+	assert(ws != nil, "shape workspace is nil")
 	assert(st != nil, "streaming state is nil")
 	st.assertInvariants()
 	if len(st.rawRunes) == 0 {
-		return newRunBuffer(0), nil
+		return ws.beginOut(), nil
 	}
 	if len(st.rawPlanIDs) != len(st.rawRunes) {
 		return nil, errShaper("event carry plan-id alignment mismatch")
 	}
-	runes := append([]rune(nil), st.rawRunes...)
-	clusters := append([]uint32(nil), st.rawClusters...)
-	planIDs := append([]uint16(nil), st.rawPlanIDs...)
+	runes, clusters, planIDs := ws.copyRawWithPlanIDs(st)
 
-	out := newRunBuffer(len(runes))
+	out := ws.beginOut()
 	for start := 0; start < len(runes); {
 		end := start + 1
 		pid := planIDs[start]
@@ -238,130 +239,20 @@ func shapeEventCarry(
 		if pl == nil {
 			return nil, errShaper("missing compiled plan for event span")
 		}
-		segRunes := append([]rune(nil), runes[start:end]...)
-		segClusters := append([]uint32(nil), clusters[start:end]...)
-		segRunes, segClusters = normalizeRuneStream(segRunes, segClusters, opts, ctx, engine, pl)
+		segRunes := runes[start:end]
+		segClusters := clusters[start:end]
+		segRunes, segClusters = ws.normalize(segRunes, segClusters, opts, ctx, engine, pl)
 		if len(segRunes) == 0 {
 			start = end
 			continue
 		}
-		segPlanIDs := make([]uint16, len(segRunes))
-		for i := range segPlanIDs {
-			segPlanIDs[i] = pid
-		}
-		segRun := mapRunesToRunBufferWithPlanIDs(segRunes, segClusters, segPlanIDs, opts.Font)
+		segPlanIDs := ws.spanPlanIDsFor(pid, len(segRunes))
+		segRun := ws.mapSegment(segRunes, segClusters, segPlanIDs, opts.Font)
 		if err := shapeMappedRun(segRun, engine, pl); err != nil {
 			return nil, err
 		}
-		appendRunBuffer(out, segRun)
+		out.AppendRun(segRun)
 		start = end
 	}
 	return out, nil
-}
-
-func appendRunBuffer(dst *runBuffer, src *runBuffer) {
-	if dst == nil || src == nil {
-		return
-	}
-	srcLen := src.Len()
-	if srcLen == 0 {
-		return
-	}
-	dstLen := dst.Len()
-	dst.Glyphs = append(dst.Glyphs, src.Glyphs...)
-
-	appendRunesAligned(&dst.Codepoints, dstLen, src.Codepoints, srcLen)
-	appendUint32Aligned(&dst.Clusters, dstLen, src.Clusters, srcLen)
-	appendUint16Aligned(&dst.PlanIDs, dstLen, src.PlanIDs, srcLen)
-	appendUint32Aligned(&dst.Masks, dstLen, src.Masks, srcLen)
-	appendUint16Aligned(&dst.UnsafeFlags, dstLen, src.UnsafeFlags, srcLen)
-	appendUint16Aligned(&dst.Syllables, dstLen, src.Syllables, srcLen)
-	appendUint8Aligned(&dst.Joiners, dstLen, src.Joiners, srcLen)
-	appendPosAligned(&dst.Pos, dstLen, src.Pos, srcLen)
-}
-
-func appendRunesAligned(dst *[]rune, dstLen int, src []rune, srcLen int) {
-	hasSrc := len(src) == srcLen
-	if *dst == nil && !hasSrc {
-		return
-	}
-	if *dst == nil {
-		*dst = make([]rune, dstLen)
-	}
-	if hasSrc {
-		*dst = append(*dst, src...)
-		return
-	}
-	*dst = append(*dst, make([]rune, srcLen)...)
-}
-
-func appendUint32Aligned(dst *[]uint32, dstLen int, src []uint32, srcLen int) {
-	hasSrc := len(src) == srcLen
-	if *dst == nil && !hasSrc {
-		return
-	}
-	if *dst == nil {
-		*dst = make([]uint32, dstLen)
-	}
-	if hasSrc {
-		*dst = append(*dst, src...)
-		return
-	}
-	*dst = append(*dst, make([]uint32, srcLen)...)
-}
-
-func appendUint16Aligned(dst *[]uint16, dstLen int, src []uint16, srcLen int) {
-	hasSrc := len(src) == srcLen
-	if *dst == nil && !hasSrc {
-		return
-	}
-	if *dst == nil {
-		*dst = make([]uint16, dstLen)
-	}
-	if hasSrc {
-		*dst = append(*dst, src...)
-		return
-	}
-	*dst = append(*dst, make([]uint16, srcLen)...)
-}
-
-func appendUint8Aligned(dst *[]uint8, dstLen int, src []uint8, srcLen int) {
-	hasSrc := len(src) == srcLen
-	if *dst == nil && !hasSrc {
-		return
-	}
-	if *dst == nil {
-		*dst = make([]uint8, dstLen)
-	}
-	if hasSrc {
-		*dst = append(*dst, src...)
-		return
-	}
-	*dst = append(*dst, make([]uint8, srcLen)...)
-}
-
-func appendPosAligned(dst *otlayout.PosBuffer, dstLen int, src otlayout.PosBuffer, srcLen int) {
-	hasSrc := len(src) == srcLen
-	if *dst == nil && !hasSrc {
-		return
-	}
-	if *dst == nil {
-		*dst = defaultPosBuffer(dstLen)
-	}
-	if hasSrc {
-		*dst = append(*dst, src...)
-		return
-	}
-	*dst = append(*dst, defaultPosBuffer(srcLen)...)
-}
-
-func defaultPosBuffer(n int) otlayout.PosBuffer {
-	if n <= 0 {
-		return nil
-	}
-	out := otlayout.NewPosBuffer(n)
-	for i := range out {
-		out[i].AttachTo = -1
-	}
-	return out
 }

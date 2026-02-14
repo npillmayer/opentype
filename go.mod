@@ -7,8 +7,6 @@ toolchain go1.24.11
 replace github.com/go-text/typesetting => /Users/npi/prg/go/extern/typesetting
 
 require (
-	github.com/go-text/typesetting v0.0.0-00010101000000-000000000000
-	github.com/go-text/typesetting-utils v0.0.0-20260203131037-09bdbf1032cb
 	github.com/npillmayer/schuko v0.2.0-alpha.2
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/image v0.34.0

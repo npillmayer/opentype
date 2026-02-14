@@ -1,5 +1,6 @@
 .DS_Store
 out.txt
+harfbuzz/
 
 # Claude Code (AI) memory
 # CLAUDE.md

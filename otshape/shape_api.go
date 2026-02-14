@@ -92,8 +92,9 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 	if err != nil {
 		return err
 	}
+	compiler := newPlanCompiler(opts, ctx, engine)
 
-	plan, err := compileShapePlan(opts, ctx, engine)
+	plan, err := compiler.compileDefault()
 	if err != nil {
 		return err
 	}
@@ -101,10 +102,12 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 	if err != nil {
 		return err
 	}
-	strState := newStreamingState(cfg)
+	ing := newStreamIngestor(cfg)
+	strState := ing.state()
+	ws := newShapeWorkspace(cfg.maxBuffer)
 
 	for {
-		if _, err := fillUntilHighWatermark(src, strState); err != nil {
+		if _, err := ing.fillRunes(src); err != nil {
 			return err
 		}
 		if len(strState.rawRunes) == 0 {
@@ -114,12 +117,11 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 			continue
 		}
 
-		runes := append([]rune(nil), strState.rawRunes...)
-		clusters := append([]uint32(nil), strState.rawClusters...)
-		runes, clusters = normalizeRuneStream(runes, clusters, opts, ctx, engine, plan)
-		run := mapRunesToRunBuffer(runes, clusters, opts.Font)
+		runes, clusters := ws.copyRaw(strState)
+		runes, clusters = ws.normalize(runes, clusters, opts, ctx, engine, plan)
+		run := ws.mapMain(runes, clusters, nil, opts.Font)
 		if run.Len() == 0 {
-			compactCarry(strState, len(strState.rawRunes))
+			ing.compact(len(strState.rawRunes))
 			if strState.eof {
 				return nil
 			}
@@ -131,7 +133,7 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 		}
 		cut := findFlushCut(run, strState)
 		if !cut.ready {
-			if _, err := fillUntilBufferLimit(src, strState, strState.cfg.maxBuffer); err != nil {
+			if _, err := ing.fillRunesLimit(src, strState.cfg.maxBuffer); err != nil {
 				return err
 			}
 			continue
@@ -140,7 +142,7 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 		assert(cut.rawFlush >= 0 && cut.rawFlush <= len(strState.rawRunes), "flush decision raw cut out of bounds")
 		if cut.glyphCut == 0 {
 			// No flushable prefix yet; attempt to read more.
-			if _, err := fillUntilBufferLimit(src, strState, strState.cfg.maxBuffer); err != nil {
+			if _, err := ing.fillRunesLimit(src, strState.cfg.maxBuffer); err != nil {
 				return err
 			}
 			continue
@@ -148,7 +150,7 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 		if err := writeRunBufferPrefixToSink(run, sink, opts.FlushBoundary, cut.glyphCut); err != nil {
 			return err
 		}
-		compactCarry(strState, cut.rawFlush)
+		ing.compact(cut.rawFlush)
 		if strState.eof {
 			if len(strState.rawRunes) == 0 {
 				return nil
@@ -315,19 +317,26 @@ func mapRunesToRunBuffer(runes []rune, clusters []uint32, font *ot.Font) *runBuf
 }
 
 func mapRunesToRunBufferWithPlanIDs(runes []rune, clusters []uint32, planIDs []uint16, font *ot.Font) *runBuffer {
-	run := newRunBuffer(32)
+	return mapRunesToRunBufferInto(newRunBuffer(len(runes)), runes, clusters, planIDs, font)
+}
+
+func mapRunesToRunBufferInto(run *runBuffer, runes []rune, clusters []uint32, planIDs []uint16, font *ot.Font) *runBuffer {
+	if run == nil {
+		run = newRunBuffer(len(runes))
+	}
+	withPlanIDs := len(planIDs) == len(runes)
+	run.PrepareForMappedRun(withPlanIDs, len(runes))
 	for i, r := range runes {
 		gid := otquery.GlyphIndex(font, r)
-		run.Glyphs = append(run.Glyphs, gid)
+		cluster := uint32(i)
 		if len(clusters) == len(runes) {
-			run.Clusters = append(run.Clusters, clusters[i])
-		} else {
-			run.Clusters = append(run.Clusters, uint32(i))
+			cluster = clusters[i]
 		}
-		if len(planIDs) == len(runes) {
-			run.PlanIDs = append(run.PlanIDs, planIDs[i])
+		planID := uint16(0)
+		if withPlanIDs {
+			planID = planIDs[i]
 		}
-		run.Codepoints = append(run.Codepoints, r)
+		run.AppendMappedGlyph(gid, r, cluster, planID, withPlanIDs)
 	}
 	return run
 }
@@ -340,8 +349,35 @@ func normalizeRuneStream(
 	engine ShapingEngine,
 	pl *plan,
 ) ([]rune, []uint32) {
+	runes, clusters, _, _, _, _ = normalizeRuneStreamWithScratch(
+		runes,
+		clusters,
+		opts,
+		ctx,
+		engine,
+		pl,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	return runes, clusters
+}
+
+func normalizeRuneStreamWithScratch(
+	runes []rune,
+	clusters []uint32,
+	opts ShapeOptions,
+	ctx SelectionContext,
+	engine ShapingEngine,
+	pl *plan,
+	tmpARunes []rune,
+	tmpAClusters []uint32,
+	tmpBRunes []rune,
+	tmpBClusters []uint32,
+) ([]rune, []uint32, []rune, []uint32, []rune, []uint32) {
 	if len(runes) == 0 {
-		return runes, clusters
+		return runes, clusters, tmpARunes, tmpAClusters, tmpBRunes, tmpBClusters
 	}
 	mode := NormalizationAuto
 	if ep, ok := engine.(ShapingEnginePolicy); ok {
@@ -355,24 +391,45 @@ func normalizeRuneStream(
 		}
 	}
 	if mode == NormalizationNone {
-		return runes, clusters
+		return runes, clusters, tmpARunes, tmpAClusters, tmpBRunes, tmpBClusters
 	}
 
 	if mode == NormalizationDecomposed {
-		runes, clusters = decomposeRuneStream(runes, clusters)
+		runes, clusters = decomposeRuneStreamInto(tmpARunes, tmpAClusters, runes, clusters)
+		tmpARunes, tmpAClusters = runes, clusters
 	}
 
 	composeHook, hasComposeHook := engine.(ShapingEngineComposeHook)
 	if !hasComposeHook && mode != NormalizationComposed {
-		return runes, clusters
+		return runes, clusters, tmpARunes, tmpAClusters, tmpBRunes, tmpBClusters
 	}
 	nctx := newNormalizeContext(opts.Font, ctx, planHasGposMark(pl))
-	return composeRuneStream(runes, clusters, nctx, composeHook, hasComposeHook, mode == NormalizationComposed)
+	runes, clusters = composeRuneStreamInto(
+		tmpBRunes,
+		tmpBClusters,
+		runes,
+		clusters,
+		nctx,
+		composeHook,
+		hasComposeHook,
+		mode == NormalizationComposed,
+	)
+	tmpBRunes, tmpBClusters = runes, clusters
+	return runes, clusters, tmpARunes, tmpAClusters, tmpBRunes, tmpBClusters
 }
 
 func decomposeRuneStream(runes []rune, clusters []uint32) ([]rune, []uint32) {
-	outRunes := make([]rune, 0, len(runes))
-	outClusters := make([]uint32, 0, len(clusters))
+	return decomposeRuneStreamInto(nil, nil, runes, clusters)
+}
+
+func decomposeRuneStreamInto(
+	outRunes []rune,
+	outClusters []uint32,
+	runes []rune,
+	clusters []uint32,
+) ([]rune, []uint32) {
+	outRunes = outRunes[:0]
+	outClusters = outClusters[:0]
 	for i, r := range runes {
 		var cluster uint32
 		if len(clusters) == len(runes) {
@@ -397,11 +454,24 @@ func composeRuneStream(
 	hasHook bool,
 	allowUnicode bool,
 ) ([]rune, []uint32) {
+	return composeRuneStreamInto(nil, nil, runes, clusters, nctx, hook, hasHook, allowUnicode)
+}
+
+func composeRuneStreamInto(
+	outRunes []rune,
+	outClusters []uint32,
+	runes []rune,
+	clusters []uint32,
+	nctx normalizeContext,
+	hook ShapingEngineComposeHook,
+	hasHook bool,
+	allowUnicode bool,
+) ([]rune, []uint32) {
 	if len(runes) <= 1 {
 		return runes, clusters
 	}
-	outRunes := make([]rune, 0, len(runes))
-	outClusters := make([]uint32, 0, len(clusters))
+	outRunes = outRunes[:0]
+	outClusters = outClusters[:0]
 	for i, r := range runes {
 		cluster := uint32(i)
 		if len(clusters) == len(runes) {

@@ -68,7 +68,7 @@ func FontFeatures(otf *ot.Font, script, lang ot.Tag) ([]Feature, []Feature, erro
 			scr = sg.Script(ot.DFLT)
 		}
 		if scr == nil {
-			tracer().Infof("font %s has no feature-links from script %s", otf.F.Fontname, script)
+			tracer().Infof("font has no feature-links from script %s", script)
 			feats[i] = []Feature{}
 			continue
 		}
@@ -81,8 +81,8 @@ func FontFeatures(otf *ot.Font, script, lang ot.Tag) ([]Feature, []Feature, erro
 			lsys = scr.DefaultLangSys()
 		}
 		if lsys == nil {
-			return nil, nil, errFontFormat(fmt.Sprintf("font %s has empty LangSys entry for %s",
-				otf.F.Fontname, script)) // I am not quite sure if this is really illegal
+			return nil, nil, errFontFormat(fmt.Sprintf("font has empty LangSys entry for %s",
+				script)) // I am not quite sure if this is really illegal
 		}
 		featureByPtr := make(map[*ot.Feature]ot.Tag, fg.Len())
 		for tag, cf := range fg.Range() {

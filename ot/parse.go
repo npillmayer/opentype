@@ -118,9 +118,9 @@ func Parse(font []byte, options ...ParseOption) (*Font, error) {
 		ec.addError(T(""), "Header", fmt.Sprintf("font type not supported: %x", h.FontType), SeverityCritical, 0)
 		return nil, errFontFormat(fmt.Sprintf("font type not supported: %x", h.FontType))
 	}
-	otf := &Font{Header: &h, tables: make(map[Tag]Table)}
-	configureWithOptions(otf, options)
 	src := binarySegm(font)
+	otf := &Font{raw: src, Header: &h, tables: make(map[Tag]Table)}
+	configureWithOptions(otf, options)
 	// "The Offset Table is followed immediately by the Table Record entries …
 	// sorted in ascending order by tag", 16 bytes each.
 

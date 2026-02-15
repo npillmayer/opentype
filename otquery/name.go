@@ -23,7 +23,7 @@ func loadNameEntries(otf *ot.Font) []nameEntry {
 	}
 	table := otf.Table(ot.T("name"))
 	if table == nil {
-		tracer().Debugf("no name table found in font %s", otf.F.Fontname)
+		tracer().Debugf("no name table found in font")
 		return nil
 	}
 	b := table.Binary()

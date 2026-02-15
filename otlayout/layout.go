@@ -149,10 +149,7 @@ func getLayoutTables(otf *ot.Font) ([]*ot.LayoutTable, error) {
 	}
 	var table ot.Table
 	var lytt = make([]*ot.LayoutTable, 2)
-	fontname := "<unnamed>"
-	if otf.F != nil && otf.F.Fontname != "" {
-		fontname = otf.F.Fontname
-	}
+	fontname := "<font>"
 	if table = otf.Table(ot.T("GSUB")); table == nil {
 		return nil, errFontFormat(fmt.Sprintf("font %s has no GSUB table", fontname))
 	}

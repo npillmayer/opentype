@@ -28,7 +28,7 @@ func TestCalibriCMap(t *testing.T) {
 	defer teardown()
 	//
 	otf := parseFont(t, "Calibri")
-	t.Logf("Using font %s for test", otf.F.Fontname)
+	t.Logf("Using test font for cmap check")
 	cmap := otf.Table(ot.T("cmap")).Self().AsCMap()
 	r, pos := rune('A'), ot.GlyphIndex(4)
 	glyphID := cmap.GlyphIndexMap.Lookup(r)
@@ -43,7 +43,7 @@ func TestFeatureList(t *testing.T) {
 	defer teardown()
 	//
 	otf := parseFont(t, "Calibri")
-	t.Logf("Using font %s for test", otf.F.Fontname)
+	t.Logf("Using test font for feature list check")
 	// Calibri has no DFLT feature set
 	gsubFeats, gposFeats, err := FontFeatures(otf, ot.T("latn"), 0)
 	if err != nil {
@@ -76,7 +76,7 @@ func TestFeatureCase(t *testing.T) {
 	defer teardown()
 	//
 	otf := parseFont(t, "Calibri")
-	t.Logf("Using font %s for test", otf.F.Fontname)
+	t.Logf("Using test font for feature application check")
 	// Calibri has no DFLT feature set
 	gsubFeats, _, err := FontFeatures(otf, ot.T("latn"), 0)
 	if err != nil || len(gsubFeats) < 2 {
@@ -138,7 +138,7 @@ func TestFeatureCCMPCalibri(t *testing.T) {
 
 	//
 	otf := parseFont(t, "Calibri")
-	t.Logf("Using font %s for test", otf.F.Fontname)
+	t.Logf("Using test font for ccmp feature check")
 	// Calibri has no DFLT feature set
 	gsubFeats, _, err := FontFeatures(otf, ot.T("latn"), 0)
 	if err != nil || len(gsubFeats) < 2 {
@@ -234,13 +234,8 @@ func parseFont(t *testing.T, pattern string) *ot.Font {
 	if sfnt == nil {
 		return nil
 	}
-	otf, err := ot.Parse(sfnt.F.Binary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	otf.F = sfnt.F
 	t.Logf("--- font parsed ---")
-	return otf
+	return sfnt
 }
 
 func loadTestdataFont(t *testing.T, pattern string) *ot.Font {
@@ -248,14 +243,16 @@ func loadTestdataFont(t *testing.T, pattern string) *ot.Font {
 	tracer().SetTraceLevel(tracing.LevelInfo)
 	defer tracer().SetTraceLevel(level)
 	//
-	otf := &ot.Font{}
 	fname := fmt.Sprintf("../testdata/%s.ttf", pattern)
 	f, err := opentype.LoadOpenTypeFont(fname)
 	if err != nil {
 		t.Fatalf("cannot load font: %s", pattern)
 	}
-	otf.F = f
-	t.Logf("loaded font = %s", otf.F.Fontname)
+	otf, err := ot.Parse(f.Binary)
+	if err != nil {
+		t.Fatalf("cannot parse font: %s", pattern)
+	}
+	t.Logf("loaded font = %s", f.Fontname)
 	return otf
 }
 

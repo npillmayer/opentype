@@ -72,7 +72,6 @@ func loadLocalFont(t *testing.T, fontFileName string) *ot.Font {
 	if err != nil {
 		t.Fatalf("cannot decode test font %s: %s", fontFileName, err)
 	}
-	otf.F = f
-	t.Logf("parsed OpenType font = %s", otf.F.Fontname)
+	t.Logf("parsed OpenType font from %s", f.Fontname)
 	return otf
 }

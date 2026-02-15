@@ -318,7 +318,7 @@ func TestParseHeader(t *testing.T) {
 	defer teardown()
 	//
 	f := loadTestdataFont(t, "GentiumPlus-R")
-	otf, err := Parse(f.F.Binary)
+	otf, err := Parse(f.Binary())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestParseGPos(t *testing.T) {
 	defer teardown()
 	//
 	f := loadTestdataFont(t, "Calibri")
-	otf, err := Parse(f.F.Binary)
+	otf, err := Parse(f.Binary())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestParseGSub(t *testing.T) {
 	defer teardown()
 	//
 	f := loadTestdataFont(t, "GentiumPlus-R")
-	otf, err := Parse(f.F.Binary)
+	otf, err := Parse(f.Binary())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -642,7 +642,7 @@ func TestParseKern(t *testing.T) {
 	defer teardown()
 	//
 	f := loadTestdataFont(t, "Calibri")
-	otf, err := Parse(f.F.Binary)
+	otf, err := Parse(f.Binary())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -671,7 +671,7 @@ func TestParseOtherTables(t *testing.T) {
 	defer teardown()
 	//
 	f := loadTestdataFont(t, "Calibri")
-	otf, err := Parse(f.F.Binary)
+	otf, err := Parse(f.Binary())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,7 +863,7 @@ func parseFont(t *testing.T, pattern string) *Font {
 	if otf == nil {
 		return nil
 	}
-	otf, err := Parse(otf.F.Binary)
+	otf, err := Parse(otf.Binary())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -938,7 +938,7 @@ func TestErrorCollection(t *testing.T) {
 
 	// Test with Calibri; non-parsed tables (including kern) should produce warnings.
 	f := loadTestdataFont(t, "Calibri")
-	otf, err := Parse(f.F.Binary)
+	otf, err := Parse(f.Binary())
 	if err != nil {
 		t.Fatal(err)
 	}

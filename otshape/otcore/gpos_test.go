@@ -517,7 +517,6 @@ func loadRootOTFont(t *testing.T, filename string) *ot.Font {
 	if err != nil {
 		t.Fatalf("parse test font %s: %v", path, err)
 	}
-	otf.F = sf
 	return otf
 }
 

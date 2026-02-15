@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	"golang.org/x/image/font"
 	xot "golang.org/x/image/font/opentype"
+	"golang.org/x/image/font/sfnt"
 	"golang.org/x/image/math/fixed"
 )
 
@@ -121,7 +122,9 @@ func displayBuffer(env *BufferTestEnviron, basename string) {
 		size         = float32(190)
 		DPI          = 72
 	)
-	face, err := xot.NewFace(env.otf.F.SFNT, &xot.FaceOptions{
+	sfntFont, err := sfnt.Parse(env.otf.Binary())
+	env.Require().NoError(err, "cannot parse SFNT from OpenType font bytes")
+	face, err := xot.NewFace(sfntFont, &xot.FaceOptions{
 		Size:    190,
 		DPI:     72,
 		Hinting: font.HintingNone,

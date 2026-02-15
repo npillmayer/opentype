@@ -43,7 +43,7 @@ func TestNavigation1(t *testing.T) {
 func loadCalibri(t *testing.T) *Font {
 	//f := loadTestFont(t, "calibri")
 	f := loadTestdataFont(t, "Calibri")
-	otf, err := Parse(f.F.Binary)
+	otf, err := Parse(f.Binary())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,8 +2,6 @@ package ot
 
 import (
 	"fmt"
-
-	"github.com/npillmayer/opentype"
 )
 
 // Font represents the internal structure of an OpenType font.
@@ -12,7 +10,7 @@ import (
 // We only support OpenType fonts with advanced layout, i.e. fonts containing tables
 // GSUB, GPOS, etc.
 type Font struct {
-	F             *opentype.ScalableFont
+	raw           binarySegm
 	Header        *FontHeader
 	tables        map[Tag]Table
 	CMap          *CMapTable    // CMAP table is mandatory
@@ -90,6 +88,15 @@ func (otf *Font) TableTags() []Tag {
 		tags = append(tags, tag)
 	}
 	return tags
+}
+
+// Binary returns the raw bytes of this font.
+// The returned bytes must be treated as read-only by callers.
+func (otf *Font) Binary() []byte {
+	if otf == nil {
+		return nil
+	}
+	return otf.raw
 }
 
 // HorizontalHeader returns the parsed hhea table, if present.

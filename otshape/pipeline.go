@@ -18,7 +18,7 @@ type RuneSource interface {
 // GlyphRecord is one shaped output glyph in array-of-struct form.
 type GlyphRecord struct {
 	GID         ot.GlyphIndex    // GID is the shaped glyph ID in the selected font.
-	Pos         otlayout.PosItem // Pos holds positioning and attachment data.
+	Pos         otlayout.PosItem // Pos holds final output positioning and attachment data.
 	Cluster     uint32           // Cluster is the input cluster ID associated with this glyph.
 	Mask        uint32           // Mask is the final feature mask used during lookup filtering.
 	UnsafeFlags uint16           // UnsafeFlags carries break/concat safety hints for boundaries.

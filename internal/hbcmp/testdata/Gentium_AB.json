@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "context": {
+    "font": "GentiumPlus-R.ttf",
+    "script": "Latn",
+    "language": "en",
+    "dir": "ltr",
+    "features": []
+  },
+  "input": [65, 66],
+  "output": [
+    {
+      "g": 36,
+      "cl": 0,
+      "dx": 0,
+      "dy": 0,
+      "ax": 1219,
+      "ay": 0
+    },
+    {
+      "g": 37,
+      "cl": 1,
+      "dx": 0,
+      "dy": 0,
+      "ax": 1126,
+      "ay": 0
+    }
+  ]
+}

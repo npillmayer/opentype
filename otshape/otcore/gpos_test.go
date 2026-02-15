@@ -36,6 +36,7 @@ func TestShapeAppliesGPOSSingleAdjust(t *testing.T) {
 		t.Skip("no cmap-backed glyph for single-position lookup coverage")
 	}
 	want := valueDelta(payload.Values[covInx], payload.ValueFormat)
+	want.XAdvance += int32(otquery.GlyphMetrics(font, gid).Advance)
 
 	got := shapeRunes(t, font, []rune{cp}, []otshape.FeatureRange{
 		{Feature: ot.T("mark"), On: true},
@@ -72,6 +73,8 @@ func TestShapeAppliesGPOSPairAdjust(t *testing.T) {
 	}
 	want1 := valueDelta(rec.Value1, payload.ValueFormat1)
 	want2 := valueDelta(rec.Value2, payload.ValueFormat2)
+	want1.XAdvance += int32(otquery.GlyphMetrics(font, g1).Advance)
+	want2.XAdvance += int32(otquery.GlyphMetrics(font, g2).Advance)
 
 	got := shapeRunes(t, font, []rune{cp1, cp2}, []otshape.FeatureRange{
 		{Feature: ot.T("kern"), On: true},

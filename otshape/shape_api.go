@@ -143,7 +143,7 @@ func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts Bu
 			}
 			continue
 		}
-		if err := writeRunBufferPrefixToSink(run, sink, bufOpts.FlushBoundary, cut.glyphCut); err != nil {
+		if err := writeRunBufferPrefixToSinkWithFont(run, sink, params.Font, bufOpts.FlushBoundary, cut.glyphCut); err != nil {
 			return err
 		}
 		ing.compact(cut.rawFlush)
@@ -188,6 +188,10 @@ func shapeMappedRun(run *runBuffer, engine ShapingEngine, pl *plan) error {
 }
 
 func writeRunBufferPrefixToSink(run *runBuffer, sink GlyphSink, boundary FlushBoundary, end int) error {
+	return writeRunBufferPrefixToSinkWithFont(run, sink, nil, boundary, end)
+}
+
+func writeRunBufferPrefixToSinkWithFont(run *runBuffer, sink GlyphSink, font *ot.Font, boundary FlushBoundary, end int) error {
 	if run == nil {
 		return nil
 	}
@@ -203,7 +207,7 @@ func writeRunBufferPrefixToSink(run *runBuffer, sink GlyphSink, boundary FlushBo
 	}
 	switch boundary {
 	case FlushOnRunBoundary:
-		return writeRunBufferRange(run, sink, 0, end)
+		return writeRunBufferRangeWithFont(run, sink, font, 0, end)
 	case FlushOnClusterBoundary:
 		for _, span := range clusterSpans(run) {
 			if span.start >= end {
@@ -212,7 +216,7 @@ func writeRunBufferPrefixToSink(run *runBuffer, sink GlyphSink, boundary FlushBo
 			if span.end > end {
 				return errShaper("streaming prefix cut is not at a cluster boundary")
 			}
-			if err := writeRunBufferRange(run, sink, span.start, span.end); err != nil {
+			if err := writeRunBufferRangeWithFont(run, sink, font, span.start, span.end); err != nil {
 				return err
 			}
 		}
@@ -220,7 +224,7 @@ func writeRunBufferPrefixToSink(run *runBuffer, sink GlyphSink, boundary FlushBo
 	case FlushExplicit:
 		return ErrFlushExplicitUnsupported
 	default:
-		return writeRunBufferRange(run, sink, 0, end)
+		return writeRunBufferRangeWithFont(run, sink, font, 0, end)
 	}
 }
 
@@ -497,12 +501,16 @@ func planHasGposMark(pl *plan) bool {
 }
 
 func writeRunBufferToSink(run *runBuffer, sink GlyphSink, boundary FlushBoundary) error {
+	return writeRunBufferToSinkWithFont(run, sink, nil, boundary)
+}
+
+func writeRunBufferToSinkWithFont(run *runBuffer, sink GlyphSink, font *ot.Font, boundary FlushBoundary) error {
 	switch boundary {
 	case FlushOnRunBoundary:
-		return writeRunBufferRange(run, sink, 0, run.Len())
+		return writeRunBufferRangeWithFont(run, sink, font, 0, run.Len())
 	case FlushOnClusterBoundary:
 		for _, span := range clusterSpans(run) {
-			if err := writeRunBufferRange(run, sink, span.start, span.end); err != nil {
+			if err := writeRunBufferRangeWithFont(run, sink, font, span.start, span.end); err != nil {
 				return err
 			}
 		}
@@ -510,7 +518,7 @@ func writeRunBufferToSink(run *runBuffer, sink GlyphSink, boundary FlushBoundary
 	case FlushExplicit:
 		return ErrFlushExplicitUnsupported
 	default:
-		return writeRunBufferRange(run, sink, 0, run.Len())
+		return writeRunBufferRangeWithFont(run, sink, font, 0, run.Len())
 	}
 }
 
@@ -543,6 +551,10 @@ func clusterSpans(run *runBuffer) []runSpan {
 }
 
 func writeRunBufferRange(run *runBuffer, sink GlyphSink, start int, end int) error {
+	return writeRunBufferRangeWithFont(run, sink, nil, start, end)
+}
+
+func writeRunBufferRangeWithFont(run *runBuffer, sink GlyphSink, font *ot.Font, start int, end int) error {
 	n := run.Len()
 	if n == 0 || start >= end {
 		return nil
@@ -558,22 +570,38 @@ func writeRunBufferRange(run *runBuffer, sink GlyphSink, start int, end int) err
 	hasMasks := len(run.Masks) == n
 	hasUnsafe := len(run.UnsafeFlags) == n
 	for i := start; i < end; i++ {
-		record := GlyphRecord{GID: run.Glyphs[i]}
-		if hasPos {
-			record.Pos = run.Pos[i]
-		}
-		if hasClusters {
-			record.Cluster = run.Clusters[i]
-		}
-		if hasMasks {
-			record.Mask = run.Masks[i]
-		}
-		if hasUnsafe {
-			record.UnsafeFlags = run.UnsafeFlags[i]
-		}
+		record := materializeGlyphRecord(run, i, font, hasPos, hasClusters, hasMasks, hasUnsafe)
 		if err := sink.WriteGlyph(record); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func materializeGlyphRecord(
+	run *runBuffer,
+	inx int,
+	font *ot.Font,
+	hasPos bool,
+	hasClusters bool,
+	hasMasks bool,
+	hasUnsafe bool,
+) GlyphRecord {
+	record := GlyphRecord{GID: run.Glyphs[inx]}
+	if hasPos {
+		record.Pos = run.Pos[inx]
+	}
+	if font != nil {
+		record.Pos.XAdvance += int32(otquery.GlyphMetrics(font, record.GID).Advance)
+	}
+	if hasClusters {
+		record.Cluster = run.Clusters[inx]
+	}
+	if hasMasks {
+		record.Mask = run.Masks[inx]
+	}
+	if hasUnsafe {
+		record.UnsafeFlags = run.UnsafeFlags[inx]
+	}
+	return record
 }

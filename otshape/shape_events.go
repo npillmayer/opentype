@@ -137,7 +137,7 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 			}
 			continue
 		}
-		if err := writeRunBufferPrefixToSink(run, sink, bufOpts.FlushBoundary, cut.glyphCut); err != nil {
+		if err := writeRunBufferPrefixToSinkWithFont(run, sink, params.Font, bufOpts.FlushBoundary, cut.glyphCut); err != nil {
 			return err
 		}
 		ing.compact(cut.rawFlush)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otlayout"
+	"github.com/npillmayer/opentype/otquery"
 )
 
 type collectSink struct {
@@ -91,5 +92,31 @@ func TestShapeFlushExplicitUnsupported(t *testing.T) {
 	err := shaper.Shape(params, eventSource, eventSink, opts)
 	if !errors.Is(err, ErrFlushExplicitUnsupported) {
 		t.Fatalf("shape error = %v, want %v", err, ErrFlushExplicitUnsupported)
+	}
+}
+
+func TestWriteRunBufferRangeWithFontAddsNominalAdvanceAndDelta(t *testing.T) {
+	font := loadMiniOTFont(t, "gpos3_font1.otf")
+	gid := otquery.GlyphIndex(font, 0x12)
+	if gid == NOTDEF {
+		t.Fatalf("mini font has no glyph for U+0012")
+	}
+	run := newRunBuffer(0)
+	run.Glyphs = append(run.Glyphs, gid)
+	run.Pos = otlayout.NewPosBuffer(1)
+	run.Pos[0].XAdvance = 7
+
+	sink := &collectSink{}
+	if err := writeRunBufferRangeWithFont(run, sink, font, 0, 1); err != nil {
+		t.Fatalf("write with font failed: %v", err)
+	}
+	if len(sink.glyphs) != 1 {
+		t.Fatalf("glyph count=%d, want 1", len(sink.glyphs))
+	}
+	nominal := int32(otquery.GlyphMetrics(font, gid).Advance)
+	want := nominal + 7
+	if sink.glyphs[0].Pos.XAdvance != want {
+		t.Fatalf("xAdvance=%d, want %d (nominal %d + delta 7)",
+			sink.glyphs[0].Pos.XAdvance, want, nominal)
 	}
 }

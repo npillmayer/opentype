@@ -199,3 +199,25 @@ func TestShapePlanValidateHookSuccessContinues(t *testing.T) {
 		t.Fatalf("glyph count = %d, want 1", len(sink.glyphs))
 	}
 }
+
+func TestShapeOutputIncludesNominalAdvance(t *testing.T) {
+	font := loadMiniOTFont(t, "gpos3_font1.otf")
+	params := standardParams(font)
+	source := strings.NewReader(string([]rune{0x12}))
+	sink := &hookProbeSink{}
+	engine := &hookProbeShaper{}
+	shaper := NewShaper([]ShapingEngine{engine}...)
+
+	err := shaper.Shape(params, source, sink, singleBufOpts)
+	if err != nil {
+		t.Fatalf("shape failed: %v", err)
+	}
+	if len(sink.glyphs) != 1 {
+		t.Fatalf("glyph count = %d, want 1", len(sink.glyphs))
+	}
+	gid := otquery.GlyphIndex(font, 0x12)
+	wantAdv := int32(otquery.GlyphMetrics(font, gid).Advance)
+	if sink.glyphs[0].Pos.XAdvance != wantAdv {
+		t.Fatalf("xAdvance = %d, want %d", sink.glyphs[0].Pos.XAdvance, wantAdv)
+	}
+}

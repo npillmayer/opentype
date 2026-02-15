@@ -8,8 +8,6 @@ import (
 
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otlayout"
-	"golang.org/x/text/language"
-	"golang.org/x/text/unicode/bidi"
 )
 
 type collectSink struct {
@@ -81,22 +79,16 @@ func TestWriteRunBufferToSinkFlushExplicitUnsupported(t *testing.T) {
 
 func TestShapeFlushExplicitUnsupported(t *testing.T) {
 	font := loadMiniOTFont(t, "gsub3_1_simple_f1.otf")
-	err := Shape(ShapeRequest{
-		Options: ShapeOptions{
-			Params: Params{
-				Font:      font,
-				Direction: bidi.LeftToRight,
-				Script:    language.MustParseScript("Latn"),
-				Language:  language.English,
-				Features: []FeatureRange{
-					{Feature: ot.T("test"), On: true},
-				},
-			},
-			FlushBoundary: FlushExplicit,
-		},
-		Source: strings.NewReader(string(rune(0x12))),
-		Sink:   &collectSink{},
-	})
+	params := standardParams(font)
+	params.Features = []FeatureRange{
+		{Feature: ot.T("test"), On: true},
+	}
+	opts := singleBufOpts
+	opts.FlushBoundary = FlushExplicit
+	eventSource := strings.NewReader(string(rune(0x12)))
+	eventSink := &collectSink{}
+	shaper := NewShaper([]ShapingEngine{&hookProbeShaper{}}...)
+	err := shaper.Shape(params, eventSource, eventSink, opts)
 	if !errors.Is(err, ErrFlushExplicitUnsupported) {
 		t.Fatalf("shape error = %v, want %v", err, ErrFlushExplicitUnsupported)
 	}

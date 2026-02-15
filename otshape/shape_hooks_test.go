@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/npillmayer/opentype/otquery"
-	"golang.org/x/text/language"
-	"golang.org/x/text/unicode/bidi"
 )
 
 type hookProbeSink struct {
@@ -67,23 +65,14 @@ func (s *hookProbeShaper) ReorderMarks(run RunContext, start, end int) {
 
 func TestShapeComposeHookCanCollapseRunePair(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font1.otf")
-	engine := &hookProbeShaper{useCompose: true}
+	params := standardParams(font)
+	source := strings.NewReader(string([]rune{0x12, 0x13}))
 	sink := &hookProbeSink{}
+	engine := &hookProbeShaper{useCompose: true}
+	shaper := NewShaper([]ShapingEngine{engine}...)
+	bufOpts := BufferOptions{FlushBoundary: FlushOnRunBoundary}
 
-	err := Shape(ShapeRequest{
-		Options: ShapeOptions{
-			Params: Params{
-				Font:      font,
-				Direction: bidi.LeftToRight,
-				Script:    language.MustParseScript("Latn"),
-				Language:  language.English,
-			},
-			FlushBoundary: FlushOnRunBoundary,
-		},
-		Source:  strings.NewReader(string([]rune{0x12, 0x13})),
-		Sink:    sink,
-		Shapers: []ShapingEngine{engine},
-	})
+	err := shaper.Shape(params, source, sink, bufOpts)
 	if err != nil {
 		t.Fatalf("shape failed: %v", err)
 	}
@@ -101,23 +90,14 @@ func TestShapeComposeHookCanCollapseRunePair(t *testing.T) {
 
 func TestShapeReorderHookCanSwapRunItems(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font1.otf")
-	engine := &hookProbeShaper{useReorder: true}
+	params := standardParams(font)
+	source := strings.NewReader(string([]rune{0x12, 0x13}))
 	sink := &hookProbeSink{}
+	engine := &hookProbeShaper{useReorder: true}
+	shaper := NewShaper([]ShapingEngine{engine}...)
+	bufOpts := BufferOptions{FlushBoundary: FlushOnRunBoundary}
 
-	err := Shape(ShapeRequest{
-		Options: ShapeOptions{
-			Params: Params{
-				Font:      font,
-				Direction: bidi.LeftToRight,
-				Script:    language.MustParseScript("Latn"),
-				Language:  language.English,
-			},
-			FlushBoundary: FlushOnRunBoundary,
-		},
-		Source:  strings.NewReader(string([]rune{0x12, 0x13})),
-		Sink:    sink,
-		Shapers: []ShapingEngine{engine},
-	})
+	err := shaper.Shape(params, source, sink, bufOpts)
 	if err != nil {
 		t.Fatalf("shape failed: %v", err)
 	}
@@ -174,27 +154,19 @@ func (s *planValidateProbeShaper) ValidatePlan(PlanContext) error {
 	return s.validateErr
 }
 
+var _ ShapingEngine = (*planValidateProbeShaper)(nil)
+
 func TestShapePlanValidateHookErrorStopsPipeline(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font1.otf")
+	params := standardParams(font)
 	engine := &planValidateProbeShaper{
 		validateErr: errors.New("plan validation failed"),
 	}
+	source := strings.NewReader(string([]rune{0x12}))
 	sink := &hookProbeSink{}
+	shaper := NewShaper([]ShapingEngine{engine}...)
 
-	err := Shape(ShapeRequest{
-		Options: ShapeOptions{
-			Params: Params{
-				Font:      font,
-				Direction: bidi.LeftToRight,
-				Script:    language.MustParseScript("Latn"),
-				Language:  language.English,
-			},
-			FlushBoundary: FlushOnRunBoundary,
-		},
-		Source:  strings.NewReader(string([]rune{0x12})),
-		Sink:    sink,
-		Shapers: []ShapingEngine{engine},
-	})
+	err := shaper.Shape(params, source, sink, singleBufOpts)
 	if err == nil || err.Error() != "plan validation failed" {
 		t.Fatalf("shape error = %v, want plan validation failure", err)
 	}
@@ -209,23 +181,13 @@ func TestShapePlanValidateHookErrorStopsPipeline(t *testing.T) {
 
 func TestShapePlanValidateHookSuccessContinues(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font1.otf")
+	params := standardParams(font)
 	engine := &planValidateProbeShaper{}
+	source := strings.NewReader(string([]rune{0x12}))
 	sink := &hookProbeSink{}
+	shaper := NewShaper([]ShapingEngine{engine}...)
 
-	err := Shape(ShapeRequest{
-		Options: ShapeOptions{
-			Params: Params{
-				Font:      font,
-				Direction: bidi.LeftToRight,
-				Script:    language.MustParseScript("Latn"),
-				Language:  language.English,
-			},
-			FlushBoundary: FlushOnRunBoundary,
-		},
-		Source:  strings.NewReader(string([]rune{0x12})),
-		Sink:    sink,
-		Shapers: []ShapingEngine{engine},
-	})
+	err := shaper.Shape(params, source, sink, singleBufOpts)
 	if err != nil {
 		t.Fatalf("shape failed: %v", err)
 	}

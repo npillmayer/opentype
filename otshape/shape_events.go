@@ -15,38 +15,48 @@ var (
 )
 
 // ShapeEventsRequest bundles all inputs required by [ShapeEvents].
+//
+// Deprecated: use [ShapeEvents] or [Shaper.ShapeEvents] directly with
+// explicit arguments (`Params`, `InputEventSource`, `GlyphSink`, `BufferOptions`).
 type ShapeEventsRequest struct {
-	Options ShapeOptions // Options configures script/language/font and streaming behavior.
+	Options BufferOptions // Options configures buffering/flush behavior.
 	Source  InputEventSource
 	Sink    GlyphSink
 	Shapers []ShapingEngine
 }
 
-// ShapeEvents shapes req.Source into req.Sink using req.Options and req.Shapers.
+// ShapeEvents shapes src into sink using params.
 //
 // ShapeEvents is the event-stream counterpart of [Shape]. It consumes explicit
 // rune/push/pop events from [InputEventSource], compiles nested plans on demand,
 // and shapes buffered spans with explicit plan boundaries.
-func ShapeEvents(req ShapeEventsRequest) error {
-	s := NewShaper(req.Shapers...)
-	return s.ShapeEvents(req.Options, req.Source, req.Sink)
+func ShapeEvents(params Params, src InputEventSource, sink GlyphSink, engines ...ShapingEngine) error {
+	s := NewShaper(engines...)
+	bufOpts := BufferOptions{
+		FlushBoundary: FlushOnRunBoundary,
+		HighWatermark: defaultHighWatermark,
+		LowWatermark:  defaultLowWatermark,
+		MaxBuffer:     defaultMaxBuffer,
+	}
+	return s.ShapeEvents(params, src, sink, bufOpts)
 }
 
-// ShapeEvents shapes an [InputEventSource] into sink according to opts.
+// ShapeEvents shapes src into sink according to params and bufOpts.
 //
 // Parameters:
-//   - opts selects font, segment metadata, global feature defaults and streaming thresholds.
+//   - params selects font, segment metadata and global feature defaults.
 //   - src emits rune and push/pop events incrementally until EOF.
 //   - sink receives shaped glyph records in output order.
+//   - bufOpts selects flush behavior and streaming thresholds.
 //
 // Returns nil on success, or an error for invalid inputs, source/sink failures,
 // invalid event sequences, plan compilation failures, or pipeline failures.
 //
-// In ShapeEvents, opts.Features is restricted to global defaults only:
+// In ShapeEvents, params.Features is restricted to global defaults only:
 // each FeatureRange must have Start==0 and End==0. Feature scoping is performed
 // exclusively via InputEventPushFeatures/InputEventPopFeatures events.
-func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink GlyphSink) error {
-	if opts.Font == nil {
+func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink, bufOpts BufferOptions) error {
+	if params.Font == nil {
 		return ErrNilFont
 	}
 	if src == nil {
@@ -55,26 +65,26 @@ func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink Glyph
 	if sink == nil {
 		return ErrNilGlyphSink
 	}
-	if opts.FlushBoundary == FlushExplicit {
+	if bufOpts.FlushBoundary == FlushExplicit {
 		return ErrFlushExplicitUnsupported
 	}
-	if err := validateEventModeFeatures(opts.Features); err != nil {
+	if err := validateEventModeFeatures(params.Features); err != nil {
 		return err
 	}
 
-	ctx := selectionContextFromOptions(opts)
-	engine, err := selectShapingEngine(s.shapers, ctx)
+	ctx := selectionContextFromParams(params)
+	engine, err := selectShapingEngine(s.Engines, ctx)
 	if err != nil {
 		return err
 	}
-	compiler := newPlanCompiler(opts, ctx, engine)
+	compiler := newPlanCompiler(params, ctx, engine)
 
-	rootFeatures := newFeatureSet(opts.Features).asGlobalFeatureRanges()
+	rootFeatures := newFeatureSet(params.Features).asGlobalFeatureRanges()
 	rootPlan, err := compiler.compile(rootFeatures)
 	if err != nil {
 		return err
 	}
-	cfg, err := resolveStreamingConfig(opts)
+	cfg, err := resolveStreamingConfig(bufOpts)
 	if err != nil {
 		return err
 	}
@@ -100,7 +110,7 @@ func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink Glyph
 			continue
 		}
 
-		run, err := shapeEventCarry(ws, st, opts, ctx, engine, plansByID)
+		run, err := shapeEventCarry(ws, st, params, ctx, engine, plansByID)
 		if err != nil {
 			return err
 		}
@@ -127,7 +137,7 @@ func (s *Shaper) ShapeEvents(opts ShapeOptions, src InputEventSource, sink Glyph
 			}
 			continue
 		}
-		if err := writeRunBufferPrefixToSink(run, sink, opts.FlushBoundary, cut.glyphCut); err != nil {
+		if err := writeRunBufferPrefixToSink(run, sink, bufOpts.FlushBoundary, cut.glyphCut); err != nil {
 			return err
 		}
 		ing.compact(cut.rawFlush)
@@ -217,7 +227,7 @@ func fillEventsUntilBufferLimit(
 func shapeEventCarry(
 	ws *shapeWorkspace,
 	st *streamingState,
-	opts ShapeOptions,
+	params Params,
 	ctx SelectionContext,
 	engine ShapingEngine,
 	plansByID map[uint16]*plan,
@@ -246,13 +256,13 @@ func shapeEventCarry(
 		}
 		segRunes := runes[start:end]
 		segClusters := clusters[start:end]
-		segRunes, segClusters = ws.normalize(segRunes, segClusters, opts, ctx, engine, pl)
+		segRunes, segClusters = ws.normalize(segRunes, segClusters, params.Font, ctx, engine, pl)
 		if len(segRunes) == 0 {
 			start = end
 			continue
 		}
 		segPlanIDs := ws.spanPlanIDsFor(pid, len(segRunes))
-		segRun := ws.mapSegment(segRunes, segClusters, segPlanIDs, opts.Font)
+		segRun := ws.mapSegment(segRunes, segClusters, segPlanIDs, params.Font)
 		if err := shapeMappedRun(segRun, engine, pl); err != nil {
 			return nil, err
 		}

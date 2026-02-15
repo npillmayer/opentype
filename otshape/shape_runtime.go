@@ -7,25 +7,25 @@ type streamIngestor struct {
 }
 
 type planCompiler struct {
-	opts   ShapeOptions
+	params Params
 	ctx    SelectionContext
 	engine ShapingEngine
 }
 
-func newPlanCompiler(opts ShapeOptions, ctx SelectionContext, engine ShapingEngine) planCompiler {
+func newPlanCompiler(params Params, ctx SelectionContext, engine ShapingEngine) planCompiler {
 	return planCompiler{
-		opts:   opts,
+		params: params,
 		ctx:    ctx,
 		engine: engine,
 	}
 }
 
 func (pc planCompiler) compile(features []FeatureRange) (*plan, error) {
-	return compileShapePlanWithFeatures(pc.opts, pc.ctx, pc.engine, features)
+	return compileShapePlanWithFeatures(pc.params, pc.ctx, pc.engine, features)
 }
 
 func (pc planCompiler) compileDefault() (*plan, error) {
-	return pc.compile(pc.opts.Features)
+	return pc.compile(pc.params.Features)
 }
 
 func newStreamIngestor(cfg streamingConfig) *streamIngestor {
@@ -152,7 +152,7 @@ func (ws *shapeWorkspace) spanPlanIDsFor(pid uint16, n int) []uint16 {
 func (ws *shapeWorkspace) normalize(
 	runes []rune,
 	clusters []uint32,
-	opts ShapeOptions,
+	font *ot.Font,
 	ctx SelectionContext,
 	engine ShapingEngine,
 	pl *plan,
@@ -161,7 +161,7 @@ func (ws *shapeWorkspace) normalize(
 	r, c, aR, aC, bR, bC := normalizeRuneStreamWithScratch(
 		runes,
 		clusters,
-		opts,
+		font,
 		ctx,
 		engine,
 		pl,

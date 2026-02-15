@@ -44,25 +44,24 @@ func shapeHebrewWithConfig(
 	max int,
 ) []otshape.GlyphRecord {
 	t.Helper()
+	source := strings.NewReader(string(runes))
 	sink := &glyphCollector{}
-	req := otshape.ShapeRequest{
-		Options: otshape.ShapeOptions{
-			Params: otshape.Params{
-				Font:      font,
-				Direction: bidi.RightToLeft,
-				Script:    language.MustParseScript("Hebr"),
-				Language:  language.Hebrew,
-			},
-			FlushBoundary: boundary,
-			HighWatermark: high,
-			LowWatermark:  low,
-			MaxBuffer:     max,
-		},
-		Source:  strings.NewReader(string(runes)),
-		Sink:    sink,
-		Shapers: []otshape.ShapingEngine{othebrew.New()},
+	params := otshape.Params{
+		Font:      font,
+		Direction: bidi.RightToLeft,
+		Script:    language.MustParseScript("Hebr"),
+		Language:  language.Hebrew,
 	}
-	if err := otshape.Shape(req); err != nil {
+	options := otshape.BufferOptions{
+		FlushBoundary: boundary,
+		HighWatermark: high,
+		LowWatermark:  low,
+		MaxBuffer:     max,
+	}
+	engines := []otshape.ShapingEngine{othebrew.New()}
+	shaper := otshape.NewShaper(engines...)
+	err := shaper.Shape(params, source, sink, options)
+	if err != nil {
 		t.Fatalf("shape failed: %v", err)
 	}
 	return sink.glyphs

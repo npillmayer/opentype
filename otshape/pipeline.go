@@ -9,6 +9,8 @@ import (
 //
 // ReadRune returns the next input rune, the rune's byte size in the original
 // encoded stream, and an error. A source must return io.EOF to terminate input.
+//
+// Clients may provide a bufio.Reader, as it satisfies the RuneSource interface.
 type RuneSource interface {
 	ReadRune() (r rune, size int, err error)
 }
@@ -30,11 +32,6 @@ type GlyphSink interface {
 	WriteGlyph(g GlyphRecord) error
 }
 
-// GlyphsSink is a compatibility sink shape matching earlier API notes.
-type GlyphsSink interface {
-	WriteGlyphPos(gid ot.GlyphIndex, pos otlayout.PosItem, cluster int) error
-}
-
 // FlushBoundary controls when shaped glyphs are emitted to the sink.
 type FlushBoundary uint8
 
@@ -48,12 +45,11 @@ const (
 	FlushExplicit
 )
 
-// ShapeOptions configures a shaping request.
+// BufferOptions configures a shaping request.
 //
-// Embedded [Params] describes what to shape; watermark values tune when buffered
-// input is shaped and flushed. Zero watermark values use internal defaults.
-type ShapeOptions struct {
-	Params
+// [Params] describes what to shape. BufferOptions controls when buffered input
+// is shaped and flushed. Zero watermark values use internal defaults.
+type BufferOptions struct {
 	FlushBoundary FlushBoundary
 	// HighWatermark is the preferred max fill level before shaping starts.
 	// If zero, an internal default is used.

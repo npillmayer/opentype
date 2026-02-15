@@ -42,26 +42,24 @@ func shapeCoreWithConfig(
 	max int,
 ) []otshape.GlyphRecord {
 	t.Helper()
+	source := strings.NewReader(string(runes))
 	sink := &glyphCollector{}
-	req := otshape.ShapeRequest{
-		Options: otshape.ShapeOptions{
-			Params: otshape.Params{
-				Font:      font,
-				Direction: bidi.LeftToRight,
-				Script:    language.MustParseScript("Latn"),
-				Language:  language.English,
-				Features:  features,
-			},
-			FlushBoundary: boundary,
-			HighWatermark: high,
-			LowWatermark:  low,
-			MaxBuffer:     max,
-		},
-		Source:  strings.NewReader(string(runes)),
-		Sink:    sink,
-		Shapers: []otshape.ShapingEngine{otcore.New()},
+	params := otshape.Params{
+		Font:      font,
+		Direction: bidi.LeftToRight,
+		Script:    language.MustParseScript("Latn"),
+		Language:  language.English,
+		Features:  features,
 	}
-	if err := otshape.Shape(req); err != nil {
+	options := otshape.BufferOptions{
+		FlushBoundary: boundary,
+		HighWatermark: high,
+		LowWatermark:  low,
+		MaxBuffer:     max,
+	}
+	shaper := otshape.NewShaper([]otshape.ShapingEngine{otcore.New()}...)
+	err := shaper.Shape(params, source, sink, options)
+	if err != nil {
 		t.Fatalf("shape failed: %v", err)
 	}
 	return sink.glyphs

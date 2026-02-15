@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	defaultHighWatermark = 256
-	defaultLowWatermark  = 128
+	defaultHighWatermark = 3500
+	defaultLowWatermark  = 1024
 	defaultMaxBuffer     = 4096
 )
 
@@ -28,7 +28,7 @@ func (cfg streamingConfig) valid() bool {
 	return cfg.highWatermark > 0 && cfg.lowWatermark >= 0 && cfg.lowWatermark <= cfg.highWatermark && cfg.maxBuffer >= cfg.highWatermark
 }
 
-func resolveStreamingConfig(opts ShapeOptions) (streamingConfig, error) {
+func resolveStreamingConfig(opts BufferOptions) (streamingConfig, error) {
 	if opts.HighWatermark < 0 || opts.LowWatermark < 0 || opts.MaxBuffer < 0 {
 		return streamingConfig{}, fmt.Errorf("otshape: streaming watermarks must be >= 0")
 	}
@@ -169,6 +169,19 @@ func findFlushCut(run *runBuffer, st *streamingState) flushDecision {
 	if low > len(st.rawRunes) {
 		low = len(st.rawRunes)
 	}
+	if run.Len() != len(st.rawRunes) {
+		// Length-changing transformations (compose/ligature expansion/deletion) do
+		// not preserve enough provenance for safe partial raw compaction.
+		// Defer partial flushes and rely on EOF/maxBuffer full flush instead.
+		if len(st.rawRunes) >= st.cfg.maxBuffer {
+			return flushDecision{
+				glyphCut: run.Len(),
+				rawFlush: len(st.rawRunes),
+				ready:    true,
+			}
+		}
+		return flushDecision{}
+	}
 	rawStart := st.rawClusters[0]
 	for _, span := range clusterSpans(run) {
 		if !isBreakSafeCut(run, span.end) {
@@ -226,15 +239,17 @@ func rawFlushForGlyphPrefix(run *runBuffer, glyphCut int, rawStart uint32, rawLe
 	next := rawStart
 	for i := 0; i < glyphCut; i++ {
 		cl := run.Clusters[i]
-		if cl < next {
-			continue
+		if cl != next {
+			// Partial raw compaction is only safe for strict 1:1 cluster coverage.
+			// Any repeat/decrease/gap can hide source runes consumed by collapsed
+			// or merged clusters, which would duplicate output on the next cycle.
+			// In that case we defer progress until EOF or maxBuffer force-flush.
+			return 0, false
 		}
-		if cl == next {
-			next++
-			continue
+		next++
+		if next-rawStart > uint32(rawLen) {
+			return 0, false
 		}
-		// Gap in raw cluster coverage: cannot safely compact partially.
-		return 0, false
 	}
 	rawFlush := int(next - rawStart)
 	if rawFlush < 0 || rawFlush > rawLen {

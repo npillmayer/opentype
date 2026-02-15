@@ -37,6 +37,7 @@ const (
 // FeatureFlags guide feature resolution and lookup behavior in plan compilation.
 type FeatureFlags uint16
 
+// FeatureNone applies no special feature-planning behavior.
 const FeatureNone FeatureFlags = 0
 
 const (
@@ -128,6 +129,7 @@ type PauseContext interface {
 // PauseHook may mutate run data between GSUB stages.
 type PauseHook func(ctx PauseContext) error
 
+// ShaperConfidence scores how well a shaping engine matches a segment.
 type ShaperConfidence int
 
 const (

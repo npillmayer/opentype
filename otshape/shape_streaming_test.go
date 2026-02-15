@@ -9,7 +9,7 @@ import (
 )
 
 func TestResolveStreamingConfigDefaults(t *testing.T) {
-	cfg, err := resolveStreamingConfig(ShapeOptions{})
+	cfg, err := resolveStreamingConfig(BufferOptions{})
 	if err != nil {
 		t.Fatalf("resolveStreamingConfig failed: %v", err)
 	}
@@ -19,7 +19,7 @@ func TestResolveStreamingConfigDefaults(t *testing.T) {
 }
 
 func TestResolveStreamingConfigOverrides(t *testing.T) {
-	cfg, err := resolveStreamingConfig(ShapeOptions{
+	cfg, err := resolveStreamingConfig(BufferOptions{
 		HighWatermark: 300,
 		LowWatermark:  150,
 		MaxBuffer:     600,
@@ -33,15 +33,15 @@ func TestResolveStreamingConfigOverrides(t *testing.T) {
 }
 
 func TestResolveStreamingConfigInvalid(t *testing.T) {
-	_, err := resolveStreamingConfig(ShapeOptions{HighWatermark: 64, LowWatermark: 96})
+	_, err := resolveStreamingConfig(BufferOptions{HighWatermark: 64, LowWatermark: 96})
 	if err == nil {
 		t.Fatalf("expected error for low>high")
 	}
-	_, err = resolveStreamingConfig(ShapeOptions{HighWatermark: 64, MaxBuffer: 32})
+	_, err = resolveStreamingConfig(BufferOptions{HighWatermark: 64, MaxBuffer: 32})
 	if err == nil {
 		t.Fatalf("expected error for max<high")
 	}
-	_, err = resolveStreamingConfig(ShapeOptions{HighWatermark: -1})
+	_, err = resolveStreamingConfig(BufferOptions{HighWatermark: -1})
 	if err == nil {
 		t.Fatalf("expected error for negative watermark")
 	}
@@ -157,14 +157,14 @@ func TestCompactCarryDropsPrefix(t *testing.T) {
 func TestRawFlushForGlyphPrefixContiguousCoverage(t *testing.T) {
 	run := newRunBuffer(0)
 	run.Glyphs = append(run.Glyphs, 10, 11, 12, 13)
-	run.Clusters = []uint32{10, 10, 11, 12}
+	run.Clusters = []uint32{10, 11, 12, 13}
 
 	flush, ok := rawFlushForGlyphPrefix(run, 3, 10, 4)
 	if !ok {
 		t.Fatalf("expected flush mapping to succeed")
 	}
-	if flush != 2 {
-		t.Fatalf("raw flush=%d, want 2", flush)
+	if flush != 3 {
+		t.Fatalf("raw flush=%d, want 3", flush)
 	}
 }
 
@@ -179,6 +179,17 @@ func TestRawFlushForGlyphPrefixRejectsGap(t *testing.T) {
 	}
 }
 
+func TestRawFlushForGlyphPrefixRejectsRepeatedCluster(t *testing.T) {
+	run := newRunBuffer(0)
+	run.Glyphs = append(run.Glyphs, 10, 11, 12, 13)
+	run.Clusters = []uint32{7, 7, 8, 9}
+
+	flush, ok := rawFlushForGlyphPrefix(run, 3, 7, 4)
+	if ok {
+		t.Fatalf("expected flush mapping to fail for repeated cluster, got raw flush=%d", flush)
+	}
+}
+
 func TestFindFlushCutRespectsLowWatermark(t *testing.T) {
 	cfg := streamingConfig{highWatermark: 4, lowWatermark: 2, maxBuffer: 8}
 	st := newStreamingState(cfg)
@@ -188,10 +199,10 @@ func TestFindFlushCutRespectsLowWatermark(t *testing.T) {
 
 	run := newRunBuffer(0)
 	run.Glyphs = append(run.Glyphs, 100, 101, 102, 103)
-	run.Clusters = []uint32{10, 10, 11, 12}
+	run.Clusters = []uint32{10, 11, 12, 13}
 
 	cut := findFlushCut(run, st)
-	want := flushDecision{glyphCut: 3, rawFlush: 2, ready: true}
+	want := flushDecision{glyphCut: 2, rawFlush: 2, ready: true}
 	if !reflect.DeepEqual(cut, want) {
 		t.Fatalf("flush cut=%#v, want %#v", cut, want)
 	}

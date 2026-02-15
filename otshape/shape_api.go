@@ -14,7 +14,7 @@ var (
 	ErrNoShaper = errors.New("otshape: no shaping engine supplied")
 	// ErrNoMatchingShaper indicates that none of the supplied engines matched the segment context.
 	ErrNoMatchingShaper = errors.New("otshape: no supplied shaping engine matches selection context")
-	// ErrNilFont indicates that ShapeOptions.Font is nil.
+	// ErrNilFont indicates that Params.Font is nil.
 	ErrNilFont = errors.New("otshape: nil font in shape options")
 	// ErrNilRuneSource indicates that the shape input source is nil.
 	ErrNilRuneSource = errors.New("otshape: nil rune source")
@@ -24,55 +24,54 @@ var (
 	ErrFlushExplicitUnsupported = errors.New("otshape: FlushExplicit is not supported yet")
 )
 
-// ShapeRequest bundles all inputs required by [Shape].
-type ShapeRequest struct {
-	Options ShapeOptions    // Options configures script/language/font and streaming behavior.
-	Source  RuneSource      // Source provides input runes.
-	Sink    GlyphSink       // Sink receives shaped glyph records.
-	Shapers []ShapingEngine // Shapers lists candidate engines used for selection.
-}
-
 // Shaper is the injectable top-level shaping orchestrator.
 //
 // It intentionally has no global registry; callers provide candidate shapers.
 type Shaper struct {
-	shapers []ShapingEngine
+	Engines []ShapingEngine
 }
 
 // NewShaper creates a shaper from explicit candidate engines.
 //
 // Nil entries in shapers are ignored. The returned value keeps the candidate
 // list and selects the best matching engine per [Shape] call.
-func NewShaper(shapers ...ShapingEngine) *Shaper {
-	list := make([]ShapingEngine, 0, len(shapers))
-	for _, sh := range shapers {
+func NewShaper(engines ...ShapingEngine) *Shaper {
+	list := make([]ShapingEngine, 0, len(engines))
+	for _, sh := range engines {
 		if sh != nil {
 			list = append(list, sh)
 		}
 	}
-	return &Shaper{shapers: list}
+	return &Shaper{Engines: list}
 }
 
-// Shape shapes req.Source into req.Sink using req.Options and req.Shapers.
+// Shape shapes src into sink using params.
 //
 // Shape is a convenience wrapper around [NewShaper] followed by [Shaper.Shape].
 // It returns the first source/sink/pipeline error encountered.
-func Shape(req ShapeRequest) error {
-	s := NewShaper(req.Shapers...)
-	return s.Shape(req.Options, req.Source, req.Sink)
+func Shape(params Params, src RuneSource, sink GlyphSink, engines ...ShapingEngine) error {
+	s := NewShaper(engines...)
+	bufOpts := BufferOptions{
+		FlushBoundary: FlushOnRunBoundary,
+		HighWatermark: defaultHighWatermark,
+		LowWatermark:  defaultLowWatermark,
+		MaxBuffer:     defaultMaxBuffer,
+	}
+	return s.Shape(params, src, sink, bufOpts)
 }
 
-// Shape shapes src into sink according to opts.
+// Shape shapes src into sink according to params and bufOpts.
 //
 // Parameters:
-//   - opts selects font, segment metadata, feature ranges and streaming thresholds.
+//   - params selects font, segment metadata and feature ranges.
 //   - src is read incrementally until EOF.
 //   - sink receives shaped glyph records in output order.
+//   - bufOpts selects flush behavior and streaming thresholds.
 //
 // Returns nil on success, or an error for invalid inputs, source/sink failures,
 // missing/invalid shaper selection, plan compilation failure, or pipeline failure.
-func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error {
-	if opts.Font == nil {
+func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts BufferOptions) error {
+	if params.Font == nil {
 		return ErrNilFont
 	}
 	if src == nil {
@@ -81,21 +80,21 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 	if sink == nil {
 		return ErrNilGlyphSink
 	}
-	if opts.FlushBoundary == FlushExplicit {
+	if bufOpts.FlushBoundary == FlushExplicit {
 		return ErrFlushExplicitUnsupported
 	}
-	ctx := selectionContextFromOptions(opts)
-	engine, err := selectShapingEngine(s.shapers, ctx)
+	ctx := selectionContextFromParams(params)
+	engine, err := selectShapingEngine(s.Engines, ctx)
 	if err != nil {
 		return err
 	}
-	compiler := newPlanCompiler(opts, ctx, engine)
+	compiler := newPlanCompiler(params, ctx, engine)
 
 	plan, err := compiler.compileDefault()
 	if err != nil {
 		return err
 	}
-	cfg, err := resolveStreamingConfig(opts)
+	cfg, err := resolveStreamingConfig(bufOpts)
 	if err != nil {
 		return err
 	}
@@ -115,8 +114,8 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 		}
 
 		runes, clusters := ws.copyRaw(strState)
-		runes, clusters = ws.normalize(runes, clusters, opts, ctx, engine, plan)
-		run := ws.mapMain(runes, clusters, nil, opts.Font)
+		runes, clusters = ws.normalize(runes, clusters, params.Font, ctx, engine, plan)
+		run := ws.mapMain(runes, clusters, nil, params.Font)
 		if run.Len() == 0 {
 			ing.compact(len(strState.rawRunes))
 			if strState.eof {
@@ -144,7 +143,7 @@ func (s *Shaper) Shape(opts ShapeOptions, src RuneSource, sink GlyphSink) error 
 			}
 			continue
 		}
-		if err := writeRunBufferPrefixToSink(run, sink, opts.FlushBoundary, cut.glyphCut); err != nil {
+		if err := writeRunBufferPrefixToSink(run, sink, bufOpts.FlushBoundary, cut.glyphCut); err != nil {
 			return err
 		}
 		ing.compact(cut.rawFlush)
@@ -225,13 +224,13 @@ func writeRunBufferPrefixToSink(run *runBuffer, sink GlyphSink, boundary FlushBo
 	}
 }
 
-func selectionContextFromOptions(opts ShapeOptions) SelectionContext {
-	scriptTag := ScriptTagForScript(opts.Script)
-	langTag := LanguageTagForLanguage(opts.Language, language.Low)
+func selectionContextFromParams(params Params) SelectionContext {
+	scriptTag := ScriptTagForScript(params.Script)
+	langTag := LanguageTagForLanguage(params.Language, language.Low)
 	return SelectionContext{
-		Direction: opts.Direction,
-		Script:    opts.Script,
-		Language:  opts.Language,
+		Direction: params.Direction,
+		Script:    params.Script,
+		Language:  params.Language,
 		ScriptTag: scriptTag,
 		LangTag:   langTag,
 	}
@@ -268,7 +267,7 @@ func selectShapingEngine(candidates []ShapingEngine, ctx SelectionContext) (Shap
 	return inst, nil
 }
 
-func compileShapePlanWithFeatures(opts ShapeOptions, ctx SelectionContext, engine ShapingEngine, features []FeatureRange) (*plan, error) {
+func compileShapePlanWithFeatures(params Params, ctx SelectionContext, engine ShapingEngine, features []FeatureRange) (*plan, error) {
 	policy := planPolicy{
 		ApplyGPOS: true,
 	}
@@ -276,8 +275,8 @@ func compileShapePlanWithFeatures(opts ShapeOptions, ctx SelectionContext, engin
 		policy.ApplyGPOS = ep.ApplyGPOS()
 	}
 	req := planRequest{
-		Font:      opts.Font,
-		Props:     segmentProps{Direction: opts.Direction, Script: opts.Script, Language: opts.Language},
+		Font:      params.Font,
+		Props:     segmentProps{Direction: params.Direction, Script: params.Script, Language: params.Language},
 		ScriptTag: ctx.ScriptTag,
 		LangTag:   ctx.LangTag,
 		Selection: ctx,
@@ -320,7 +319,7 @@ func mapRunesToRunBufferInto(run *runBuffer, runes []rune, clusters []uint32, pl
 func normalizeRuneStream(
 	runes []rune,
 	clusters []uint32,
-	opts ShapeOptions,
+	font *ot.Font,
 	ctx SelectionContext,
 	engine ShapingEngine,
 	pl *plan,
@@ -328,7 +327,7 @@ func normalizeRuneStream(
 	runes, clusters, _, _, _, _ = normalizeRuneStreamWithScratch(
 		runes,
 		clusters,
-		opts,
+		font,
 		ctx,
 		engine,
 		pl,
@@ -343,7 +342,7 @@ func normalizeRuneStream(
 func normalizeRuneStreamWithScratch(
 	runes []rune,
 	clusters []uint32,
-	opts ShapeOptions,
+	font *ot.Font,
 	ctx SelectionContext,
 	engine ShapingEngine,
 	pl *plan,
@@ -379,7 +378,7 @@ func normalizeRuneStreamWithScratch(
 	if !hasComposeHook && mode != NormalizationComposed {
 		return runes, clusters, tmpARunes, tmpAClusters, tmpBRunes, tmpBClusters
 	}
-	nctx := newNormalizeContext(opts.Font, ctx, planHasGposMark(pl))
+	nctx := newNormalizeContext(font, ctx, planHasGposMark(pl))
 	runes, clusters = composeRuneStreamInto(
 		tmpBRunes,
 		tmpBClusters,

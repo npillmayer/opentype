@@ -37,24 +37,22 @@ func TestShapeAppliesGSUBFromCoreShaper(t *testing.T) {
 
 	src := strings.NewReader(string(cp))
 	sink := &glyphCollector{}
-	req := otshape.ShapeRequest{
-		Options: otshape.ShapeOptions{
-			Params: otshape.Params{
-				Font:      font,
-				Direction: bidi.LeftToRight,
-				Script:    latin,
-				Language:  language.English,
-				Features: []otshape.FeatureRange{
-					{Feature: ot.T("test"), On: true},
-				},
-			},
-			FlushBoundary: otshape.FlushOnRunBoundary,
+	params := otshape.Params{
+		Font:      font,
+		Direction: bidi.LeftToRight,
+		Script:    latin,
+		Language:  language.English,
+		Features: []otshape.FeatureRange{
+			{Feature: ot.T("test"), On: true},
 		},
-		Source:  src,
-		Sink:    sink,
-		Shapers: []otshape.ShapingEngine{otcore.New()},
 	}
-	if err := otshape.Shape(req); err != nil {
+	options := otshape.BufferOptions{
+		FlushBoundary: otshape.FlushOnRunBoundary,
+	}
+	engines := []otshape.ShapingEngine{otcore.New()}
+	shaper := otshape.NewShaper(engines...)
+	err := shaper.Shape(params, src, sink, options)
+	if err != nil {
 		t.Fatalf("shape failed: %v", err)
 	}
 

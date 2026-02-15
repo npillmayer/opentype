@@ -17,6 +17,13 @@ type sliceEventSource struct {
 	index  int
 }
 
+var singleBufOpts = BufferOptions{
+	FlushBoundary: FlushOnRunBoundary,
+	HighWatermark: 2,
+	LowWatermark:  1,
+	MaxBuffer:     8,
+}
+
 func (s *sliceEventSource) ReadEvent() (InputEvent, error) {
 	if s.index >= len(s.events) {
 		return InputEvent{}, io.EOF
@@ -26,40 +33,33 @@ func (s *sliceEventSource) ReadEvent() (InputEvent, error) {
 	return ev, nil
 }
 
+func standardParams(font *ot.Font) Params {
+	return Params{
+		Font:      font,
+		Direction: bidi.LeftToRight,
+		Script:    language.MustParseScript("Latn"),
+		Language:  language.English,
+	}
+}
+
 func TestShapeEventsRuneOnlyParity(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font1.otf")
+	params := standardParams(font)
 	input := []rune{0x12, 0x13, 0x12, 0x13}
-	opts := ShapeOptions{
-		Params: Params{
-			Font:      font,
-			Direction: bidi.LeftToRight,
-			Script:    language.MustParseScript("Latn"),
-			Language:  language.English,
-		},
-		FlushBoundary: FlushOnRunBoundary,
-		HighWatermark: 2,
-		LowWatermark:  1,
-		MaxBuffer:     8,
-	}
-
+	source := strings.NewReader(string(input))
 	baseline := &collectSink{}
-	if err := Shape(ShapeRequest{
-		Options: opts,
-		Source:  strings.NewReader(string(input)),
-		Sink:    baseline,
-		Shapers: []ShapingEngine{&hookProbeShaper{}},
-	}); err != nil {
+	shaper := NewShaper([]ShapingEngine{&hookProbeShaper{}}...)
+	err := shaper.Shape(params, source, baseline, singleBufOpts)
+	if err != nil {
 		t.Fatalf("baseline Shape failed: %v", err)
 	}
 
+	evsource := NewInputEventSource(strings.NewReader(string(input)))
 	eventSink := &collectSink{}
-	if err := ShapeEvents(ShapeEventsRequest{
-		Options: opts,
-		Source:  NewInputEventSource(strings.NewReader(string(input))),
-		Sink:    eventSink,
-		Shapers: []ShapingEngine{&hookProbeShaper{}},
-	}); err != nil {
-		t.Fatalf("ShapeEvents failed: %v", err)
+	shaper = NewShaper([]ShapingEngine{&hookProbeShaper{}}...)
+	err = shaper.ShapeEvents(params, evsource, eventSink, singleBufOpts)
+	if err != nil {
+		t.Fatalf("baseline Shape failed: %v", err)
 	}
 
 	if !reflect.DeepEqual(eventSink.glyphs, baseline.glyphs) {
@@ -69,29 +69,15 @@ func TestShapeEventsRuneOnlyParity(t *testing.T) {
 
 func TestShapeEventsPopUnderflowIsError(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font1.otf")
-	opts := ShapeOptions{
-		Params: Params{
-			Font:      font,
-			Direction: bidi.LeftToRight,
-			Script:    language.MustParseScript("Latn"),
-			Language:  language.English,
-		},
-		FlushBoundary: FlushOnRunBoundary,
-		HighWatermark: 2,
-		LowWatermark:  1,
-		MaxBuffer:     8,
-	}
-	src := &sliceEventSource{
+	params := standardParams(font)
+	evsource := &sliceEventSource{
 		events: []InputEvent{
 			{Kind: InputEventPopFeatures},
 		},
 	}
-	err := ShapeEvents(ShapeEventsRequest{
-		Options: opts,
-		Source:  src,
-		Sink:    &collectSink{},
-		Shapers: []ShapingEngine{&hookProbeShaper{}},
-	})
+	eventSink := &collectSink{}
+	shaper := NewShaper([]ShapingEngine{&hookProbeShaper{}}...)
+	err := shaper.ShapeEvents(params, evsource, eventSink, singleBufOpts)
 	if !errors.Is(err, errPlanStackUnderflow) {
 		t.Fatalf("ShapeEvents error=%v, want %v", err, errPlanStackUnderflow)
 	}
@@ -99,19 +85,8 @@ func TestShapeEventsPopUnderflowIsError(t *testing.T) {
 
 func TestShapeEventsUnclosedStackAtEOFIsError(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font1.otf")
-	opts := ShapeOptions{
-		Params: Params{
-			Font:      font,
-			Direction: bidi.LeftToRight,
-			Script:    language.MustParseScript("Latn"),
-			Language:  language.English,
-		},
-		FlushBoundary: FlushOnRunBoundary,
-		HighWatermark: 2,
-		LowWatermark:  1,
-		MaxBuffer:     8,
-	}
-	src := &sliceEventSource{
+	params := standardParams(font)
+	evsource := &sliceEventSource{
 		events: []InputEvent{
 			{
 				Kind: InputEventPushFeatures,
@@ -120,12 +95,9 @@ func TestShapeEventsUnclosedStackAtEOFIsError(t *testing.T) {
 			{Kind: InputEventRune, Rune: 0x12, Size: 1},
 		},
 	}
-	err := ShapeEvents(ShapeEventsRequest{
-		Options: opts,
-		Source:  src,
-		Sink:    &collectSink{},
-		Shapers: []ShapingEngine{&hookProbeShaper{}},
-	})
+	eventSink := &collectSink{}
+	shaper := NewShaper([]ShapingEngine{&hookProbeShaper{}}...)
+	err := shaper.ShapeEvents(params, evsource, eventSink, singleBufOpts)
 	if !errors.Is(err, errPlanStackUnclosed) {
 		t.Fatalf("ShapeEvents error=%v, want %v", err, errPlanStackUnclosed)
 	}
@@ -133,27 +105,14 @@ func TestShapeEventsUnclosedStackAtEOFIsError(t *testing.T) {
 
 func TestShapeEventsRejectsIndexedFeatureRangeInOptions(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font1.otf")
-	opts := ShapeOptions{
-		Params: Params{
-			Font:      font,
-			Direction: bidi.LeftToRight,
-			Script:    language.MustParseScript("Latn"),
-			Language:  language.English,
-			Features: []FeatureRange{
-				{Feature: ot.T("liga"), On: true, Start: 1, End: 3},
-			},
-		},
-		FlushBoundary: FlushOnRunBoundary,
-		HighWatermark: 2,
-		LowWatermark:  1,
-		MaxBuffer:     8,
+	params := standardParams(font)
+	params.Features = []FeatureRange{
+		{Feature: ot.T("liga"), On: true, Start: 1, End: 3},
 	}
-	err := ShapeEvents(ShapeEventsRequest{
-		Options: opts,
-		Source:  NewInputEventSource(strings.NewReader("ab")),
-		Sink:    &collectSink{},
-		Shapers: []ShapingEngine{&hookProbeShaper{}},
-	})
+	evsource := NewInputEventSource(strings.NewReader("ab"))
+	eventSink := &collectSink{}
+	shaper := NewShaper([]ShapingEngine{&hookProbeShaper{}}...)
+	err := shaper.ShapeEvents(params, evsource, eventSink, singleBufOpts)
 	if !errors.Is(err, ErrEventIndexedFeatureRange) {
 		t.Fatalf("ShapeEvents error=%v, want %v", err, ErrEventIndexedFeatureRange)
 	}

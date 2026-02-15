@@ -37,8 +37,8 @@ type BoundingBox struct {
 	MaxX, MaxY sfnt.Units
 }
 
-// Empty is a predicate: has this box a zero area?
-func (bbox BoundingBox) Empty() bool {
+// IsEmpty is a predicate: has this box a zero area?
+func (bbox BoundingBox) IsEmpty() bool {
 	return bbox.MaxX-bbox.MinX == 0 || bbox.MaxY-bbox.MinY == 0
 }
 

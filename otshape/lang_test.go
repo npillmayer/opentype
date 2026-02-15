@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/npillmayer/opentype"
+	"github.com/npillmayer/opentype/internal/fontload"
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/schuko/tracing"
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
@@ -61,7 +61,7 @@ func (env *LanguageTestEnviron) TestLanguageTagForLanguage() {
 
 func loadLocalFont(t *testing.T, fontFileName string) *ot.Font {
 	path := filepath.Join("..", "testdata", fontFileName)
-	f, err := opentype.LoadOpenTypeFont(path)
+	f, err := fontload.LoadOpenTypeFont(path)
 	if err != nil {
 		t.Fatalf("cannot load test font %s: %s", fontFileName, err)
 	}

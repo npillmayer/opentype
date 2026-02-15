@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/npillmayer/opentype"
+	"github.com/npillmayer/opentype/internal/fontload"
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otlayout"
 	"github.com/npillmayer/opentype/otquery"
@@ -509,7 +509,7 @@ func assertPosDelta(t *testing.T, got otlayout.PosItem, want otlayout.PosItem) {
 func loadRootOTFont(t *testing.T, filename string) *ot.Font {
 	t.Helper()
 	path := filepath.Join("..", "..", "testdata", filename)
-	sf, err := opentype.LoadOpenTypeFont(path)
+	sf, err := fontload.LoadOpenTypeFont(path)
 	if err != nil {
 		t.Fatalf("load test font %s: %v", path, err)
 	}

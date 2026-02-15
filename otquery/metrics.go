@@ -124,7 +124,7 @@ func GlyphMetrics(otf *ot.Font, gid ot.GlyphIndex) opentype.GlyphMetricsInfo {
 	// From the spec:
 	// If a glyph has no contours, xMax/xMin are not defined. The left side bearing indicated
 	// in the 'hmtx' table for such glyphs should be zero.
-	if !metrics.BBox.Empty() { // leave RSB for empty bboxes
+	if !metrics.BBox.IsEmpty() { // leave RSB for empty bboxes
 		metrics.RSB = metrics.Advance - (metrics.LSB + metrics.BBox.Dx())
 	}
 	return metrics

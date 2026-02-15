@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/npillmayer/opentype"
+	"github.com/npillmayer/opentype/internal/fontload"
 	"github.com/npillmayer/schuko/tracing"
 	"github.com/npillmayer/schuko/tracing/gotestingadapter"
 )
@@ -60,7 +60,7 @@ func loadTestdataFont(t *testing.T, pattern string) *Font {
 	tracer().SetTraceLevel(tracing.LevelInfo)
 	defer tracer().SetTraceLevel(level)
 	fname := fmt.Sprintf("../testdata/%s.ttf", pattern)
-	f, err := opentype.LoadOpenTypeFont(fname)
+	f, err := fontload.LoadOpenTypeFont(fname)
 	if err != nil {
 		t.Fatalf("cannot load font: %s", pattern)
 	}

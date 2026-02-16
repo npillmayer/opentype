@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/npillmayer/opentype"
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otquery"
 	"github.com/npillmayer/schuko/tracing"
@@ -25,7 +24,7 @@ import (
 type BufferTestEnviron struct {
 	suite.Suite
 	otf         *ot.Font
-	fontMetrics opentype.FontMetricsInfo
+	fontMetrics otquery.FontMetricsInfo
 	buffer      Buffer
 	imageName   string
 }

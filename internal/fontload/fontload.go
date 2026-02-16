@@ -9,9 +9,9 @@ import (
 // ScalableFont is a parsed scalable font with original bytes and SFNT view.
 type ScalableFont struct {
 	Fontname string
-	Filepath string
-	Binary   []byte
-	SFNT     *sfnt.Font
+	//Filepath string
+	Binary []byte
+	SFNT   *sfnt.Font
 }
 
 // LoadOpenTypeFont loads an OpenType font (TTF or OTF) from a file.
@@ -24,7 +24,7 @@ func LoadOpenTypeFont(fontfile string) (*ScalableFont, error) {
 	if err != nil {
 		return nil, err
 	}
-	f.Filepath = fontfile
+	//f.Filepath = fontfile
 	return f, nil
 }
 

@@ -25,22 +25,6 @@ type ShapeEventsRequest struct {
 	Shapers []ShapingEngine
 }
 
-// ShapeEvents shapes src into sink using params.
-//
-// ShapeEvents is the event-stream counterpart of [Shape]. It consumes explicit
-// rune/push/pop events from [InputEventSource], compiles nested plans on demand,
-// and shapes buffered spans with explicit plan boundaries.
-func ShapeEvents(params Params, src InputEventSource, sink GlyphSink, engines ...ShapingEngine) error {
-	s := NewShaper(engines...)
-	bufOpts := BufferOptions{
-		FlushBoundary: FlushOnRunBoundary,
-		HighWatermark: defaultHighWatermark,
-		LowWatermark:  defaultLowWatermark,
-		MaxBuffer:     defaultMaxBuffer,
-	}
-	return s.ShapeEvents(params, src, sink, bufOpts)
-}
-
 // ShapeEvents shapes src into sink according to params and bufOpts.
 //
 // Parameters:

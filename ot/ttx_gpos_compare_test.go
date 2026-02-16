@@ -10,8 +10,8 @@ import (
 )
 
 func TestTTXGPOSStructural_SinglePosFmt1(t *testing.T) {
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos_chaining3_boundary_f2.ttx.GPOS")
-	fontPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos_chaining3_boundary_f2.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gpos_chaining3_boundary_f2.ttx.GPOS")
+	fontPath := filepath.Join("..", "testdata", "fonttools", "gpos_chaining3_boundary_f2.otf")
 	data, err := os.ReadFile(fontPath)
 	if err != nil {
 		t.Fatalf("read font: %v", err)
@@ -38,8 +38,8 @@ func TestTTXGPOSStructural_SinglePosFmt1(t *testing.T) {
 }
 
 func TestTTXGPOSStructural_PairPosFmt1(t *testing.T) {
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos_chaining3_boundary_f2.ttx.GPOS")
-	fontPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos_chaining3_boundary_f2.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gpos_chaining3_boundary_f2.ttx.GPOS")
+	fontPath := filepath.Join("..", "testdata", "fonttools", "gpos_chaining3_boundary_f2.otf")
 	data, err := os.ReadFile(fontPath)
 	if err != nil {
 		t.Fatalf("read font: %v", err)
@@ -66,8 +66,8 @@ func TestTTXGPOSStructural_PairPosFmt1(t *testing.T) {
 }
 
 func TestTTXGPOSStructural_ChainContextPosFmt3(t *testing.T) {
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos_chaining3_boundary_f2.ttx.GPOS")
-	fontPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos_chaining3_boundary_f2.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gpos_chaining3_boundary_f2.ttx.GPOS")
+	fontPath := filepath.Join("..", "testdata", "fonttools", "gpos_chaining3_boundary_f2.otf")
 	data, err := os.ReadFile(fontPath)
 	if err != nil {
 		t.Fatalf("read font: %v", err)
@@ -94,8 +94,8 @@ func TestTTXGPOSStructural_ChainContextPosFmt3(t *testing.T) {
 }
 
 func TestTTXGPOSStructural_MarkBasePosFmt1(t *testing.T) {
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos4_simple_1.ttx.GPOS")
-	fontPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos4_simple_1.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gpos4_simple_1.ttx.GPOS")
+	fontPath := filepath.Join("..", "testdata", "fonttools", "gpos4_simple_1.otf")
 	data, err := os.ReadFile(fontPath)
 	if err != nil {
 		t.Fatalf("read font: %v", err)
@@ -122,8 +122,8 @@ func TestTTXGPOSStructural_MarkBasePosFmt1(t *testing.T) {
 }
 
 func TestTTXGPOSStructural_MarkLigPosFmt1(t *testing.T) {
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos5_font1.ttx.GPOS")
-	fontPath := filepath.Join("..", "testdata", "fonttools-tests", "gpos5_font1.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gpos5_font1.ttx.GPOS")
+	fontPath := filepath.Join("..", "testdata", "fonttools", "gpos5_font1.otf")
 	data, err := os.ReadFile(fontPath)
 	if err != nil {
 		t.Fatalf("read font: %v", err)

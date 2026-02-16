@@ -45,21 +45,6 @@ func NewShaper(engines ...ShapingEngine) *Shaper {
 	return &Shaper{Engines: list}
 }
 
-// Shape shapes src into sink using params.
-//
-// Shape is a convenience wrapper around [NewShaper] followed by [Shaper.Shape].
-// It returns the first source/sink/pipeline error encountered.
-func Shape(params Params, src RuneSource, sink GlyphSink, engines ...ShapingEngine) error {
-	s := NewShaper(engines...)
-	bufOpts := BufferOptions{
-		FlushBoundary: FlushOnRunBoundary,
-		HighWatermark: defaultHighWatermark,
-		LowWatermark:  defaultLowWatermark,
-		MaxBuffer:     defaultMaxBuffer,
-	}
-	return s.Shape(params, src, sink, bufOpts)
-}
-
 // Shape shapes src into sink according to params and bufOpts.
 //
 // Parameters:

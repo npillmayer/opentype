@@ -59,7 +59,7 @@ func loadTestdataFont(t *testing.T, pattern string) *Font {
 	level := tracer().GetTraceLevel()
 	tracer().SetTraceLevel(tracing.LevelInfo)
 	defer tracer().SetTraceLevel(level)
-	fname := fmt.Sprintf("../testdata/%s.ttf", pattern)
+	fname := fmt.Sprintf("../testdata/fonts/%s.ttf", pattern)
 	f, err := fontload.LoadOpenTypeFont(fname)
 	if err != nil {
 		t.Fatalf("cannot load font: %s", pattern)

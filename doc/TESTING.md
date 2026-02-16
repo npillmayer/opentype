@@ -24,7 +24,7 @@ python find_test_fonts.py
 
 ### Inputs
 
-- Mini-fonts and TTX dumps live in `testdata/fonttools-tests/`.
+- Mini-fonts and TTX dumps live in `testdata/fonttools/`.
 - TTX files follow the FontTools naming convention for subset dumps, e.g.
   `gsub3_1_simple_f1.ttx.GSUB`.
 
@@ -134,7 +134,7 @@ on behavior (substitution/positioning), not structure.
 
 Core mechanics:
 
-- Load a mini-font from `testdata/fonttools-tests/` and parse it with `ot.Parse`
+- Load a mini-font from `testdata/fonttools/` and parse it with `ot.Parse`
   using `IsTestfont` to allow GSUB-only fonts.
 - Select a lookup by index from `otf.Layout.GSub.LookupList`.
 - Seed a `GlyphBuffer` with the input glyph IDs (the tests currently hardcode
@@ -205,7 +205,7 @@ GPOS structural parsing currently covers:
 
 - Added `internal/ttxtest` with a GSUB-only TTX parser
 - Added structural comparison tests in `ot/`:
-  - Loads `testdata/fonttools-tests/( font ).otf`
+  - Loads `testdata/fonttools/( font ).otf`
   - Parses expected structure from `( font ).ttx.GSUB`
   - Compares lookup type, format, coverage, and alternate sets
 - Parsing options can now relax completeness/consistency checks, allowing GSUB-only

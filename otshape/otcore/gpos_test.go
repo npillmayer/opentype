@@ -508,7 +508,7 @@ func assertPosDelta(t *testing.T, got otlayout.PosItem, want otlayout.PosItem) {
 
 func loadRootOTFont(t *testing.T, filename string) *ot.Font {
 	t.Helper()
-	path := filepath.Join("..", "..", "testdata", filename)
+	path := filepath.Join("..", "..", "testdata", "fonts", filename)
 	sf, err := fontload.LoadOpenTypeFont(path)
 	if err != nil {
 		t.Fatalf("load test font %s: %v", path, err)
@@ -522,7 +522,7 @@ func loadRootOTFont(t *testing.T, filename string) *ot.Font {
 
 func loadMiniOTFont(t *testing.T, filename string) *ot.Font {
 	t.Helper()
-	path := filepath.Join("..", "..", "testdata", "fonttools-tests", filename)
+	path := filepath.Join("..", "..", "testdata", "fonttools", filename)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read mini font %s: %v", path, err)

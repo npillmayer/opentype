@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseTTXGSUB_AlternateSubstFmt1(t *testing.T) {
-	path := filepath.Join("..", "..", "testdata", "fonttools-tests", "gsub3_1_simple_f1.ttx.GSUB")
+	path := filepath.Join("..", "..", "testdata", "fonttools", "gsub3_1_simple_f1.ttx.GSUB")
 	exp, err := ParseTTXGSUB(path)
 	if err != nil {
 		t.Fatalf("ParseTTXGSUB: %v", err)

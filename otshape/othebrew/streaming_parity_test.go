@@ -69,7 +69,7 @@ func shapeHebrewWithConfig(
 
 func loadMiniOTFont(t *testing.T, filename string) *ot.Font {
 	t.Helper()
-	path := filepath.Join("..", "..", "testdata", "fonttools-tests", filename)
+	path := filepath.Join("..", "..", "testdata", "fonttools", filename)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read mini font %s: %v", path, err)

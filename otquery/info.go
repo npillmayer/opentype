@@ -21,57 +21,6 @@ func FontType(otf *ot.Font) string {
 	return "<unknown>"
 }
 
-// NameInfo returns a map with selected fields from OpenType table `name`.
-// Will include (if available in the font) "family", "subfamily", "version".
-//
-// Parameter `lang` is currently unused.
-func NameInfo(otf *ot.Font, lang ot.Tag) map[string]string {
-	names := make(map[string]string)
-	entries := loadNameEntries(otf)
-	if len(entries) == 0 {
-		return names
-	}
-	for _, e := range entries {
-		k := e.key
-		tracer().Debugf("name key p=%d e=%d l=%d id=%d", k.PlatformID, k.EncodingID, k.LanguageID, k.NameID)
-	}
-	// font family
-	familyKeys := []nameKey{
-		{PlatformID: 3, EncodingID: 1, NameID: 1}, // Windows platform, encoding BMP
-		{PlatformID: 0, EncodingID: 3, NameID: 1}, // Unicode platform, encoding BMP
-	}
-	findKey(entries, names, "family", familyKeys)
-	// font sub-family
-	subFamKeys := []nameKey{
-		{PlatformID: 3, EncodingID: 1, NameID: 2},
-		{PlatformID: 0, EncodingID: 3, NameID: 2},
-	}
-	findKey(entries, names, "subfamily", subFamKeys)
-	// font version
-	versionKeys := []nameKey{
-		{PlatformID: 3, EncodingID: 1, NameID: 5},
-		{PlatformID: 0, EncodingID: 3, NameID: 5},
-	}
-	findKey(entries, names, "version", versionKeys)
-	return names
-}
-
-func findKey(entries []nameEntry, m map[string]string, fieldname string, keys []nameKey) {
-	for _, key := range keys {
-		for _, entry := range entries {
-			k := entry.key
-			if k.PlatformID != key.PlatformID || k.EncodingID != key.EncodingID || k.NameID != key.NameID {
-				continue
-			}
-			val := entry.value
-			if val != "" {
-				m[fieldname] = val
-				return
-			}
-		}
-	}
-}
-
 // LayoutTables returns a list of tag strings, one for each layout-table a font includes.
 //
 // From the spec:

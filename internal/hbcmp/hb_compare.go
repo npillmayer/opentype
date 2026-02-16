@@ -274,7 +274,11 @@ func loadFixtureFont(name string, isTestFont bool) (*ot.Font, error) {
 		candidates = append(candidates, name)
 	} else {
 		candidates = append(candidates,
+			filepath.Join("..", "..", "testdata", "fonts", name),
+			filepath.Join("..", "..", "testdata", "fonttools", name),
 			filepath.Join("..", "..", "testdata", name),
+			filepath.Join("testdata", "fonts", name),
+			filepath.Join("testdata", "fonttools", name),
 			filepath.Join("testdata", name),
 			name,
 		)

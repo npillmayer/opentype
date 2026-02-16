@@ -13,14 +13,14 @@ type testFeature struct {
 	typ LayoutTagType
 }
 
-func (f testFeature) Tag() ot.Tag          { return f.tag }
-func (f testFeature) Type() LayoutTagType  { return f.typ }
-func (f testFeature) LookupCount() int     { return 0 }
-func (f testFeature) LookupIndex(int) int  { return 0 }
+func (f testFeature) Tag() ot.Tag         { return f.tag }
+func (f testFeature) Type() LayoutTagType { return f.typ }
+func (f testFeature) LookupCount() int    { return 0 }
+func (f testFeature) LookupIndex(int) int { return 0 }
 
 func loadTestFont(t *testing.T, filename string) *ot.Font {
 	t.Helper()
-	path := filepath.Join("..", "testdata", "fonttools-tests", filename)
+	path := filepath.Join("..", "testdata", "fonttools", filename)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read font %s: %v", path, err)

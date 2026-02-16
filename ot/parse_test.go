@@ -740,7 +740,7 @@ func TestParseMaxPVersion05Size6(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
-	raw, err := os.ReadFile("../testdata/Go-Regular.otf")
+	raw, err := os.ReadFile("../testdata/fonts/Go-Regular.otf")
 	if err != nil {
 		t.Fatalf("read Go-Regular.otf: %v", err)
 	}

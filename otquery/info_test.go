@@ -43,14 +43,6 @@ func (env *InfoTestEnviron) TestFontTypeInfo() {
 	env.Equal("TrueType", fti, "expected font type of test font to be TrueType")
 }
 
-func (env *InfoTestEnviron) TestGeneralInfo() {
-	info := NameInfo(env.otf, ot.DFLT)
-	env.T().Logf("info = %v", info)
-	fam, ok := info["family"]
-	env.Require().True(ok, "font familiy identifier not found in font info")
-	env.Equal("Calibri", fam, "expected font family name 'Calibri'")
-}
-
 func (env *InfoTestEnviron) TestHeadInfo() {
 	h, ok := HeadInfo(env.otf)
 	env.Require().True(ok, "expected to decode table 'head'")

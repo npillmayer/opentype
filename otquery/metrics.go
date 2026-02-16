@@ -1,7 +1,6 @@
 package otquery
 
 import (
-	"github.com/npillmayer/opentype"
 	"github.com/npillmayer/opentype/ot"
 	"golang.org/x/image/font/sfnt"
 )
@@ -37,8 +36,8 @@ func FontSupportsScript(otf *ot.Font, scr ot.Tag, lang ot.Tag) (ot.Tag, ot.Tag) 
 }
 
 // FontMetrics retrieves selected metrics of a font.
-func FontMetrics(otf *ot.Font) opentype.FontMetricsInfo {
-	metrics := opentype.FontMetricsInfo{}
+func FontMetrics(otf *ot.Font) FontMetricsInfo {
+	metrics := FontMetricsInfo{}
 	if table := otf.Table(ot.T("hhea")); table != nil {
 		if hhea := table.Self().AsHHea(); hhea != nil {
 			metrics.Ascent = sfnt.Units(hhea.Ascender)
@@ -94,8 +93,8 @@ func CodePointForGlyph(otf *ot.Font, gid ot.GlyphIndex) rune {
 }
 
 // GlyphMetrics retrieves metrics for a given glyph.
-func GlyphMetrics(otf *ot.Font, gid ot.GlyphIndex) opentype.GlyphMetricsInfo {
-	metrics := opentype.GlyphMetricsInfo{}
+func GlyphMetrics(otf *ot.Font, gid ot.GlyphIndex) GlyphMetricsInfo {
+	metrics := GlyphMetricsInfo{}
 	//
 	// table HMtx: advance width and left side bearing
 	hmtx := otf.Table(ot.T("hmtx")).Self().AsHMtx() // required table in OpenType
@@ -112,7 +111,7 @@ func GlyphMetrics(otf *ot.Font, gid ot.GlyphIndex) opentype.GlyphMetricsInfo {
 			loca := lo.Self().AsLoca()
 			loc := loca.IndexToLocation(gid)
 			b := glyf.Binary()[loc:]
-			metrics.BBox = opentype.BoundingBox{
+			metrics.BBox = BoundingBox{
 				MinX: sfnt.Units(i16(b[2:])),
 				MinY: sfnt.Units(i16(b[4:])),
 				MaxX: sfnt.Units(i16(b[6:])),

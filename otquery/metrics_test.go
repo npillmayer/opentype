@@ -62,7 +62,7 @@ func (env *MetricsTestEnviron) TestLanguageMatch() {
 // --- Helpers ---------------------------------------------------------------
 
 func loadLocalFont(t *testing.T, fontFileName string) *ot.Font {
-	path := filepath.Join("..", "testdata", fontFileName)
+	path := filepath.Join("..", "testdata", "fonts", fontFileName)
 	f, err := fontload.LoadOpenTypeFont(path)
 	if err != nil {
 		t.Fatalf("cannot load test font %s: %s", fontFileName, err)

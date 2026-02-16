@@ -27,8 +27,8 @@ func TestTTXGSUBConcreteGolden(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fontPath := filepath.Join("..", "testdata", "fonttools-tests", tc.font)
-			ttxPath := filepath.Join("..", "testdata", "fonttools-tests", tc.ttx)
+			fontPath := filepath.Join("..", "testdata", "fonttools", tc.font)
+			ttxPath := filepath.Join("..", "testdata", "fonttools", tc.ttx)
 			data, err := os.ReadFile(fontPath)
 			if err != nil {
 				t.Fatalf("read font: %v", err)
@@ -79,8 +79,8 @@ func TestTTXGPOSConcreteGolden(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fontPath := filepath.Join("..", "testdata", "fonttools-tests", tc.font)
-			ttxPath := filepath.Join("..", "testdata", "fonttools-tests", tc.ttx)
+			fontPath := filepath.Join("..", "testdata", "fonttools", tc.font)
+			ttxPath := filepath.Join("..", "testdata", "fonttools", tc.ttx)
 			data, err := os.ReadFile(fontPath)
 			if err != nil {
 				t.Fatalf("read font: %v", err)

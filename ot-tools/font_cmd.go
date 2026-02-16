@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/npillmayer/opentype"
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otquery"
 	"github.com/thatisuday/commando"
@@ -19,15 +20,12 @@ func runFontCommand(args map[string]commando.ArgValue, flags map[string]commando
 
 	fmt.Printf("Path: %s\n", fontPath)
 	fmt.Printf("Type: %s\n", otquery.FontType(otf))
-	names := otquery.NameInfo(otf, 0)
-	if family := names["family"]; family != "" {
+	family, subfamily := opentype.FamilyName(otf)
+	if family != "" {
 		fmt.Printf("Family: %s\n", family)
 	}
-	if sub := names["subfamily"]; sub != "" {
-		fmt.Printf("Subfamily: %s\n", sub)
-	}
-	if version := names["version"]; version != "" {
-		fmt.Printf("Version: %s\n", version)
+	if subfamily != "" {
+		fmt.Printf("Subfamily: %s\n", subfamily)
 	}
 
 	tags := otf.TableTags()

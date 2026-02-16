@@ -16,8 +16,8 @@ func TestTTXGSUBStructural_AlternateSubstFmt1(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
-	otfPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub3_1_simple_f1.otf")
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub3_1_simple_f1.ttx.GSUB")
+	otfPath := filepath.Join("..", "testdata", "fonttools", "gsub3_1_simple_f1.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gsub3_1_simple_f1.ttx.GSUB")
 
 	data, err := os.ReadFile(otfPath)
 	if err != nil {
@@ -49,8 +49,8 @@ func TestTTXGSUBStructural_AlternateSubstFmt1_LookupFlag(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
-	otfPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub3_1_lookupflag_f1.otf")
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub3_1_lookupflag_f1.ttx.GSUB")
+	otfPath := filepath.Join("..", "testdata", "fonttools", "gsub3_1_lookupflag_f1.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gsub3_1_lookupflag_f1.ttx.GSUB")
 
 	data, err := os.ReadFile(otfPath)
 	if err != nil {
@@ -82,8 +82,8 @@ func TestTTXGSUBStructural_SingleAndLigature(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
-	otfPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_chaining2_next_glyph_f1.otf")
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_chaining2_next_glyph_f1.ttx.GSUB")
+	otfPath := filepath.Join("..", "testdata", "fonttools", "gsub_chaining2_next_glyph_f1.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gsub_chaining2_next_glyph_f1.ttx.GSUB")
 
 	data, err := os.ReadFile(otfPath)
 	if err != nil {
@@ -115,8 +115,8 @@ func TestTTXGSUBStructural_LigatureIgnoreMarks(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
-	otfPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_chaining2_next_glyph_f1.otf")
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_chaining2_next_glyph_f1.ttx.GSUB")
+	otfPath := filepath.Join("..", "testdata", "fonttools", "gsub_chaining2_next_glyph_f1.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gsub_chaining2_next_glyph_f1.ttx.GSUB")
 
 	data, err := os.ReadFile(otfPath)
 	if err != nil {
@@ -148,8 +148,8 @@ func TestTTXGSUBStructural_ContextSubstFmt1_IgnoreMarks(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
-	otfPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_context1_lookupflag_f1.otf")
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_context1_lookupflag_f1.ttx.GSUB")
+	otfPath := filepath.Join("..", "testdata", "fonttools", "gsub_context1_lookupflag_f1.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gsub_context1_lookupflag_f1.ttx.GSUB")
 
 	data, err := os.ReadFile(otfPath)
 	if err != nil {
@@ -181,8 +181,8 @@ func TestTTXGSUBStructural_ContextSubstFmt1_NextGlyph(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
-	otfPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_context1_next_glyph_f1.otf")
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "gsub_context1_next_glyph_f1.ttx.GSUB")
+	otfPath := filepath.Join("..", "testdata", "fonttools", "gsub_context1_next_glyph_f1.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "gsub_context1_next_glyph_f1.ttx.GSUB")
 
 	data, err := os.ReadFile(otfPath)
 	if err != nil {
@@ -214,8 +214,8 @@ func TestTTXGSUBStructural_ContextSubstFmt2_ClassDef2Font4(t *testing.T) {
 	teardown := gotestingadapter.QuickConfig(t, "font.opentype")
 	defer teardown()
 
-	otfPath := filepath.Join("..", "testdata", "fonttools-tests", "classdef2_font4.otf")
-	ttxPath := filepath.Join("..", "testdata", "fonttools-tests", "classdef2_font4.ttx.GSUB")
+	otfPath := filepath.Join("..", "testdata", "fonttools", "classdef2_font4.otf")
+	ttxPath := filepath.Join("..", "testdata", "fonttools", "classdef2_font4.ttx.GSUB")
 
 	data, err := os.ReadFile(otfPath)
 	if err != nil {

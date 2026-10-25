@@ -26,6 +26,8 @@ this module.
 // Clients who need access to all the lookup tables will have to parse them themselves.
 type CMapTable struct {
 	tableBase
+	// GlyphIndexMap is the selected character-to-glyph mapping. Its Lookup method
+	// distinguishes an absent character from malformed mapping data via an error.
 	GlyphIndexMap CMapGlyphIndex
 	NumGlyphs     int // Maximum valid glyph index + 1 (from maxp table)
 }
@@ -116,11 +118,36 @@ func makeGlyphIndex(which encodingRecord, tag Tag, offset uint32, ec *errorColle
 	panic("unreachable") // unsupported formats should have been weeded out beforehand
 }
 
-// CMapGlyphIndex represents a CMap table index to receive a glyph index from
-// a code-point.
+// CMapGlyphIndex maps code points to glyph indices using a selected cmap subtable.
+// Lookups interpret font data on demand; successful font parsing does not imply
+// that every mapping has been validated.
 type CMapGlyphIndex interface {
-	Lookup(rune) GlyphIndex        // central activiy of CMap
-	ReverseLookup(GlyphIndex) rune // this is non-standard, but helps with tests
+	// Lookup returns the glyph index for a code point.
+	//
+	// A valid mapping returns its glyph index and nil. An absent character or an
+	// explicit mapping to the missing glyph returns (0, nil); lack of font coverage
+	// is not an error. Glyph index 0 denotes the font's .notdef glyph.
+	//
+	// If lookup detects malformed mapping data, it returns (0, error). Examples
+	// include an out-of-bounds glyph-array reference, an unaligned range offset,
+	// or a glyph index outside the representable or known font glyph range.
+	// The error describes the failure and code point; wrapped underlying errors
+	// retain their identity. Exact error strings are not an API contract.
+	//
+	// Callers may continue rendering with .notdef while reporting the error, or
+	// propagate it. Inspect the error to distinguish corruption from an ordinary
+	// missing character. Lookup errors are returned to the caller, not appended
+	// to Font.Errors. Lookup validates the accessed mapping, not the entire cmap.
+	Lookup(rune) (GlyphIndex, error)
+
+	// ReverseLookup searches for a code point mapping to the supplied glyph.
+	// It is intended primarily for inspection and tests and may scan many entries.
+	// Multiple code points may share a glyph; the result is not a unique inverse.
+	// It returns 0 for glyph 0 or when no mapping is found, so a mapping to U+0000
+	// cannot be distinguished from failure. It has no error return and must not
+	// be used to validate a cmap; format-4 reverse lookup skips failed forward
+	// lookups. Use Lookup when malformed mapping diagnostics are required.
+	ReverseLookup(GlyphIndex) rune
 }
 
 // Format 4: Segment mapping to delta values
@@ -144,9 +171,9 @@ type cmapEntry16 struct {
 	end, start, delta, offset uint16
 }
 
-func (f4 format4GlyphIndex) Lookup(r rune) GlyphIndex {
+func (f4 format4GlyphIndex) Lookup(r rune) (GlyphIndex, error) {
 	if uint32(r) > 0xffff { // format 4 is for BMP code-points only
-		return 0 // return index for 'missing character'
+		return 0, nil // return index for 'missing character'
 	}
 	c := uint16(r)
 	N := len(f4.entries)
@@ -163,10 +190,9 @@ func (f4 format4GlyphIndex) Lookup(r rune) GlyphIndex {
 			gid := GlyphIndex(c + entry.delta)
 			// Validate glyph index
 			if f4.numGlyphs > 0 && int(gid) >= f4.numGlyphs {
-				tracer().Errorf("cmap format4: glyph index %d exceeds numGlyphs %d", gid, f4.numGlyphs)
-				return 0
+				return 0, fmt.Errorf("cmap format 4 lookup %U: glyph index %d exceeds numGlyphs %d", r, gid, f4.numGlyphs)
 			}
-			return gid
+			return gid, nil
 		} else {
 			// The spec describes the calculation the find the link into the glyph ID array
 			// as follows:
@@ -191,13 +217,20 @@ func (f4 format4GlyphIndex) Lookup(r rune) GlyphIndex {
 			// enext := &f4.entries[h+1]
 			// trace().Debugf("segment #%d = { start=%d, end=%d, delta=%d, offset=%d }",
 			// 	h+1, enext.start, enext.end, enext.delta, enext.offset)
+			if entry.offset%2 != 0 {
+				return 0, fmt.Errorf("cmap format 4 lookup %U: unaligned range offset %d", r, entry.offset)
+			}
 			deltaToEndOfEntries := (N - h) * 2 // 2 = byte size of offset array entry
 			//trace().Debugf("N = %d, N*2 = %d, h = %d, h*2=%d", N, N*2, h, h*2)
 			offset := int(entry.offset) - deltaToEndOfEntries
 			// Now normalize the index into the glyph ID array
 			index := offset / 2 // offset is in bytes, we need an array index
 			index += int(c - entry.start)
-			glyphInx := f4.glyphIds.Get(index).U16(0)
+			item, err := f4.glyphIds.Get(index)
+			if err != nil {
+				return 0, fmt.Errorf("cmap format 4 lookup %U: %w", r, err)
+			}
+			glyphInx := item.U16(0)
 			// trace().Debugf("segment #%d = { start=%d, end=%d, delta=%d, offset=%d }",
 			// 	h, entry.start, entry.end, entry.delta, entry.offset)
 			// trace().Debugf("skip = %d, offset = %d, rest = %d", deltaToEndOfEntries, offset, index)
@@ -209,8 +242,7 @@ func (f4 format4GlyphIndex) Lookup(r rune) GlyphIndex {
 			}
 			// Validate glyph index
 			if f4.numGlyphs > 0 && int(glyphInx) >= f4.numGlyphs {
-				tracer().Errorf("cmap format4: glyph index %d exceeds numGlyphs %d", glyphInx, f4.numGlyphs)
-				return 0
+				return 0, fmt.Errorf("cmap format 4 lookup %U: glyph index %d exceeds numGlyphs %d", r, glyphInx, f4.numGlyphs)
 			}
 			// g2 := f4.glyphIds.UnsafeGet(index + 1).U16(0)
 			// trace().Debugf("next glyph ID = %d", g2)
@@ -218,10 +250,10 @@ func (f4 format4GlyphIndex) Lookup(r rune) GlyphIndex {
 			// trace().Debugf("next glyph ID = %d", g2)
 			// g2 = f4.glyphIds.UnsafeGet(index + 3).U16(0)
 			// trace().Debugf("next glyph ID = %d", g2)
-			return GlyphIndex(glyphInx) // will be 0 in case of indexing error
+			return GlyphIndex(glyphInx), nil
 		}
 	}
-	return GlyphIndex(0)
+	return 0, nil
 }
 
 // ReverseLookup retrieves a code-point for a given glyph. The Cmap tables do not
@@ -238,7 +270,8 @@ func (f4 format4GlyphIndex) ReverseLookup(gid GlyphIndex) rune {
 		}
 		//tracer().Debugf("CMap format 4 entry: %d … %d", entry.start, entry.end)
 		for c := entry.start; c <= entry.end; c++ {
-			if f4.Lookup(rune(c)) == gid {
+			// Reverse lookup has no error channel; skip malformed mappings.
+			if mapped, err := f4.Lookup(rune(c)); err == nil && mapped == gid {
 				return rune(c)
 			}
 		}
@@ -281,11 +314,27 @@ func makeGlyphIndexFormat4(b binarySegm, tag Tag, offset uint32, ec *errorCollec
 	next += offsets.Size()
 	entries := make([]cmapEntry16, segCount)
 	for i := range entries {
+		end, err := endCodes.Get(i)
+		if err != nil {
+			return nil, fmt.Errorf("cmap format 4 endCodes: %w", err)
+		}
+		start, err := startCodes.Get(i)
+		if err != nil {
+			return nil, fmt.Errorf("cmap format 4 startCodes: %w", err)
+		}
+		delta, err := deltas.Get(i)
+		if err != nil {
+			return nil, fmt.Errorf("cmap format 4 deltas: %w", err)
+		}
+		offset, err := offsets.Get(i)
+		if err != nil {
+			return nil, fmt.Errorf("cmap format 4 offsets: %w", err)
+		}
 		entries[i] = cmapEntry16{
-			end:    endCodes.Get(i).U16(0),
-			start:  startCodes.Get(i).U16(0),
-			delta:  deltas.Get(i).U16(0),
-			offset: offsets.Get(i).U16(0),
+			end:    end.U16(0),
+			start:  start.U16(0),
+			delta:  delta.U16(0),
+			offset: offset.U16(0),
 		}
 		if entries[i].offset > 0 && entries[i].delta > 0 {
 			tracer().Debugf("Font with cmap format 4, offset = %d > 0 and delta = %d > 0, detected!",
@@ -313,7 +362,7 @@ type format12GlyphIndex struct {
 	numGlyphs int // Maximum valid glyph index + 1 (from maxp table)
 }
 
-func (f12 format12GlyphIndex) Lookup(r rune) GlyphIndex {
+func (f12 format12GlyphIndex) Lookup(r rune) (GlyphIndex, error) {
 	c := uint32(r)
 	for i, j := 0, len(f12.entries); i < j; {
 		h := i + (j-i)/2 // do a binary search on f12.entries (which may get large)
@@ -323,16 +372,18 @@ func (f12 format12GlyphIndex) Lookup(r rune) GlyphIndex {
 		} else if entry.end < c {
 			i = h + 1
 		} else {
-			gid := GlyphIndex(c - entry.start + entry.delta)
+			gid := uint64(c-entry.start) + uint64(entry.delta)
+			if gid > 0xffff {
+				return 0, fmt.Errorf("cmap format 12 lookup %U: glyph index %d exceeds uint16 range", r, gid)
+			}
 			// Validate glyph index
 			if f12.numGlyphs > 0 && int(gid) >= f12.numGlyphs {
-				tracer().Errorf("cmap format12: glyph index %d exceeds numGlyphs %d", gid, f12.numGlyphs)
-				return 0
+				return 0, fmt.Errorf("cmap format 12 lookup %U: glyph index %d exceeds numGlyphs %d", r, gid, f12.numGlyphs)
 			}
-			return gid
+			return GlyphIndex(gid), nil
 		}
 	}
-	return 0
+	return 0, nil
 }
 
 // ReverseLookup retrieves a code-point for a given glyph. The Cmap tables do not
@@ -382,10 +433,14 @@ func makeGlyphIndexFormat12(b binarySegm, tag Tag, offset uint32, ec *errorColle
 	groups := viewArray(b, 12) // 12 is byte size of group-record
 	entries := make([]cmapEntry32, grpCount)
 	for i := range entries {
+		record, err := groups.Get(i)
+		if err != nil {
+			return nil, fmt.Errorf("cmap format 12 group %d: %w", i, err)
+		}
 		entries[i] = cmapEntry32{
-			start: groups.Get(i).U32(0),
-			end:   u32(groups.Get(i).Bytes()[4:]),
-			delta: u32(groups.Get(i).Bytes()[8:]),
+			start: record.U32(0),
+			end:   u32(record.Bytes()[4:]),
+			delta: u32(record.Bytes()[8:]),
 		}
 	}
 	return format12GlyphIndex{

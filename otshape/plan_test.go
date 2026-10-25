@@ -458,8 +458,14 @@ func TestPlanExecutorZeroMarksByAttachment(t *testing.T) {
 
 func TestPlanExecutorFallbackMarkPositionAndZeroing(t *testing.T) {
 	otf := loadLocalFont(t, "Calibri.ttf")
-	base := otquery.GlyphIndex(otf, 'A')
-	mark := otquery.GlyphIndex(otf, '\u0301')
+	base, lookupErr := otquery.GlyphIndex(otf, 'A')
+	if lookupErr != nil {
+		t.Fatalf("glyph lookup: %v", lookupErr)
+	}
+	mark, lookupErr := otquery.GlyphIndex(otf, '\u0301')
+	if lookupErr != nil {
+		t.Fatalf("glyph lookup: %v", lookupErr)
+	}
 	if base == NOTDEF || mark == NOTDEF {
 		t.Skip("font does not expose expected base/mark glyphs for fallback test")
 	}

@@ -19,7 +19,14 @@ func parseConcreteLookupListGraph(lookupList binarySegm, isGPos bool) *LookupLis
 	lg.lookupTables = make([]*LookupTable, lookupArray.Len())
 	lg.lookupOnce = make([]sync.Once, lookupArray.Len())
 	for i := 0; i < lookupArray.Len(); i++ {
-		off := lookupArray.Get(i).U16(0)
+		item, readErr := lookupArray.Get(i)
+		if readErr != nil {
+			if lg.err == nil {
+				lg.err = fmt.Errorf("parseConcreteLookupListGraph: %w", readErr)
+			}
+			continue
+		}
+		off := item.U16(0)
 		lg.lookupOffsets[i] = off
 		if off == 0 || int(off) >= len(lookupList) {
 			if lg.err == nil {
@@ -65,7 +72,14 @@ func parseConcreteLookupTable(b binarySegm, isGPos bool) *LookupTable {
 	lt.subtables = make([]*LookupNode, subtables.Len())
 	lt.subtableOnce = make([]sync.Once, subtables.Len())
 	for i := 0; i < subtables.Len(); i++ {
-		off := subtables.Get(i).U16(0)
+		item, readErr := subtables.Get(i)
+		if readErr != nil {
+			if lt.err == nil {
+				lt.err = fmt.Errorf("parseConcreteLookupTable: %w", readErr)
+			}
+			continue
+		}
+		off := item.U16(0)
 		lt.subtableOffsets[i] = off
 		if off == 0 || int(off) >= len(b) {
 			if lt.err == nil {

@@ -97,7 +97,10 @@ func TestShapeFlushExplicitUnsupported(t *testing.T) {
 
 func TestWriteRunBufferRangeWithFontAddsNominalAdvanceAndDelta(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font1.otf")
-	gid := otquery.GlyphIndex(font, 0x12)
+	gid, lookupErr := otquery.GlyphIndex(font, 0x12)
+	if lookupErr != nil {
+		t.Fatalf("glyph lookup: %v", lookupErr)
+	}
 	if gid == NOTDEF {
 		t.Fatalf("mini font has no glyph for U+0012")
 	}

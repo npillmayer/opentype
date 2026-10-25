@@ -112,7 +112,14 @@ func parseConcreteGPosType2(node *LookupNode) {
 		}
 		pairSets := make([][]PairValueRecord, pairSetOffsets.Len())
 		for i := 0; i < pairSetOffsets.Len(); i++ {
-			off := pairSetOffsets.Get(i).U16(0)
+			item, readErr := pairSetOffsets.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGPosType2: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			off := item.U16(0)
 			if off == 0 || int(off) >= len(node.raw) {
 				setLookupNodeError(node, fmt.Errorf("GPOS2/1 pair-set offset out of bounds: %d (size %d)", off, len(node.raw)))
 				continue
@@ -378,7 +385,14 @@ func parseConcreteGPosType7(node *LookupNode) {
 		}
 		node.GPos.ContextFmt1.RuleSets = make([][]GPosSequenceRule, ruleSetOffsets.Len())
 		for i := 0; i < ruleSetOffsets.Len(); i++ {
-			ruleSetOffset := ruleSetOffsets.Get(i).U16(0)
+			item, readErr := ruleSetOffsets.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGPosType7: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			ruleSetOffset := item.U16(0)
 			if ruleSetOffset == 0 {
 				continue
 			}
@@ -410,7 +424,14 @@ func parseConcreteGPosType7(node *LookupNode) {
 		}
 		node.GPos.ContextFmt2.RuleSets = make([][]GPosClassSequenceRule, ruleSetOffsets.Len())
 		for i := 0; i < ruleSetOffsets.Len(); i++ {
-			ruleSetOffset := ruleSetOffsets.Get(i).U16(0)
+			item, readErr := ruleSetOffsets.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGPosType7: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			ruleSetOffset := item.U16(0)
 			if ruleSetOffset == 0 {
 				continue
 			}
@@ -471,7 +492,14 @@ func parseConcreteGPosType8(node *LookupNode) {
 		}
 		node.GPos.ChainingContextFmt1.RuleSets = make([][]GPosChainedSequenceRule, ruleSetOffsets.Len())
 		for i := 0; i < ruleSetOffsets.Len(); i++ {
-			ruleSetOffset := ruleSetOffsets.Get(i).U16(0)
+			item, readErr := ruleSetOffsets.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGPosType8: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			ruleSetOffset := item.U16(0)
 			if ruleSetOffset == 0 {
 				continue
 			}
@@ -513,7 +541,14 @@ func parseConcreteGPosType8(node *LookupNode) {
 		}
 		node.GPos.ChainingContextFmt2.RuleSets = make([][]GPosChainedClassRule, ruleSetOffsets.Len())
 		for i := 0; i < ruleSetOffsets.Len(); i++ {
-			ruleSetOffset := ruleSetOffsets.Get(i).U16(0)
+			item, readErr := ruleSetOffsets.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGPosType8: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			ruleSetOffset := item.U16(0)
 			if ruleSetOffset == 0 {
 				continue
 			}

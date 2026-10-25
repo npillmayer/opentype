@@ -341,7 +341,10 @@ func TestCMapTableGlyphIndex(t *testing.T) {
 		t.Fatal("cannot convert cmap table")
 	}
 	r := rune('A')
-	glyph := cmap.GlyphIndexMap.Lookup(r)
+	glyph, lookupErr := cmap.GlyphIndexMap.Lookup(r)
+	if lookupErr != nil {
+		t.Fatalf("glyph lookup: %v", lookupErr)
+	}
 	if glyph == 0 {
 		t.Error("expected glyph position for 'A', got 0")
 	}

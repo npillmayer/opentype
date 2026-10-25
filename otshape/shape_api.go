@@ -291,7 +291,10 @@ func mapRunesToRunBufferInto(run *runBuffer, runes []rune, clusters []uint32, pl
 	withPlanIDs := len(planIDs) == len(runes)
 	run.PrepareForMappedRun(withPlanIDs, len(runes))
 	for i, r := range runes {
-		gid := otquery.GlyphIndex(font, r)
+		gid, lookupErr := otquery.GlyphIndex(font, r)
+		if lookupErr != nil {
+			tracer().Errorf("cmap lookup: %v", lookupErr)
+		}
 		cluster := uint32(i)
 		if len(clusters) == len(runes) {
 			cluster = clusters[i]

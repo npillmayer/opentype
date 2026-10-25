@@ -162,8 +162,8 @@ type runProbe struct {
 
 type fakeCMapIndex struct{}
 
-func (fakeCMapIndex) Lookup(rune) ot.GlyphIndex        { return 0 }
-func (fakeCMapIndex) ReverseLookup(ot.GlyphIndex) rune { return 0 }
+func (fakeCMapIndex) Lookup(rune) (ot.GlyphIndex, error) { return 0, nil }
+func (fakeCMapIndex) ReverseLookup(ot.GlyphIndex) rune   { return 0 }
 
 func (r *runProbe) Len() int { return len(r.codepoints) }
 func (r *runProbe) Glyph(i int) ot.GlyphIndex {

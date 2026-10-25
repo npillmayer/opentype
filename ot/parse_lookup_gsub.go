@@ -82,7 +82,14 @@ func parseConcreteGSubType1(node *LookupNode) {
 		}
 		node.GSub.SingleFmt2.SubstituteGlyphIDs = make([]GlyphIndex, array.Len())
 		for i := 0; i < array.Len(); i++ {
-			node.GSub.SingleFmt2.SubstituteGlyphIDs[i] = GlyphIndex(array.Get(i).U16(0))
+			item, readErr := array.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGSubType1: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			node.GSub.SingleFmt2.SubstituteGlyphIDs[i] = GlyphIndex(item.U16(0))
 		}
 	}
 }
@@ -98,7 +105,14 @@ func parseConcreteGSubType2(node *LookupNode) {
 	}
 	node.GSub.MultipleFmt1.Sequences = make([][]GlyphIndex, sequenceOffsets.Len())
 	for i := 0; i < sequenceOffsets.Len(); i++ {
-		off := sequenceOffsets.Get(i).U16(0)
+		item, readErr := sequenceOffsets.Get(i)
+		if readErr != nil {
+			setLookupNodeError(node, fmt.Errorf("parseConcreteGSubType2: %w", readErr))
+			node.GSub = nil
+			node.GPos = nil
+			return
+		}
+		off := item.U16(0)
 		if off == 0 || int(off) >= len(node.raw) {
 			setLookupNodeError(node, fmt.Errorf("GSUB2 sequence offset out of bounds: %d (size %d)", off, len(node.raw)))
 			continue
@@ -123,7 +137,14 @@ func parseConcreteGSubType3(node *LookupNode) {
 	}
 	node.GSub.AlternateFmt1.Alternates = make([][]GlyphIndex, altSetOffsets.Len())
 	for i := 0; i < altSetOffsets.Len(); i++ {
-		off := altSetOffsets.Get(i).U16(0)
+		item, readErr := altSetOffsets.Get(i)
+		if readErr != nil {
+			setLookupNodeError(node, fmt.Errorf("parseConcreteGSubType3: %w", readErr))
+			node.GSub = nil
+			node.GPos = nil
+			return
+		}
+		off := item.U16(0)
 		if off == 0 || int(off) >= len(node.raw) {
 			setLookupNodeError(node, fmt.Errorf("GSUB3 alternate-set offset out of bounds: %d (size %d)", off, len(node.raw)))
 			continue
@@ -148,7 +169,14 @@ func parseConcreteGSubType4(node *LookupNode) {
 	}
 	node.GSub.LigatureFmt1.LigatureSets = make([][]GSubLigatureRule, ligSetOffsets.Len())
 	for i := 0; i < ligSetOffsets.Len(); i++ {
-		setOffset := ligSetOffsets.Get(i).U16(0)
+		item, readErr := ligSetOffsets.Get(i)
+		if readErr != nil {
+			setLookupNodeError(node, fmt.Errorf("parseConcreteGSubType4: %w", readErr))
+			node.GSub = nil
+			node.GPos = nil
+			return
+		}
+		setOffset := item.U16(0)
 		if setOffset == 0 || int(setOffset) >= len(node.raw) {
 			setLookupNodeError(node, fmt.Errorf("GSUB4 ligature-set offset out of bounds: %d (size %d)", setOffset, len(node.raw)))
 			continue
@@ -161,7 +189,14 @@ func parseConcreteGSubType4(node *LookupNode) {
 		}
 		rules := make([]GSubLigatureRule, 0, ligOffsets.Len())
 		for j := 0; j < ligOffsets.Len(); j++ {
-			ligOffset := ligOffsets.Get(j).U16(0)
+			item, readErr := ligOffsets.Get(j)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGSubType4: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			ligOffset := item.U16(0)
 			if ligOffset == 0 || int(ligOffset) >= len(ligSet) {
 				setLookupNodeError(node, fmt.Errorf("GSUB4 ligature offset out of bounds: %d (size %d)", ligOffset, len(ligSet)))
 				continue
@@ -190,7 +225,14 @@ func parseConcreteGSubType5(node *LookupNode) {
 		}
 		node.GSub.ContextFmt1.RuleSets = make([][]GSubSequenceRule, ruleSetOffsets.Len())
 		for i := 0; i < ruleSetOffsets.Len(); i++ {
-			ruleSetOffset := ruleSetOffsets.Get(i).U16(0)
+			item, readErr := ruleSetOffsets.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGSubType5: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			ruleSetOffset := item.U16(0)
 			if ruleSetOffset == 0 {
 				continue
 			}
@@ -222,7 +264,14 @@ func parseConcreteGSubType5(node *LookupNode) {
 		}
 		node.GSub.ContextFmt2.RuleSets = make([][]GSubClassSequenceRule, ruleSetOffsets.Len())
 		for i := 0; i < ruleSetOffsets.Len(); i++ {
-			ruleSetOffset := ruleSetOffsets.Get(i).U16(0)
+			item, readErr := ruleSetOffsets.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGSubType5: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			ruleSetOffset := item.U16(0)
 			if ruleSetOffset == 0 {
 				continue
 			}
@@ -283,7 +332,14 @@ func parseConcreteGSubType6(node *LookupNode) {
 		}
 		node.GSub.ChainingContextFmt1.RuleSets = make([][]GSubChainedSequenceRule, ruleSetOffsets.Len())
 		for i := 0; i < ruleSetOffsets.Len(); i++ {
-			ruleSetOffset := ruleSetOffsets.Get(i).U16(0)
+			item, readErr := ruleSetOffsets.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGSubType6: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			ruleSetOffset := item.U16(0)
 			if ruleSetOffset == 0 {
 				continue
 			}
@@ -325,7 +381,14 @@ func parseConcreteGSubType6(node *LookupNode) {
 		}
 		node.GSub.ChainingContextFmt2.RuleSets = make([][]GSubChainedClassRule, ruleSetOffsets.Len())
 		for i := 0; i < ruleSetOffsets.Len(); i++ {
-			ruleSetOffset := ruleSetOffsets.Get(i).U16(0)
+			item, readErr := ruleSetOffsets.Get(i)
+			if readErr != nil {
+				setLookupNodeError(node, fmt.Errorf("parseConcreteGSubType6: %w", readErr))
+				node.GSub = nil
+				node.GPos = nil
+				return
+			}
+			ruleSetOffset := item.U16(0)
 			if ruleSetOffset == 0 {
 				continue
 			}
@@ -457,7 +520,11 @@ func parseGlyphSlice16(b binarySegm, countAt int, name string) ([]GlyphIndex, er
 	}
 	glyphs := make([]GlyphIndex, array.Len())
 	for i := 0; i < array.Len(); i++ {
-		glyphs[i] = GlyphIndex(array.Get(i).U16(0))
+		item, readErr := array.Get(i)
+		if readErr != nil {
+			return nil, fmt.Errorf("parseGlyphSlice16: %w", readErr)
+		}
+		glyphs[i] = GlyphIndex(item.U16(0))
 	}
 	return glyphs, nil
 }
@@ -492,7 +559,11 @@ func parseGSubSequenceRuleSet(b binarySegm) ([]GSubSequenceRule, error) {
 	}
 	rules := make([]GSubSequenceRule, 0, ruleOffsets.Len())
 	for i := 0; i < ruleOffsets.Len(); i++ {
-		off := ruleOffsets.Get(i).U16(0)
+		item, readErr := ruleOffsets.Get(i)
+		if readErr != nil {
+			return nil, fmt.Errorf("parseGSubSequenceRuleSet: %w", readErr)
+		}
+		off := item.U16(0)
 		if off == 0 {
 			continue
 		}
@@ -515,7 +586,11 @@ func parseGSubClassSequenceRuleSet(b binarySegm) ([]GSubClassSequenceRule, error
 	}
 	rules := make([]GSubClassSequenceRule, 0, ruleOffsets.Len())
 	for i := 0; i < ruleOffsets.Len(); i++ {
-		off := ruleOffsets.Get(i).U16(0)
+		item, readErr := ruleOffsets.Get(i)
+		if readErr != nil {
+			return nil, fmt.Errorf("parseGSubClassSequenceRuleSet: %w", readErr)
+		}
+		off := item.U16(0)
 		if off == 0 {
 			continue
 		}
@@ -610,7 +685,11 @@ func parseGSubChainedSequenceRuleSet(b binarySegm) ([]GSubChainedSequenceRule, e
 	}
 	rules := make([]GSubChainedSequenceRule, 0, ruleOffsets.Len())
 	for i := 0; i < ruleOffsets.Len(); i++ {
-		off := ruleOffsets.Get(i).U16(0)
+		item, readErr := ruleOffsets.Get(i)
+		if readErr != nil {
+			return nil, fmt.Errorf("parseGSubChainedSequenceRuleSet: %w", readErr)
+		}
+		off := item.U16(0)
 		if off == 0 {
 			continue
 		}
@@ -633,7 +712,11 @@ func parseGSubChainedClassRuleSet(b binarySegm) ([]GSubChainedClassRule, error) 
 	}
 	rules := make([]GSubChainedClassRule, 0, ruleOffsets.Len())
 	for i := 0; i < ruleOffsets.Len(); i++ {
-		off := ruleOffsets.Get(i).U16(0)
+		item, readErr := ruleOffsets.Get(i)
+		if readErr != nil {
+			return nil, fmt.Errorf("parseGSubChainedClassRuleSet: %w", readErr)
+		}
+		off := item.U16(0)
 		if off == 0 {
 			continue
 		}

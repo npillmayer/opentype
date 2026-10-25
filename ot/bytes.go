@@ -109,7 +109,7 @@ func uintBytes(n uint16) binarySegm {
 // view returns n bytes at the given offset.
 // The byte segment returned is a sub-slice of b.
 func (b binarySegm) view(offset, n int) (binarySegm, error) {
-	if offset < 0 || n <= 0 || offset+n > len(b) {
+	if offset < 0 || offset > len(b) || n <= 0 || n > len(b)-offset {
 		return nil, errBufferBounds
 	}
 	return b[offset : offset+n], nil
@@ -448,19 +448,36 @@ func (a array) Len() int {
 	return a.length
 }
 
-// Get returns item #i as a byte location.
-func (a array) Get(i int) binarySegm {
-	if i < 0 || (i+1)*a.recordSize > len(a.loc.Bytes()) {
-		i = 0
+// Get returns item #i as a byte location, or an error if the read is out of bounds.
+func (a array) Get(i int) (binarySegm, error) {
+	if a.recordSize <= 0 {
+		return nil, fmt.Errorf("array %q: invalid record size %d at index %d: %w", a.name, a.recordSize, i, errBufferBounds)
 	}
-	b, _ := a.loc.view(i*a.recordSize, a.recordSize)
-	return b
+	if i < 0 || i >= a.length {
+		return nil, fmt.Errorf("array %q: index %d outside length %d: %w", a.name, i, a.length, errBufferBounds)
+	}
+	// Check complete-record capacity before multiplying the index by record size.
+	if i >= len(a.loc)/a.recordSize {
+		return nil, fmt.Errorf("array %q: index %d with record size %d exceeds backing size %d bytes: %w", a.name, i, a.recordSize, len(a.loc), errBufferBounds)
+	}
+	return a.loc.view(i*a.recordSize, a.recordSize)
 }
 
-func (a array) Range() iter.Seq2[int, binarySegm] {
-	return func(yield func(int, binarySegm) bool) {
+// arrayRecord carries the result of reading one array entry.
+// Data is nil on failure; Err preserves the error returned by Get.
+type arrayRecord struct {
+	Data binarySegm
+	Err  error
+}
+
+// Range yields each declared index and its read result in order, including errors.
+// Callers may continue after an error or stop iteration with break. Empty arrays
+// yield nothing. Successful results are views into the array's backing bytes.
+func (a array) Range() iter.Seq2[int, arrayRecord] {
+	return func(yield func(int, arrayRecord) bool) {
 		for i := range a.Len() {
-			if !yield(i, a.Get(i)) {
+			item, err := a.Get(i)
+			if !yield(i, arrayRecord{Data: item, Err: err}) {
 				return
 			}
 		}

@@ -82,7 +82,10 @@ func TestShapeComposeHookCanCollapseRunePair(t *testing.T) {
 	if len(sink.glyphs) != 1 {
 		t.Fatalf("glyph count = %d, want 1", len(sink.glyphs))
 	}
-	want := otquery.GlyphIndex(font, 0x12)
+	want, lookupErr := otquery.GlyphIndex(font, 0x12)
+	if lookupErr != nil {
+		t.Fatalf("glyph lookup: %v", lookupErr)
+	}
 	if sink.glyphs[0].GID != want {
 		t.Fatalf("composed glyph = %d, want %d", sink.glyphs[0].GID, want)
 	}
@@ -107,8 +110,14 @@ func TestShapeReorderHookCanSwapRunItems(t *testing.T) {
 	if len(sink.glyphs) != 2 {
 		t.Fatalf("glyph count = %d, want 2", len(sink.glyphs))
 	}
-	want0 := otquery.GlyphIndex(font, 0x13)
-	want1 := otquery.GlyphIndex(font, 0x12)
+	want0, lookupErr := otquery.GlyphIndex(font, 0x13)
+	if lookupErr != nil {
+		t.Fatalf("glyph lookup: %v", lookupErr)
+	}
+	want1, lookupErr := otquery.GlyphIndex(font, 0x12)
+	if lookupErr != nil {
+		t.Fatalf("glyph lookup: %v", lookupErr)
+	}
 	if sink.glyphs[0].GID != want0 || sink.glyphs[1].GID != want1 {
 		t.Fatalf("reordered glyphs = [%d %d], want [%d %d]",
 			sink.glyphs[0].GID, sink.glyphs[1].GID, want0, want1)
@@ -215,7 +224,10 @@ func TestShapeOutputIncludesNominalAdvance(t *testing.T) {
 	if len(sink.glyphs) != 1 {
 		t.Fatalf("glyph count = %d, want 1", len(sink.glyphs))
 	}
-	gid := otquery.GlyphIndex(font, 0x12)
+	gid, lookupErr := otquery.GlyphIndex(font, 0x12)
+	if lookupErr != nil {
+		t.Fatalf("glyph lookup: %v", lookupErr)
+	}
 	wantAdv := int32(otquery.GlyphMetrics(font, gid).Advance)
 	if sink.glyphs[0].Pos.XAdvance != wantAdv {
 		t.Fatalf("xAdvance = %d, want %d", sink.glyphs[0].Pos.XAdvance, wantAdv)

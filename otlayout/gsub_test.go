@@ -31,7 +31,10 @@ func TestCalibriCMap(t *testing.T) {
 	t.Logf("Using test font for cmap check")
 	cmap := otf.Table(ot.T("cmap")).Self().AsCMap()
 	r, pos := rune('A'), ot.GlyphIndex(4)
-	glyphID := cmap.GlyphIndexMap.Lookup(r)
+	glyphID, lookupErr := cmap.GlyphIndexMap.Lookup(r)
+	if lookupErr != nil {
+		t.Fatalf("glyph lookup: %v", lookupErr)
+	}
 	t.Logf("found glyph ID %#x for %#U", glyphID, r)
 	if glyphID != pos {
 		t.Errorf("expected %#U to be on glyph position %d, is %d", r, pos, glyphID)
@@ -223,7 +226,10 @@ func prepareGlyphBuffer(s string, otf *ot.Font, t *testing.T) []ot.GlyphIndex {
 	runes := []rune(s)
 	buf := make([]ot.GlyphIndex, len(runes))
 	for i, r := range runes {
-		glyphID := cmap.GlyphIndexMap.Lookup(r)
+		glyphID, lookupErr := cmap.GlyphIndexMap.Lookup(r)
+		if lookupErr != nil {
+			t.Fatalf("glyph lookup: %v", lookupErr)
+		}
 		buf[i] = glyphID
 	}
 	return buf

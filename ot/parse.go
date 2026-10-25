@@ -1157,7 +1157,14 @@ func parseConcreteScriptList(scripts binarySegm, scriptRecords array, featureGra
 		raw:          scripts,
 	}
 	for i := 0; i < scriptRecords.Len(); i++ {
-		record := scriptRecords.Get(i)
+		record, readErr := scriptRecords.Get(i)
+		if readErr != nil {
+			if sl.err == nil {
+				sl.err = fmt.Errorf("parseConcreteScriptList: %w", readErr)
+			}
+			sl.scriptOrder = append(sl.scriptOrder, 0)
+			continue
+		}
 		if record.Size() < 6 {
 			if sl.err == nil {
 				sl.err = errBufferBounds
@@ -1207,7 +1214,13 @@ func parseConcreteScript(b binarySegm, featureGraph *FeatureList) *Script {
 	}
 	s.langOrder = make([]Tag, 0, langRecords.Len())
 	for i := 0; i < langRecords.Len(); i++ {
-		record := langRecords.Get(i)
+		record, readErr := langRecords.Get(i)
+		if readErr != nil {
+			if s.err == nil {
+				s.err = fmt.Errorf("parseConcreteScript: %w", readErr)
+			}
+			continue
+		}
 		if record.Size() < 6 {
 			if s.err == nil {
 				s.err = errBufferBounds
@@ -1247,7 +1260,15 @@ func parseConcreteLangSys(b binarySegm, featureGraph *FeatureList) *LangSys {
 	}
 	ls.featureIndices = make([]uint16, featureIndices.Len())
 	for i := 0; i < featureIndices.Len(); i++ {
-		index := featureIndices.Get(i).U16(0)
+		item, readErr := featureIndices.Get(i)
+		if readErr != nil {
+			if ls.err == nil {
+				ls.err = fmt.Errorf("parseConcreteLangSys: %w", readErr)
+			}
+			ls.featureIndices = ls.featureIndices[:i]
+			return ls
+		}
+		index := item.U16(0)
 		ls.featureIndices[i] = index
 		if featureGraph != nil && int(index) >= featureGraph.Len() && ls.err == nil {
 			ls.err = fmt.Errorf("feature index %d out of bounds (size %d)", index, featureGraph.Len())
@@ -1290,7 +1311,15 @@ func parseConcreteFeatureList(features binarySegm, featureRecords array) *Featur
 		raw:                   features,
 	}
 	for i := 0; i < featureRecords.Len(); i++ {
-		record := featureRecords.Get(i)
+		record, readErr := featureRecords.Get(i)
+		if readErr != nil {
+			if fl.err == nil {
+				fl.err = fmt.Errorf("parseConcreteFeatureList: %w", readErr)
+			}
+			fl.featureOrder = append(fl.featureOrder, 0)
+			fl.featureOffsetsByIndex = append(fl.featureOffsetsByIndex, 0)
+			continue
+		}
 		if record.Size() < 6 {
 			if fl.err == nil {
 				fl.err = errBufferBounds
@@ -1348,7 +1377,10 @@ func validateConcreteScript(b binarySegm, featureGraph *FeatureList, requireDefa
 		return err
 	}
 	for i := 0; i < langRecords.Len(); i++ {
-		record := langRecords.Get(i)
+		record, readErr := langRecords.Get(i)
+		if readErr != nil {
+			return fmt.Errorf("validateConcreteScript: %w", readErr)
+		}
 		if record.Size() < 6 {
 			return errBufferBounds
 		}
@@ -1377,7 +1409,11 @@ func validateConcreteLangSys(b binarySegm, featureGraph *FeatureList) error {
 	}
 	featureCount := featureGraph.Len()
 	for i := 0; i < featureIndices.Len(); i++ {
-		index := featureIndices.Get(i).U16(0)
+		item, readErr := featureIndices.Get(i)
+		if readErr != nil {
+			return fmt.Errorf("validateConcreteLangSys: %w", readErr)
+		}
+		index := item.U16(0)
 		if int(index) >= featureCount {
 			return fmt.Errorf("feature index %d out of bounds (size %d)", index, featureCount)
 		}
@@ -1402,7 +1438,15 @@ func parseConcreteFeature(b binarySegm) *Feature {
 	}
 	f.lookupListIndices = make([]uint16, lookupArray.Len())
 	for i := 0; i < lookupArray.Len(); i++ {
-		f.lookupListIndices[i] = lookupArray.Get(i).U16(0)
+		item, readErr := lookupArray.Get(i)
+		if readErr != nil {
+			if f.err == nil {
+				f.err = fmt.Errorf("parseConcreteFeature: %w", readErr)
+			}
+			f.lookupListIndices = f.lookupListIndices[:i]
+			return f
+		}
+		f.lookupListIndices[i] = item.U16(0)
 	}
 	return f
 }
@@ -1440,7 +1484,11 @@ func parseLookupList(lytt *LayoutTable, b binarySegm, err error, isGPos bool, ta
 
 	// Collect GDEF requirements from lookup flags during the first parse pass.
 	for i := 0; i < lookupOffsets.Len(); i++ {
-		off := int(lookupOffsets.Get(i).U16(0))
+		item, readErr := lookupOffsets.Get(i)
+		if readErr != nil {
+			return fmt.Errorf("parseLookupList: %w", readErr)
+		}
+		off := int(item.U16(0))
 		if off == 0 {
 			continue
 		}

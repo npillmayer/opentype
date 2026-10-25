@@ -1,6 +1,8 @@
 package otquery
 
 import (
+	"fmt"
+
 	"github.com/npillmayer/opentype/ot"
 	"golang.org/x/image/font/sfnt"
 )
@@ -70,21 +72,38 @@ func FontMetrics(otf *ot.Font) FontMetricsInfo {
 
 // --- Glyph Routines --------------------------------------------------------
 
-// GlyphIndex returns the glyph index for a give code-point.
-// If the code-point cannot be found, 0 is returned.
+// GlyphIndex returns the glyph index for codepoint using the font's selected cmap.
 //
-// From the OpenType specification: character codes that do not correspond to any glyph in
-// the font should be mapped to glyph index 0. The glyph at this location must be a special
-// glyph representing a missing character, commonly known as '.notdef'.
-func GlyphIndex(otf *ot.Font, codepoint rune) ot.GlyphIndex {
+// A valid mapping returns (glyph, nil). A character absent from the selected
+// mapping, or explicitly mapped to glyph 0, returns (0, nil). Glyph 0 is the
+// font's missing-character glyph, .notdef; absence alone is not an error.
+//
+// Malformed mapping data detected during lookup returns (0, error), preserving
+// the underlying cmap lookup error. A nil font, missing CMap, or missing
+// GlyphIndexMap also returns (0, error). Successful parsing does not guarantee
+// that every lazily accessed mapping is valid.
+//
+// Callers can propagate the error or report it and continue with .notdef. Testing
+// only the glyph value cannot distinguish missing coverage from malformed data.
+// These errors are not added to the font's parse-time Errors collection. Error
+// messages are descriptive but their exact text is not an API contract.
+func GlyphIndex(otf *ot.Font, codepoint rune) (ot.GlyphIndex, error) {
+	if otf == nil || otf.CMap == nil || otf.CMap.GlyphIndexMap == nil {
+		return 0, fmt.Errorf("glyph lookup %U: cmap unavailable", codepoint)
+	}
 	return otf.CMap.GlyphIndexMap.Lookup(codepoint)
 }
 
 // CodePointForGlyph returns the code-point for a given glyph index.
 //
-// This is an inefficient operation: All code-points contained in the font's CMap
-// are checked sequentially if they produce the given glyph.
-// If the glyph index does not correspond to a code-point, 0 is returned.
+// This inspection-oriented operation may scan many cmap entries. If several
+// code points map to gid, the returned code point is not a unique inverse.
+// It returns 0 for gid 0 or when no mapping is found; this is indistinguishable
+// from a mapping to U+0000.
+//
+// Unlike GlyphIndex, this function has no error return and does not report
+// malformed mappings. It must not be used as a cmap validation operation.
+// For nonzero gid, otf, its CMap, and its GlyphIndexMap must be non-nil.
 func CodePointForGlyph(otf *ot.Font, gid ot.GlyphIndex) rune {
 	if gid == 0 {
 		return 0

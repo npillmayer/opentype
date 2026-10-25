@@ -360,7 +360,8 @@ func (s *Shaper) PostprocessRun(run otshape.RunContext) {
 	if s.plan.hasStch {
 		tatweel := otshape.NOTDEF
 		if s.plan.font != nil {
-			tatweel = otquery.GlyphIndex(s.plan.font, '\u0640')
+			// This optional expansion uses .notdef on malformed mappings.
+			tatweel, _ = otquery.GlyphIndex(s.plan.font, '\u0640')
 		}
 		if tatweel != otshape.NOTDEF {
 			_ = expandTatweelForStch(run, tatweel, s.plan.stchMask)
@@ -552,8 +553,8 @@ func buildFallbackGlyphMap(font *ot.Font) map[rune]glyphForms {
 			if pres == 0 {
 				continue
 			}
-			gid := otquery.GlyphIndex(font, pres)
-			if gid == otshape.NOTDEF {
+			gid, err := otquery.GlyphIndex(font, pres)
+			if err != nil || gid == otshape.NOTDEF {
 				continue
 			}
 			gfs[formInx] = gid

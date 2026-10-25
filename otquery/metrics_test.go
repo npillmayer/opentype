@@ -42,12 +42,14 @@ func (env *MetricsTestEnviron) TearDownSuite() {
 // --- Tests -----------------------------------------------------------------
 
 func (env *MetricsTestEnviron) TestGlyphIndex() {
-	gid := GlyphIndex(env.calibri, 'A')
+	gid, lookupErr := GlyphIndex(env.calibri, 'A')
+	env.Require().NoError(lookupErr)
 	env.Equal(ot.GlyphIndex(4), gid, "expected glyph index of 'A' in test font to be 4")
 }
 
 func (env *MetricsTestEnviron) TestGlyphMetrics() {
-	gid := GlyphIndex(env.calibri, 'A')
+	gid, lookupErr := GlyphIndex(env.calibri, 'A')
+	env.Require().NoError(lookupErr)
 	m := GlyphMetrics(env.calibri, gid)
 	env.T().Logf("metrics = %v", m)
 	env.Equal(sfnt.Units(1185), m.Advance, "expected font.Advance for 'A' to be 1185 units")

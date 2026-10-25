@@ -1076,7 +1076,11 @@ func (cdf *classDefinitionsFormat1) Lookup(glyph GlyphIndex) int {
 	if glyph < cdf.start || glyph >= cdf.start+GlyphIndex(cdf.count) {
 		return 0
 	}
-	clz := cdf.valueArray.Get(int(glyph - cdf.start)).U16(0)
+	item, err := cdf.valueArray.Get(int(glyph - cdf.start))
+	if err != nil {
+		return 0 // Default class when the record cannot be read.
+	}
+	clz := item.U16(0)
 	return int(clz)
 }
 
@@ -1087,7 +1091,10 @@ type classDefinitionsFormat2 struct {
 
 func (cdf *classDefinitionsFormat2) Lookup(glyph GlyphIndex) int {
 	for i := 0; i < cdf.count; i++ {
-		rec := cdf.classRanges.Get(i)
+		rec, err := cdf.classRanges.Get(i)
+		if err != nil {
+			return 0 // Do not interpret a failed read as a class-range record.
+		}
 		if glyph < GlyphIndex(rec.U16(0)) {
 			return 0
 		}

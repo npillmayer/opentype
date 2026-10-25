@@ -133,7 +133,10 @@ func findRepresentation(codepoints []byte, otf *ot.Font, buf []ot.GlyphIndex, fl
 	if flag == PREFER_COMPOSED && norm.NFC.IsNormal(codepoints) { // character in composed format, i.e. single codepoint
 		ch, w := utf8.DecodeRune(codepoints)
 		assert(w == len(codepoints), "expected codepoints to be single NFC rune")
-		glyph := otquery.GlyphIndex(otf, ch)
+		glyph, lookupErr := otquery.GlyphIndex(otf, ch)
+		if lookupErr != nil {
+			tracer().Errorf("cmap lookup: %v", lookupErr)
+		}
 		if glyph != NOTDEF { // glyph is present in font -> return it
 			buf = append(buf, glyph)
 			return buf
@@ -201,8 +204,11 @@ func (rep representation) mergeNucleus(ch rune, otf *ot.Font) representation {
 			return norep
 		}
 	}
-	glyph := otquery.GlyphIndex(otf, ch) // has NFC character a glyph?
-	if glyph == NOTDEF {                 // no luck
+	glyph, lookupErr := otquery.GlyphIndex(otf, ch)
+	if lookupErr != nil {
+		tracer().Errorf("cmap lookup: %v", lookupErr)
+	}
+	if glyph == NOTDEF { // no luck
 		//tracer().Debugf("  no glyph for %#U", ch)
 		return norep
 	}
@@ -223,7 +229,10 @@ func (rep representation) appendMark(ch rune, otf *ot.Font) representation {
 		//tracer().Debugf("  mark may not be the first code-point")
 		return norep // mark may not be the first code-point
 	}
-	glyph := otquery.GlyphIndex(otf, ch)
+	glyph, lookupErr := otquery.GlyphIndex(otf, ch)
+	if lookupErr != nil {
+		tracer().Errorf("cmap lookup: %v", lookupErr)
+	}
 	if glyph == NOTDEF {
 		//tracer().Debugf("  mark glyph not defined")
 		return norep

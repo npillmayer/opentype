@@ -949,15 +949,16 @@ func compile(req planRequest) (*plan, error) {
 	return p, nil
 }
 
+// Malformed joiner mappings are treated as unavailable by this optional classification.
 func compileJoinerGlyphClass(font *ot.Font) map[ot.GlyphIndex]uint8 {
 	classes := make(map[ot.GlyphIndex]uint8, 2)
 	if font == nil || font.CMap == nil {
 		return classes
 	}
-	if gid := otquery.GlyphIndex(font, '\u200C'); gid != NOTDEF {
+	if gid, err := otquery.GlyphIndex(font, '\u200C'); err == nil && gid != NOTDEF {
 		classes[gid] |= joinerClassZWNJ
 	}
-	if gid := otquery.GlyphIndex(font, '\u200D'); gid != NOTDEF {
+	if gid, err := otquery.GlyphIndex(font, '\u200D'); err == nil && gid != NOTDEF {
 		classes[gid] |= joinerClassZWJ
 	}
 	return classes

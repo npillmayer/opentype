@@ -92,10 +92,11 @@ that error through to `ApplyFeature` and the shaping caller.
   is not an API contract. Runtime errors are returned, not added to parse-time
   font diagnostics or silently replaced by logging.
 
-### Stage 5 implementation checkpoint
+### Partial-progress architecture
 
-All three bounded passes are implemented. See [Partial Progress Audit](PARTIAL_PROGRESS.md)
-for ownership, metadata policies, and regression coverage. The public shaping APIs
+See [Lookup Application and Partial Progress](PARTIAL_PROGRESS.md) for the
+ownership model, edit journal, nested propagation, worked example, and test map.
+The public shaping APIs
 stream to a sink: a failed chunk is not emitted, but already emitted prefixes
 cannot be retracted. Whole-call atomic output is not promised.
 
@@ -215,6 +216,6 @@ The internal shaping executor calls `otlayout.ApplyFeature`, consumes completed
 edits once to update metadata, and handles isolated-span integration. There is no
 public `ApplyLookups` API matching the earlier design sketch.
 
-See [Partial Progress](PARTIAL_PROGRESS.md) for ownership and regression coverage,
+See [Lookup Application and Partial Progress](PARTIAL_PROGRESS.md) for architecture and regression coverage,
 [Shaping Benchmarks](SHAPING_BENCHMARKS.md) for the measured performance baseline,
 and [Code Review](CODE_REVIEW.md) for unresolved work.

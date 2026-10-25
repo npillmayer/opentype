@@ -342,6 +342,8 @@ type EditSpan struct {
 // Position buffer may be nil when only GSUB is applied.
 // Copy-on-write is implemented via shared flags; mutating methods will clone
 // backing slices when necessary.
+// Mutation ownership and partial-progress invariants are documented in
+// doc/PARTIAL_PROGRESS.md.
 type BufferState struct {
 	Glyphs       GlyphBuffer
 	Pos          PosBuffer
@@ -357,6 +359,8 @@ type BufferState struct {
 // Coordinates refer to the buffer immediately before each edit. Glyphs and Pos
 // already reflect these edits; consumers must replay them only on other metadata.
 // Each ApplyFeature call clears the journal, including no-op and failed calls.
+// Reading does not drain the journal; consumers synchronize each batch once.
+// See doc/PARTIAL_PROGRESS.md for checkpoints and isolated-span integration.
 func (b *BufferState) AppliedEdits() []EditSpan {
 	if b == nil {
 		return nil
@@ -1243,6 +1247,7 @@ func matchChainedForward(ctx *applyCtx, buf GlyphBuffer, pos int, backtrack, inp
 // buffer incrementally; callers must not assume rollback. Errors retain completed
 // edits in st's journal and return its current buffers. Each enclosing frame
 // consumes those edits only to remap its own matched inputs, not to mutate buffers.
+// See doc/PARTIAL_PROGRESS.md for the checkpoint and cursor conventions.
 func applySequenceLookupRecords(
 	st *BufferState,
 	matchPositions []int,

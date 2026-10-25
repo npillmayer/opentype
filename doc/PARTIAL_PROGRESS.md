@@ -1,216 +1,194 @@
-# Partial Progress: Implementation and Validation
+# Lookup Application and Partial Progress
 
-Status: stage 5 (all three bounded passes) and stage 6 validation/documentation
-are complete for the bounded GSUB single-substitution format-1 change. Remaining
-validation and performance work is tracked in [Code Review](CODE_REVIEW.md).
+This is the architectural guide to tracking completed lookup operations when a
+later operation fails. For the public result contract and execution limits, see
+[Feature Application](FEATURE_APPLICATION.md). Open work is tracked in
+[Code Review](CODE_REVIEW.md); measurements are in
+[Shaping Benchmarks](SHAPING_BENCHMARKS.md).
 
-## Pass 3 Integration
+## Contract
 
-BufferState.AppliedEdits returns a defensive copy of the latest feature invocation's
-journal. Every invocation clears it, including no-ops and early failures. Shaping
-consumes the journal before checking the error and never replays glyph/position
-mutations. It publishes current headers even for positioning-only changes.
+`ApplyFeature` returns `(position, applied, error)` and mutates the supplied
+`BufferState`. `applied` means at least one operation applied, not that the whole
+invocation succeeded or that a value changed. A value-preserving substitution
+can apply successfully. Earlier successful operations survive a later error;
+there is no rollback, automatic retry, or persistent disabling of a lookup.
 
-Isolated spans update parent metadata with translated edits, then merge completed
-glyphs/positions on both success and error. During local processing they do not
-publish detached slice headers as the global run. Parent and local attachment
-coordinates are translated; outside-span references are preserved separately.
+Selected GSUB outputs are checked against the font glyph count before the leaf
+mutates state. A multiple substitution validates its entire selected sequence
+first. A failed output check produces no leaf edit, but does not undo earlier
+children of a contextual operation. This is not exhaustive table sanitization.
 
-The edit journal distinguishes in-place Set from ReplaceGlyphs using
-EditSpan.ResetsPositions. Isolated integration replays positional replacements
-based on that flag, not on whether the edit changes length. Whole-buffer and
-isolated one-to-one replacement therefore clear the same outside attachments;
-Set continues to preserve positioning. TestOneToOneAttachmentParity covers both
-operations, prefix/suffix attachments, and all returned position fields.
+The returned position agrees with `BufferState.Index`. It is diagnostic, not a
+resume token. Errors retain their causes and gain feature, lookup, subtable, and
+sequence-record context as they propagate. Execution-limit errors follow the
+same partial-progress policy.
 
-Metadata policy for replacements:
-- Unaffected prefixes/suffixes retain their entries.
-- New slots inherit the first consumed input's codepoint, plan ID, mask, syllable,
-  and joiner annotations.
-- Clusters use the minimum consumed cluster; unsafe flags are ORed.
-- One-to-one substitutions preserve all side metadata.
-- Pure insertion has default metadata; deletion removes the consumed entries.
-- Retained position attachments follow shifted targets. Attachments to replaced
-  targets are cleared rather than redirected to a different glyph identity.
-  This is a conservative structural policy, not new ligature-component semantics.
+## Ownership
 
-Public Shape and ShapeEvents comments specify that the failing chunk is withheld,
-but previously emitted prefixes and consumed input cannot be rolled back.
-Applications requiring atomic delivery must stage output themselves.
+| Owner | Responsibility | Must not do |
+| --- | --- | --- |
+| `BufferState` mutation methods | Change glyphs/positions and record glyph edits | Expect dispatch to repeat position edits |
+| Lookup dispatcher | Publish returned buffers/cursor and propagate results | Treat errors as ordinary non-matches or try a fallback subtable |
+| Contextual frame | Track original matched inputs through child edits | Replay glyph or position mutations |
+| Shaping executor | Apply edits to side metadata and publish current slice headers | Return on error before synchronization |
+| Isolated-span integration | Translate coordinates and merge completed local state | Discard partial changes merely because application failed |
+| Public streaming API | Emit successfully shaped chunks | Promise whole-call rollback |
 
-Tests cover the original whole/isolated regressions with actual metadata values,
-suffix positioning and attachment indices, contraction/expansion with zero net
-length change, position-only errors, journal snapshot isolation/reset, both public
-sink boundaries with/without prior output, and history independence after failure.
+Implementation entry points are in `otlayout/feature.go`, `otlayout/gsub.go`,
+`otlayout/gpos.go`, `otshape/lookups.go`, and `otshape/runbuffer.go`.
 
-## Pass 2 Implementation
+`CloneShared` starts independent journal history while sharing backing buffers.
+Mutation methods detach shared storage before writing. `EnsurePos` also detaches
+an already aligned shared position buffer before GPOS writes. Nested calls must
+use the actual owning `BufferState`, not a new owner made from borrowed slices.
 
-- BufferState owns an ordered internal edit journal. Set and ReplaceGlyphs record
-  mutations; positions are changed only by their owning mutation methods.
-- applyLookupConcrete no longer reapplies the position edit. A one-to-one Set
-  preserves existing positioning rather than replacing it with default records.
-- Contextual calls use the actual BufferState rather than constructing an owner
-  from borrowed slices. Each contextual frame checkpoints the journal and remaps
-  its inputs using all child edits, including nested composites.
-- Contextual frames restore their enclosing cursor on exit; the enclosing lookup
-  publishes its returned position. This retains the existing contextual cursor
-  convention rather than introducing resumability after failure.
-- EnsurePos detaches shared positioning before GPOS writes, even if lengths
-  already match. CloneShared starts independent journal history.
-- ApplyFeature starts a new journal before applying its lookup sequence. Completed
-  edits remain available on error; the shaping consumer reads a defensive snapshot.
+## Ordered Edit Journal
 
-Tests now cover expansion/contraction alignment, nested mapping, journal order,
-preservation of suffix position values, contextual GSUB/GPOS copy-on-write, and
-multiple edits with zero net length change.
+`BufferState.edits` is an internal ordered list of `EditSpan` values.
+`Set` and `ReplaceGlyphs` append entries describing mutations already performed.
+An entry replaces the half-open range `[From, To)` with `Len` glyphs. Coordinates
+refer to the buffer immediately before that entry, not the original input.
 
-## Failure Policy
+- `Set` records a one-to-one edit and preserves positions.
+- `ReplaceGlyphs` records `ResetsPositions: true` and updates existing positions.
+- `ResetsPositions` distinguishes these operations even when their lengths match.
+- Positioning-only operations need not create glyph-edit entries.
+- A contextual operation may have many entries and no single aggregate edit.
+- Equal initial/final lengths do not imply that no edits occurred.
 
-Option 3 remains the baseline: return application errors without persistently
-disabling tables or lookups. Cached parsing failures do not change that policy.
-No rollback, automatic retry, fallback-font selection, or new sanitizer is planned.
+Every `ApplyFeature` invocation clears the journal on a non-nil state, including
+no-ops and early failures. Nested internal lookup calls append to that same
+journal rather than starting another feature invocation.
 
-Low-level ApplyFeature owns no transaction: completed work remains in its
-caller-supplied BufferState. On error it must return the accumulated applied flag,
-current slice headers, and a position equal to BufferState.Index. That position
-is diagnostic, not a safe resume token. A failing leaf should validate before
-mutation; completed child operations of a composite are not rolled back.
+`AppliedEdits()` returns a defensive copy, including completed edits on error.
+It does not drain the journal: repeated reads return the same history until a
+new invocation or mutation changes it. Consumers must synchronize each batch
+once, before the next `ApplyFeature` resets it. The journal is neither an undo
+log nor a complete record of positioning changes.
 
-An error must preserve cause and context. Earlier edits must update each consumer
-exactly once. A nil aggregate EditSpan does not mean no edits occurred.
+## Contextual Propagation
 
-## Public Boundary: Streaming, Not an Atomic Result
+`applySequenceLookupRecords` builds a map from matched-input sequence indices to
+current buffer positions. Before each child call it records `len(st.edits)` as a
+checkpoint and sets the cursor to the mapped target.
 
-Shape and ShapeEvents take a source and GlyphSink and return error, not a shaped
-result object. Their workspace owns the in-progress run. Shape calls
-shapeMappedRun before writing a flushable prefix. ShapeEvents similarly shapes
-and assembles event segments before emitting the current chunk.
+After a successful child call, it consumes all entries since the checkpoint,
+including edits from deeper nested contexts. For each entry:
 
-Implemented contract:
-- A lookup error must prevent emission of the failing in-progress chunk.
-- Previously emitted prefixes remain in the sink; the whole call is not atomic.
-- A sink error can itself leave a partially written prefix.
-- Inputs may already have been consumed. Retrying requires caller-retained input
-  and a suitable sink; automatic replay is not promised.
-- Internal partial buffers remain coherent for cleanup and diagnostics, but are
-  not exposed as completed output.
-- Callers requiring all-or-nothing delivery should buffer sink output and commit
-  only after success.
+- Positions after the replaced range shift by `Len - (To - From)`.
+- Positions inside a replacement map to its first output position.
+- Positions inside a deletion become unavailable; subsequent records targeting
+  them are skipped.
 
-This corrects the earlier shorthand "return no output on failure": it can apply
-to the current chunk, not retroactively to the entire streaming call.
+Each enclosing frame updates only its own input map. The shared buffer already
+contains the child mutations. On error, execution stops and the journal is
+retained; the frame need not remap inputs for further records because it does
+not continue. It restores its enclosing cursor on exit, while lookup dispatch
+publishes the operation's returned cursor. This convention is not resumability.
 
-Relevant paths: otshape/shape_api.go (Shape, shapeMappedRun, sink writers);
-otshape/shape_events.go (ShapeEvents, event-segment assembly).
+## Shaping Integration
 
-## Implemented Ownership Model
+`applyLookupSpanInternal` consumes `AppliedEdits()` before testing the returned
+error. It translates coordinates when needed and calls `run.applyLayoutEdit`
+for side arrays only. Whole-run execution publishes glyph/position slice headers
+before returning, including reallocated buffers and positioning-only changes.
+Simply resizing metadata to the final glyph count would lose correspondence.
 
-BufferState owns an ordered edit journal. Each entry uses coordinates immediately
-before that edit. Completed edits remain available on error; contextual frames
-use invocation checkpoints rather than a single aggregate replacement span.
+Replacement policies:
 
-Responsibilities:
-1. BufferState mutation methods change glyphs and positions once.
-2. Contextual frames consume child edits to update their own matched-input maps;
-   they must not replay glyph or position mutations.
-3. The shaping executor consumes edits to update side arrays and publishes current
-   headers on both success and error.
-4. An isolated span translates edit coordinates into parent coordinates and merges
-   its completed state on both success and error.
-5. The public streaming layer emits only successfully shaped chunks.
+- Unaffected prefixes and suffixes retain their entries.
+- Inserted replacement slots inherit the first consumed input's codepoint,
+  plan ID, feature mask, syllable, and joiner annotations.
+- Clusters use the minimum consumed cluster; unsafe flags are combined with OR.
+- One-to-one edits preserve side metadata.
+- Pure insertion uses default metadata; deletion removes consumed entries.
 
-Pass 2 uses a BufferState journal with invocation checkpoints. Pass 3 provides a defensive snapshot across the package boundary. Avoid a general
-transaction/rollback framework.
+### Isolated spans and attachments
 
-Side-array policies must be explicit: preserve unaffected suffix entries;
-determine inheritance/defaults for inserted or merged clusters, masks, plan IDs,
-syllables, joiners, and unsafe flags. Reuse existing policies where appropriate,
-but do not assume simple resizing is sufficient.
+`applyLookupIsolatedSpan` works on detached glyph/position slices, for example
+for one syllable. Local edits are translated into parent coordinates for side
+metadata. Local slice headers are not published as if they represented the whole
+run. Completed glyphs and positions are merged back on both success and error.
 
-## Regression Tests Added
+The merge replays structural position edits onto the parent positions only when
+`ResetsPositions` is true, then copies the completed local positions into place.
+This updates the separate parent representation, rather than editing the local
+positions twice. A one-to-one replacement still resets positions; `Set` does not.
 
-Run:
-    go test ./otlayout ./otshape -run TestPartialProgress -count=1
+Attachments inside the span use local indices during application. References
+outside the span are preserved separately and translated back during the merge.
+Retained targets shift with structural edits. References to replaced targets are
+cleared rather than redirected to a new glyph identity. This is conservative
+attachment bookkeeping, not a new ligature-component positioning model.
 
-- TestPartialProgressExpansionEditsPositionsOnce: expansion followed by an invalid
-  lookup must retain the expansion and have one position entry per glyph.
-- TestPartialProgressNestedEditRemapsOuterInput: nested expansion, then an outer
-  substitution, then failure. Coverage deliberately includes an inserted glyph
-  so forward matching cannot conceal a stale target index.
-- TestPartialProgressIsolatedSpanRetainsCompletedEdits/whole_span: an expansion
-  followed by a nested-reference error must publish updated run headers and keep
-  clusters and plan IDs aligned.
-- The isolated_span variant requires those same completed changes to be merged
-  back into the parent instead of discarded.
+## Worked Example
 
-Fixtures are independently parsed and their cached nodes are replaced with small,
-controlled lookup graphs. No real font files are modified. Expansion inputs have
-insufficient capacity, exercising changed slice headers.
+Consider a contextual lookup matching `[10, 20]`, with glyph count 100. Its child
+operations target the original matched inputs, not fixed buffer offsets:
 
-## Validation and Scope
+| Step | Operation | Current glyphs | New journal entry |
+| --- | --- | --- | --- |
+| Initial | Match inputs at positions 0 and 1 | `[10, 20]` | None |
+| 1 | Replace input 0 with `[11, 12, 13]` | `[11, 12, 13, 20]` | `{From:0, To:1, Len:3, ResetsPositions:true}` |
+| 2 | Set original input 1 to glyph 21 | `[11, 12, 13, 21]` | `{From:3, To:4, Len:1, ResetsPositions:false}` |
+| 3 | Attempt to replace that input with `[22, 100]` | `[11, 12, 13, 21]` | None: output 100 is invalid |
 
-Run the full suite with go test ./... and the targeted race suite with
-go test ./otlayout ./otshape -race. The added regression tests have no intentional
-failures or skips. Existing font-golden tests can skip malformed subtables; see
-CODE_REVIEW.md.
+After step 1, the contextual map changes from `[0, 1]` to `[0, 3]`. Step 2
+therefore targets the original second input, not inserted glyph 12. Step 3
+checks both outputs before writing anything.
 
-This work does not add rollback, retry, table disabling, exhaustive font
-sanitization. Output validation was subsequently extended as described below.
+The result has `applied == true` and a non-nil error. Both completed journal
+entries remain available; the returned position equals the state's cursor but
+is not a safe restart point. If positions existed initially, four remain aligned
+with the glyphs. The first three replacement positions are reset; the original
+second input's position survives the expansion and subsequent `Set`.
 
-## Stage 6: Successful-Shaping Regression Coverage
+For initial clusters `[0, 1]`, shaping replays the two entries to produce
+`[0, 0, 0, 1]` before returning the error. It does not replay the glyph expansion.
+An isolated span performs the same bookkeeping with translated parent indices.
+This coherent partial run is internal state, not successful public output.
 
-Added in otshape/successful_edits_test.go:
-- A three-lookup expansion/substitution/contraction sequence, in whole-run and
-  per-syllable modes, asserts exact glyphs, masks, clusters, plan IDs, syllables,
-  joiners, unsafe flags, codepoints, and retained suffix positioning after every
-  lookup. Feature ranges are initialized once on the original inputs.
-- A ligature matrix checks that isolated processing blocks cross-syllable matches
-  but permits same-syllable contraction; whole-run processing is the control.
-- A public Shape test verifies ranged-feature expansion and exact emitted cluster
-  IDs, including disabled inputs before and after the enabled range.
+## Public Output Boundary
 
-These tests use independently parsed fixture fonts with controlled lookup payloads.
-Existing Arabic/Hebrew and core fixture tests are run alongside them; their passing
-does not constitute exhaustive real-world complex-script coverage.
+`Shape` and `ShapeEvents` write to a `GlyphSink` and return an error; they do not
+return a partial shaped-result object. A lookup failure withholds the current
+in-progress chunk. Previously emitted prefixes remain in the sink, and input
+may already have been consumed. A sink error can itself leave partially written
+output.
 
-## Stage 6: Performance Baseline
+Applications requiring atomic delivery must stage sink output and commit only
+after success. Retrying requires retained input and an appropriate sink; neither
+automatic replay nor rollback is provided. See `otshape/shape_api.go` and
+`otshape/shape_events.go` for these boundaries.
 
-Allocation-reporting benchmarks now cover ordinary public shaping, whole-run and
-per-syllable lookup application, and positional replacement. See
-[Shaping Performance Baseline](SHAPING_BENCHMARKS.md) for the pre-stage-5 comparison,
-measurement limitations, and candidate profiling targets. No production
-optimization is included.
+## Regression-Test Map
 
-## Stage 6: Bounded Execution and Closeout
+| Invariant | Tests |
+| --- | --- |
+| Glyph and position edits happen once | `otlayout/partial_progress_test.go`: `TestPartialProgressExpansionEditsPositionsOnce` |
+| Nested edits remap original input positions | Same file: `TestPartialProgressNestedEditRemapsOuterInput` |
+| Shared buffers retain ownership semantics | Same file: `TestPartialProgressContextPreservesSharedOwnership` |
+| Zero net length still retains edit history | Same file: `TestEditJournalRetainsZeroNetLengthChanges` |
+| Snapshot isolation and per-call reset | Same file: `TestAppliedEditsSnapshotAndReset` |
+| Whole/isolated partial state and metadata | `otshape/partial_progress_test.go`: `TestPartialProgressIsolatedSpanRetainsCompletedEdits` |
+| Position-only failure publishes state | Same file: `TestPartialProgressPositionOnlyErrorPublishesBuffer` |
+| One-to-one attachment parity | Same file: `TestOneToOneAttachmentParity` |
+| Failed leaves leave state unchanged | `otlayout/gsub_output_bounds_test.go`: `TestExplicitOutputGlyphBounds` |
+| Earlier success survives invalid output | Same file: `TestExplicitOutputNestedPartialProgress`; `otshape/output_bounds_test.go`: `TestInvalidMultipleOutputRetainsEarlierProgress` |
+| Failing chunks withheld; prior output retained | `otshape/partial_progress_test.go`: `TestPartialProgressPublicSinkBoundary`; `otshape/output_bounds_test.go`: `TestInvalidMultipleOutputPublicSinkBoundary` |
+| Success preserves feature ranges and syllable boundaries | `otshape/successful_edits_test.go` |
+| Cycles/work limits preserve the failure contract | `otlayout/execution_limits_test.go` |
 
-`otlayout/execution_limits_test.go` covers self/mutual recursion, terminating
-recursion, depth boundaries, broad work-budget exhaustion, independent calls,
-concurrent buffers, and retained partial GSUB/GPOS progress. The contract and
-limits are documented in [Feature Application](FEATURE_APPLICATION.md).
-
-The attachment-parity regression, bounded contextual execution, successful
-shaping coverage, benchmark baseline, and documentation reconciliation complete
-stage 6. This is completion of the agreed bounded change, not a claim of complete
-font sanitization, exhaustive script coverage, or performance optimization.
-
-Final validation commands:
+Run the full suite and targeted race checks:
 
 ```sh
 go test ./... -count=1
 go test ./otlayout ./otshape ./otshape/otarabic ./otshape/othebrew -race -count=1
-git diff --check
 ```
 
-## Follow-Up: Explicit GSUB Output Bounds
-
-All output-producing GSUB handlers share a glyph-count validator. Each selected
-leaf output is checked before mutation, including every glyph of a multiple
-substitution. No-match and alternate-selection behavior remain unchanged.
-Completed earlier contextual operations are retained when a later output fails.
-
-Regression coverage in `otlayout/gsub_output_bounds_test.go` and
-`otshape/output_bounds_test.go` exercises boundaries, unchanged failed leaves,
-copy-on-write, unused outputs, subtable fallback prevention, extension dispatch,
-nested partial progress, whole/isolated-span metadata, both public sink entry
-points, and history independence. This does not add eager table sanitization or
-coverage/payload consistency validation.
+Controlled fixture graphs exercise these invariants without modifying font files.
+Passing tests are not exhaustive script coverage or font sanitization. Existing
+font-golden tests can skip malformed subtables; that limitation remains tracked
+in the code review. Benchmarks measure the cost of the mechanism, not a guarantee
+of bounded total shaping time or memory.

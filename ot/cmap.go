@@ -288,7 +288,8 @@ func makeGlyphIndexFormat4(b binarySegm, tag Tag, offset uint32, ec *errorCollec
 			offset: offsets.Get(i).U16(0),
 		}
 		if entries[i].offset > 0 && entries[i].delta > 0 {
-			panic("Hurray! Font with cmap format 4, offset > 0 and delta > 0, detected!")
+			tracer().Debugf("Font with cmap format 4, offset = %d > 0 and delta = %d > 0, detected!",
+				entries[i].offset, entries[i].delta)
 		}
 	}
 	glyphTable := viewArray16(b[next:])

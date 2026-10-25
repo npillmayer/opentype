@@ -72,6 +72,14 @@ that error through to `ApplyFeature` and the shaping caller.
   is not an API contract. Runtime errors are returned, not added to parse-time
   font diagnostics or silently replaced by logging.
 
+### Stage 5 implementation checkpoint
+
+The first bounded pass audits ownership and adds intentionally failing regression
+tests, without changing production behavior. See [Partial Progress Audit](PARTIAL_PROGRESS.md)
+for the confirmed defects, edit-ownership proposal, and next implementation passes.
+The public shaping APIs stream to a sink: a failed chunk must not be emitted, but
+already emitted prefixes cannot be retracted. Whole-call atomic output is not promised.
+
 ### Mutation and partial progress
 
 Validate a leaf operation before mutating glyphs, positions, or its cursor. A

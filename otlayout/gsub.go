@@ -260,7 +260,7 @@ func gsubLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
@@ -303,7 +303,7 @@ func gsubLookupType5Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
@@ -336,7 +336,7 @@ func gsubLookupType5Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if len(payload.Records) == 0 {
 		return pos, false, buf, nil, nil
 	}
-	out, outPosBuf, applied, err := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+	out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 	ctx.buf.Pos = outPosBuf
 	if err != nil {
 		return pos, applied, out, nil, err
@@ -394,7 +394,7 @@ func gsubLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
@@ -453,7 +453,7 @@ func gsubLookupType6Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(buf, ctx.buf.Pos, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
@@ -509,7 +509,7 @@ func gsubLookupType6Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if len(payload.Records) == 0 {
 		return pos, false, buf, nil, nil
 	}
-	out, outPosBuf, applied, err := applySequenceLookupRecords(buf, ctx.buf.Pos, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+	out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 	ctx.buf.Pos = outPosBuf
 	if err != nil {
 		return pos, applied, out, nil, err

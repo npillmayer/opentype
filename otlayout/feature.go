@@ -215,6 +215,7 @@ func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bo
 	if lytTable == nil {
 		return st.Index, false, fmt.Errorf("feature %s: missing layout table or invalid feature type %d", feat.Tag(), feat.Type())
 	}
+	st.edits = nil
 	var applied, ok bool
 	gdef := otf.Layout.GDef
 	lookupGraph := lytTable.LookupGraph()
@@ -293,6 +294,7 @@ type BufferState struct {
 	Index        int
 	glyphsShared bool
 	posShared    bool
+	edits        []EditSpan // ordered mutations, in coordinates immediately before each edit
 }
 
 // NewBufferState constructs a buffer state with index 0.
@@ -364,6 +366,7 @@ func (b *BufferState) At(i int) ot.GlyphIndex {
 func (b *BufferState) Set(i int, g ot.GlyphIndex) {
 	b.ensureUniqueGlyphs()
 	b.Glyphs.Set(i, g)
+	b.edits = append(b.edits, EditSpan{From: i, To: i + 1, Len: 1})
 }
 
 // ApplyEdit mirrors a GSUB edit onto the position buffer to keep alignment.
@@ -378,7 +381,7 @@ func (b *BufferState) ApplyEdit(edit *EditSpan) {
 	b.Pos = b.Pos.ApplyEdit(edit)
 }
 
-// EnsurePos allocates a position buffer if missing and keeps it aligned with glyphs.
+// EnsurePos prepares a uniquely owned position buffer for GPOS writes.
 func (b *BufferState) EnsurePos() {
 	if b == nil {
 		return
@@ -388,8 +391,8 @@ func (b *BufferState) EnsurePos() {
 		b.posShared = false
 		return
 	}
+	b.ensureUniquePos()
 	if len(b.Pos) != len(b.Glyphs) {
-		b.ensureUniquePos()
 		b.Pos = b.Pos.ResizeLike(b.Glyphs)
 	}
 }
@@ -405,6 +408,7 @@ func (b *BufferState) ReplaceGlyphs(i, j int, repl []ot.GlyphIndex) *EditSpan {
 	b.ensureUniqueGlyphs()
 	b.Glyphs = b.Glyphs.Replace(i, j, repl)
 	edit := &EditSpan{From: i, To: j, Len: len(repl)}
+	b.edits = append(b.edits, *edit)
 	if b.Pos != nil {
 		b.ensureUniquePos()
 		b.Pos = b.Pos.ApplyEdit(edit)
@@ -553,9 +557,6 @@ func applyLookupConcrete(
 		}
 		if pbuf != nil {
 			st.Pos = pbuf
-		}
-		if edit != nil {
-			st.ApplyEdit(edit)
 		}
 		st.Index = pos
 	}
@@ -1141,11 +1142,11 @@ func matchChainedForward(ctx *applyCtx, buf GlyphBuffer, pos int, backtrack, inp
 
 // applySequenceLookupRecords applies nested lookups in record order. Its boolean
 // accumulates whether any nested lookup applied. Nested operations can mutate the
-// buffer incrementally; callers must not assume rollback. The planned error path
-// must preserve completed edits and return their current buffers and bookkeeping.
+// buffer incrementally; callers must not assume rollback. Errors retain completed
+// edits in st's journal and return its current buffers. Each enclosing frame
+// consumes those edits only to remap its own matched inputs, not to mutate buffers.
 func applySequenceLookupRecords(
-	buf GlyphBuffer,
-	posBuf PosBuffer,
+	st *BufferState,
 	matchPositions []int,
 	records []ot.SequenceLookupRecord,
 	lookupGraph *ot.LookupListGraph,
@@ -1154,15 +1155,19 @@ func applySequenceLookupRecords(
 	gdef *ot.GDefTable,
 	env applyEnv,
 ) (GlyphBuffer, PosBuffer, bool, error) {
+	// Share the actual owner, not just its slices: nested writes must retain
+	// copy-on-write flags and append to the same edit journal.
+	savedIndex := st.Index
+	defer func() { st.Index = savedIndex }()
 	mapIdx := buildInputMap(matchPositions)
 	if len(records) == 0 {
-		return buf, posBuf, false, nil
+		return st.Glyphs, st.Pos, false, nil
 	}
 	if lookupGraph == nil {
-		return buf, posBuf, false, errors.New("context lookup: missing lookup graph")
+		return st.Glyphs, st.Pos, false, errors.New("context lookup: missing lookup graph")
 	}
 	if err := lookupGraph.Error(); err != nil {
-		return buf, posBuf, false, fmt.Errorf("context lookup graph: %w", err)
+		return st.Glyphs, st.Pos, false, fmt.Errorf("context lookup graph: %w", err)
 	}
 
 	applied := false
@@ -1170,48 +1175,43 @@ func applySequenceLookupRecords(
 		tracer().Debugf("sequence lookup record: seq=%d lookup=%d", rec.SequenceIndex, rec.LookupListIndex)
 		seqIndex := int(rec.SequenceIndex)
 		if seqIndex < 0 || seqIndex >= len(mapIdx) {
-			return buf, posBuf, applied, fmt.Errorf("sequence record %d: input index %d outside %d matched positions", recordIndex, seqIndex, len(mapIdx))
+			return st.Glyphs, st.Pos, applied, fmt.Errorf("sequence record %d: input index %d outside %d matched positions", recordIndex, seqIndex, len(mapIdx))
 		}
 		targetPos := mapIdx[seqIndex]
 		if targetPos < 0 { // an earlier record deleted this matched input
 			continue
 		}
-		if targetPos >= buf.Len() {
-			return buf, posBuf, applied, fmt.Errorf("sequence record %d: target position %d outside buffer", recordIndex, targetPos)
+		if targetPos >= st.Len() {
+			return st.Glyphs, st.Pos, applied, fmt.Errorf("sequence record %d: target position %d outside buffer", recordIndex, targetPos)
 		}
 		tracer().Debugf("sequence lookup record: target position %d", targetPos)
 		clookup := lookupGraph.Lookup(int(rec.LookupListIndex))
-		st := NewBufferState(buf, posBuf)
+		checkpoint := len(st.edits)
 		st.Index = targetPos
-		_, ok, edit, err := applyLookupConcrete(clookup, lookupGraph, feat, st, alt, gdef, env)
+		_, ok, _, err := applyLookupConcrete(clookup, lookupGraph, feat, st, alt, gdef, env)
 		applied = applied || ok
-		buf, posBuf = st.Glyphs, st.Pos
 		if err != nil {
-			return buf, posBuf, applied, fmt.Errorf("sequence record %d input %d lookup %d: %w", recordIndex, seqIndex, rec.LookupListIndex, err)
+			return st.Glyphs, st.Pos, applied, fmt.Errorf("sequence record %d input %d lookup %d: %w", recordIndex, seqIndex, rec.LookupListIndex, err)
 		}
-		if !ok {
-			continue
-		}
-		if edit == nil {
-			continue
-		}
-		delta := edit.Len - (edit.To - edit.From)
-		for i := range mapIdx {
-			if mapIdx[i] < 0 {
-				continue
-			}
-			if mapIdx[i] >= edit.To {
-				mapIdx[i] += delta
-			} else if mapIdx[i] >= edit.From {
-				if edit.Len == 0 {
-					mapIdx[i] = -1
-				} else {
-					mapIdx[i] = edit.From
+		for _, edit := range st.edits[checkpoint:] {
+			delta := edit.Len - (edit.To - edit.From)
+			for i := range mapIdx {
+				if mapIdx[i] < 0 {
+					continue
+				}
+				if mapIdx[i] >= edit.To {
+					mapIdx[i] += delta
+				} else if mapIdx[i] >= edit.From {
+					if edit.Len == 0 {
+						mapIdx[i] = -1
+					} else {
+						mapIdx[i] = edit.From
+					}
 				}
 			}
 		}
 	}
-	return buf, posBuf, applied, nil
+	return st.Glyphs, st.Pos, applied, nil
 }
 
 // check if we recognize a feature tag

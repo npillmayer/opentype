@@ -74,8 +74,9 @@ that error through to `ApplyFeature` and the shaping caller.
 
 ### Stage 5 implementation checkpoint
 
-The first bounded pass audits ownership and adds intentionally failing regression
-tests, without changing production behavior. See [Partial Progress Audit](PARTIAL_PROGRESS.md)
+The second bounded pass fixes low-level edit ownership, nested edit transport,
+and shared-buffer isolation. Low-level regression tests pass; the shaping-boundary
+test remains intentionally failing until pass 3. See [Partial Progress Audit](PARTIAL_PROGRESS.md)
 for the confirmed defects, edit-ownership proposal, and next implementation passes.
 The public shaping APIs stream to a sink: a failed chunk must not be emitted, but
 already emitted prefixes cannot be retracted. Whole-call atomic output is not promised.

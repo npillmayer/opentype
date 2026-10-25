@@ -1,8 +1,31 @@
 # Partial Progress: Stage 5 Ownership Audit
 
-Status: first bounded pass only. Production behavior is unchanged. The new
-TestPartialProgress tests intentionally fail and specify requirements for the
-next passes. They are neither skipped nor expected-failure wrappers.
+Status: second bounded pass implemented. Low-level partial-progress tests pass.
+The shaping-boundary regression test remains intentionally failing until pass 3.
+
+## Pass 2 Implementation
+
+- BufferState owns an ordered internal edit journal. Set and ReplaceGlyphs record
+  mutations; positions are changed only by their owning mutation methods.
+- applyLookupConcrete no longer reapplies the position edit. A one-to-one Set
+  preserves existing positioning rather than replacing it with default records.
+- Contextual calls use the actual BufferState rather than constructing an owner
+  from borrowed slices. Each contextual frame checkpoints the journal and remaps
+  its inputs using all child edits, including nested composites.
+- Contextual frames restore their enclosing cursor on exit; the enclosing lookup
+  publishes its returned position. This retains the existing contextual cursor
+  convention rather than introducing resumability after failure.
+- EnsurePos detaches shared positioning before GPOS writes, even if lengths
+  already match. CloneShared starts independent journal history.
+- ApplyFeature starts a new journal before applying its lookup sequence. Completed
+  edits remain available internally on error. No public API was added; exposing
+  completed edits to the shaping package is part of pass 3.
+
+Tests now cover expansion/contraction alignment, nested mapping, journal order,
+preservation of suffix position values, contextual GSUB/GPOS copy-on-write, and
+multiple edits with zero net length change. The audit below describes the
+original defects; shaping synchronization and attachment-index policy remain
+outstanding.
 
 ## Failure Policy
 
@@ -43,7 +66,7 @@ to the current chunk, not retroactively to the entire streaming call.
 Relevant paths: otshape/shape_api.go (Shape, shapeMappedRun, sink writers);
 otshape/shape_events.go (ShapeEvents, event-segment assembly).
 
-## Ownership Map and Confirmed Gaps
+## Original Ownership Audit (Pass 1)
 
 | Layer | Current ownership/action | Gap / intended responsibility |
 | --- | --- | --- |
@@ -70,7 +93,7 @@ Additional audit risks for follow-up tests:
 
 These additional risks are inspection findings, not all reproduced by this pass.
 
-## Proposed Minimal Internal Design
+## Internal Design and Remaining Integration
 
 Use an ordered internal edit stream rather than forcing composites into one
 EditSpan. Each entry describes coordinates immediately before that edit.
@@ -87,9 +110,9 @@ Responsibilities:
    its completed state on both success and error.
 5. The public streaming layer emits only successfully shaped chunks.
 
-The exact carrier (internal result or shared journal with invocation checkpoints)
-is deferred to pass 2. Preserve public signatures unless implementation proves
-that impossible. Avoid a general transaction/rollback framework.
+Pass 2 uses a BufferState journal with invocation checkpoints. Pass 3 must provide
+a safe consumption mechanism across the package boundary. Avoid a general
+transaction/rollback framework.
 
 Side-array policies must be explicit: preserve unaffected suffix entries;
 determine inheritance/defaults for inserted or merged clusters, masks, plan IDs,
@@ -118,13 +141,11 @@ insufficient capacity, exercising changed slice headers.
 
 ## Remaining Passes
 
-Pass 2: repair position-edit ownership, transport nested edits, preserve shared
-buffer ownership, and make the low-level tests green. Add contraction, multiple
-edit, position-value preservation, and copy-on-write tests.
+Pass 2 is complete for the low-level scope described above.
 
 Pass 3: synchronize shaping side arrays on all exits, merge isolated spans with
 coordinate translation, and make shaping tests green. Add sink-boundary tests
 (including a previously emitted prefix), history-independence tests, and
 positioning-only failure cases. Run the full suite and targeted race checks.
 
-Do not weaken or skip the failing tests to make the suite green.
+Do not weaken or skip the remaining shaping-boundary test to make the suite green.

@@ -22,29 +22,6 @@ not a demonstrated malformed-font parsing vulnerability.
 Suggested work: return a descriptive error for a nil table and test direct and
 forwarding accessors. Define the policy for typed-nil table implementations too.
 
-## Medium: output glyph-count checks remain incomplete outside GSUB 1 format 1
-
-Locations: `otlayout/gsub.go:58`, `otlayout/gsub.go:94`,
-`otlayout/gsub.go:135`, `otlayout/gsub.go:180`, `otlayout/gsub.go:524`.
-
-Other substitution handlers consume explicit output glyph IDs without checking
-against the application environment's font glyph count. For example, format 2:
-
-```go
-glyph := payload.SubstituteGlyphIDs[inx]
-ctx.buf.Set(mpos, glyph)
-```
-
-A representable uint16 glyph ID is not necessarily present in the font. This is a
-separate remaining validation gap, outside the bounded format-1 change.
-
-Suggested work: share a small output-glyph validator using the existing immutable
-application environment. Validate every output of a leaf before any mutation;
-return contextual errors while retaining earlier completed composite operations.
-Test zero, the last valid ID, the count boundary, and multi-output operations
-whose later output is invalid. Preserve normal non-match and alternate-selection
-semantics. No implementation of this follow-up is included here.
-
 ## Low: cmap factory retains an invariant panic
 
 Location: `ot/cmap.go:118`, `makeGlyphIndex`.

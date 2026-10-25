@@ -24,8 +24,14 @@ applications. This check also applies inside contextual and extension lookups.
 
 Completed edits now synchronize layout buffers, nested input mappings, and shaping
 side arrays on both success and error, including isolated syllable spans.
-Glyph-count validation for other substitution formats remains outside this bounded
-fix; the implementation is not a comprehensive malformed-data validator.
+All implemented GSUB output-producing handlers now validate selected outputs
+against the same font glyph count: both single formats, multiple, alternate,
+ligature, and reverse chaining. Multiple substitution checks its entire selected
+sequence before mutation. Alternate and ligature handlers validate only the
+selected alternative or matched rule; unused outputs are not sanitized.
+Contextual and extension calls inherit these checks. Invalid selected outputs
+return errors without subtable fallback or automatic replacement with glyph zero.
+This is not a comprehensive malformed-data validator.
 
 ### Result semantics
 
@@ -66,8 +72,8 @@ that error through to `ApplyFeature` and the shaping caller.
   alternative subtable or advance the shaping cursor as though this were a miss.
 - Check errors on lazy lookup nodes before using their payloads. Missing required
   payloads, invalid lookup references, and detected invalid output glyphs are
-  failures. Output glyph-count validation currently covers GSUB 1 format 1,
-  not every substitution handler or malformed coverage/payload relationship.
+  failures. Output glyph-count validation covers selected GSUB outputs,
+  not every malformed coverage/payload relationship.
 - Describe the failing operation locally and wrap with feature, lookup, and
   subtable context where known, preserving causes with `%w`. Exact message text
   is not an API contract. Runtime errors are returned, not added to parse-time

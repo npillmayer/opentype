@@ -155,7 +155,7 @@ failures or skips. Existing font-golden tests can skip malformed subtables; see
 CODE_REVIEW.md.
 
 This work does not add rollback, retry, table disabling, exhaustive font
-sanitization, or glyph-count validation for other substitution formats.
+sanitization. Output validation was subsequently extended as described below.
 
 ## Stage 6: Successful-Shaping Regression Coverage
 
@@ -200,3 +200,17 @@ go test ./... -count=1
 go test ./otlayout ./otshape ./otshape/otarabic ./otshape/othebrew -race -count=1
 git diff --check
 ```
+
+## Follow-Up: Explicit GSUB Output Bounds
+
+All output-producing GSUB handlers share a glyph-count validator. Each selected
+leaf output is checked before mutation, including every glyph of a multiple
+substitution. No-match and alternate-selection behavior remain unchanged.
+Completed earlier contextual operations are retained when a later output fails.
+
+Regression coverage in `otlayout/gsub_output_bounds_test.go` and
+`otshape/output_bounds_test.go` exercises boundaries, unchanged failed leaves,
+copy-on-write, unused outputs, subtable fallback prevention, extension dispatch,
+nested partial progress, whole/isolated-span metadata, both public sink entry
+points, and history independence. This does not add eager table sanitization or
+coverage/payload consistency validation.

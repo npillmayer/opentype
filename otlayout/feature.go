@@ -183,11 +183,15 @@ func (f feature) LookupIndex(i int) int {
 // A non-no-op application requires a valid maxp glyph count. Missing or invalid
 // count information returns an error before changing st. Lookup errors stop
 // application and are wrapped with feature, lookup, and subtable context.
+// Selected GSUB output glyphs must be below that count; glyph zero is valid.
+// Each leaf validates all its selected outputs before mutation. Unmatched rules
+// and unselected alternatives are not sanitized. Invalid outputs return errors,
+// not ordinary non-matches, and do not trigger subtable fallback.
 // Each call permits at most 64 simultaneously active lookup invocations and
 // 65536 work units (lookup entries plus sequence-record visits). Exceeding either
 // limit returns an error wrapping ErrLookupLimit; no table is disabled.
 // Earlier applications are not rolled back: applied may be true alongside an
-// error. See doc/FEATURE_APPLICATION.md for the remaining staged guarantees.
+// error. See doc/FEATURE_APPLICATION.md for the full partial-progress contract.
 func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bool, error) {
 	if st != nil {
 		st.edits = nil
@@ -276,6 +280,17 @@ func (e *lookupExecution) spend() error {
 // every lookup, including nested lookups. It does not belong to BufferState.
 type applyEnv struct {
 	numGlyphs int
+}
+
+// validateOutputGlyph checks a selected substitution output before mutation.
+func (env applyEnv) validateOutputGlyph(glyph ot.GlyphIndex) error {
+	if env.numGlyphs <= 0 || env.numGlyphs > 0xffff {
+		return fmt.Errorf("invalid font glyph count %d", env.numGlyphs)
+	}
+	if int(glyph) >= env.numGlyphs {
+		return fmt.Errorf("glyph %d outside font glyph count %d", glyph, env.numGlyphs)
+	}
+	return nil
 }
 
 func newApplyEnv(font *ot.Font) (applyEnv, error) {

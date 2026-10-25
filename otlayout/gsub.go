@@ -37,12 +37,8 @@ func gsubLookupType1Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	}
 	delta := int(payload.DeltaGlyphID)
 	newGlyph := ot.GlyphIndex((int(buf.At(mpos)) + delta) & 0xffff)
-	if ctx.env.numGlyphs <= 0 || ctx.env.numGlyphs > 0xffff {
-		return pos, false, buf, nil, fmt.Errorf("GSUB 1|1 invalid font glyph count %d", ctx.env.numGlyphs)
-	}
-	if int(newGlyph) >= ctx.env.numGlyphs {
-		return pos, false, buf, nil, fmt.Errorf("GSUB 1|1 input glyph %d delta %d produces glyph %d outside font glyph count %d",
-			buf.At(mpos), delta, newGlyph, ctx.env.numGlyphs)
+	if err := ctx.env.validateOutputGlyph(newGlyph); err != nil {
+		return pos, false, buf, nil, fmt.Errorf("GSUB 1|1 input glyph %d delta %d: %w", buf.At(mpos), delta, err)
 	}
 	tracer().Debugf("OT lookup GSUB 1/1: subst %d for %d", newGlyph, buf.At(mpos))
 	ctx.buf.Set(mpos, newGlyph)
@@ -74,6 +70,9 @@ func gsubLookupType1Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		return pos, false, buf, nil, nil
 	}
 	glyph := payload.SubstituteGlyphIDs[inx]
+	if err := ctx.env.validateOutputGlyph(glyph); err != nil {
+		return pos, false, buf, nil, fmt.Errorf("GSUB 1|2: %w", err)
+	}
 	tracer().Debugf("OT lookup GSUB 1/2 (concrete): subst %d for %d", glyph, buf.At(mpos))
 	ctx.buf.Set(mpos, glyph)
 	return mpos + 1, true, ctx.buf.Glyphs, &EditSpan{From: mpos, To: mpos + 1, Len: 1}, nil
@@ -112,6 +111,11 @@ func gsubLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	glyphs := payload.Sequences[inx]
 	if len(glyphs) == 0 {
 		return pos, false, buf, nil, nil
+	}
+	for i, glyph := range glyphs {
+		if err := ctx.env.validateOutputGlyph(glyph); err != nil {
+			return pos, false, buf, nil, fmt.Errorf("GSUB 2|1 output %d: %w", i, err)
+		}
 	}
 	tracer().Debugf("OT lookup GSUB 2/1 (concrete): subst %v for %d", glyphs, buf.At(mpos))
 	edit := ctx.buf.ReplaceGlyphs(mpos, mpos+1, glyphs)
@@ -160,6 +164,9 @@ func gsubLookupType3Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if alt >= len(glyphs) {
 		return pos, false, buf, nil, nil
 	}
+	if err := ctx.env.validateOutputGlyph(glyphs[alt]); err != nil {
+		return pos, false, buf, nil, fmt.Errorf("GSUB 3|1 alternate %d: %w", alt, err)
+	}
 	tracer().Debugf("OT lookup GSUB 3/1 (concrete): subst %v for %d", glyphs[alt], buf.At(mpos))
 	ctx.buf.Set(mpos, glyphs[alt])
 	return mpos + 1, true, ctx.buf.Glyphs, &EditSpan{From: mpos, To: mpos + 1, Len: 1}, nil
@@ -207,6 +214,9 @@ func gsubLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 			cur = next
 		}
 		if match {
+			if err := ctx.env.validateOutputGlyph(rule.Ligature); err != nil {
+				return pos, false, buf, nil, fmt.Errorf("GSUB 4|1: %w", err)
+			}
 			edit := ctx.buf.ReplaceGlyphs(mpos, cur+1, []ot.GlyphIndex{rule.Ligature})
 			tracer().Debugf("OT lookup GSUB 4/1 (concrete): subst %d for %d", rule.Ligature, buf.At(mpos))
 			return mpos + 1, true, ctx.buf.Glyphs, edit, nil
@@ -568,6 +578,9 @@ func gsubLookupType8Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 			continue
 		}
 		subst := payload.SubstituteGlyphIDs[inx]
+		if err := ctx.env.validateOutputGlyph(subst); err != nil {
+			return pos, false, buf, nil, fmt.Errorf("GSUB 8|1: %w", err)
+		}
 		tracer().Debugf("GSUB 8|1 subst %d for %d at pos %d", subst, buf.At(mpos), mpos)
 		ctx.buf.Set(mpos, subst)
 		return mpos + 1, true, ctx.buf.Glyphs, &EditSpan{From: mpos, To: mpos + 1, Len: 1}, nil

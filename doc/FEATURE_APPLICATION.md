@@ -5,7 +5,7 @@ batch‑mode lookup application, based on the OpenType spec.
 
 ## Lookup result and error contract
 
-Status: stages 2 through 5 implemented. `ApplyFeature` returns an independent error and
+Status: stages 1 through 6 complete for the bounded format-1 change. `ApplyFeature` returns an independent error and
 rejects missing or invalid `maxp.NumGlyphs` before mutation. A read-only glyph-count
 snapshot is passed by value through direct and nested GSUB/GPOS lookups, separately
 from the mutable buffer state. Its valid range is 1 through 65535; no unbounded
@@ -29,8 +29,8 @@ fix; the implementation is not a comprehensive malformed-data validator.
 
 ### Result semantics
 
-Keep the `applied` boolean and add an independent `error` result throughout GSUB
-and GPOS application. `applied` means that a lookup operation was applied, not
+GSUB and GPOS application retain the `applied` boolean and return an independent
+`error` result. `applied` means that a lookup operation was applied, not
 that a value changed or that processing completed without errors. A valid
 zero-delta substitution can return `applied == true`.
 
@@ -42,8 +42,8 @@ zero-delta substitution can return `applied == true`.
 | Failure after earlier operations applied | true | descriptive error |
 
 Composite operations accumulate `applied` across their completed children. A nil
-feature for an unused mandatory-feature slot remains a normal no-op with a valid
-buffer state. Invalid required arguments and malformed lookup data must not be
+feature for an unused mandatory-feature slot remains a normal no-op, including
+when the buffer state is nil (position zero is returned in that case). Invalid required arguments and malformed lookup data must not be
 reported as ordinary non-matches.
 
 The public signature is:
@@ -65,7 +65,9 @@ that error through to `ApplyFeature` and the shaping caller.
 - After an error, stop the current application and propagate it; do not try an
   alternative subtable or advance the shaping cursor as though this were a miss.
 - Check errors on lazy lookup nodes before using their payloads. Missing required
-  payloads, invalid lookup references, and invalid output glyphs are failures.
+  payloads, invalid lookup references, and detected invalid output glyphs are
+  failures. Output glyph-count validation currently covers GSUB 1 format 1,
+  not every substitution handler or malformed coverage/payload relationship.
 - Describe the failing operation locally and wrap with feature, lookup, and
   subtable context where known, preserving causes with `%w`. Exact message text
   is not an API contract. Runtime errors are returned, not added to parse-time
@@ -77,6 +79,29 @@ All three bounded passes are implemented. See [Partial Progress Audit](PARTIAL_P
 for ownership, metadata policies, and regression coverage. The public shaping APIs
 stream to a sink: a failed chunk is not emitted, but already emitted prefixes
 cannot be retracted. Whole-call atomic output is not promised.
+
+### Bounded contextual execution
+
+Every ApplyFeature invocation gets independent execution state shared by its
+GSUB/GPOS nested calls. At most 64 lookup invocations may be active simultaneously,
+including the top-level lookup. A separate budget of 65536 work units counts
+lookup entries and contextual sequence-record visits, including non-matches and
+records skipped because an earlier edit deleted their target.
+
+Depth exhaustion stops cycles and excessively deep valid recursion; the work
+budget also stops broad acyclic expansion of nested calls. These are fixed
+implementation safeguards, not OpenType validity rules. There is no permanent
+cycle blacklist: a recursive lookup that terminates within the limits is allowed.
+
+Exhaustion returns an error wrapping otlayout.ErrLookupLimit (use errors.Is).
+Normal contextual wrapping retains feature, lookup, subtable, and record details.
+Earlier edits and positioning remain applied; shaping follows the existing
+partial-progress/sink policy. State is per call, not cached on a font, and is
+unwound on all exits. Independent buffers can shape the same font concurrently.
+
+This is not a complete time or memory bound: parser work, matching scans, glyph
+allocation sizes, and the number of separate ApplyFeature calls in a streaming
+run are not charged by this budget. No public tuning API is introduced.
 
 ### Mutation and partial progress
 
@@ -114,9 +139,10 @@ Key points from the spec (paraphrased):
   processes the union of lookups referenced by those features, again in lookup
   list order, and each lookup is applied only to the glyph subsequence(s) where
   its feature(s) are active.
-- For contextual/chaining lookups (GSUB 5/6/8, GPOS 7/8), the main lookup only
+- For contextual/chaining lookups (GSUB 5/6, GPOS 7/8), the main lookup only
   matches; nested lookups do the actual substitutions/positioning, and their own
   lookup flags apply.
+  GSUB 8 performs its reverse-chaining substitution directly.
 
 ## Practical Procedure
 
@@ -153,111 +179,23 @@ In the common case where script/langsys and feature set are fixed for the
 entire run, “feature active” effectively means “eligible for the whole run,”
 and the only remaining gating is the lookup’s matching logic.
 
-## Proposed API Split (otshape vs otlayout)
+## Current API Responsibilities
 
-**Separation of concerns**
-
-- `otshape/` should own the *top‑down* shaping API: script/lang selection,
-  feature selection (user + defaults), run segmentation (script/language
-  changes), and text→glyph mapping (cmap, variation selectors, etc.). It produces
-  glyphs + positioning.
-- `otlayout/` should own the *bottom‑up* lookup application: apply a prepared
-  lookup sequence to an existing glyph buffer + pos buffer.
-
-This keeps `otlayout` reusable for non‑text inputs (e.g. a glyph stream) and
-avoids duplicating higher‑level shaping logic.
-
-## Candidate Function Signatures
-
-### 1) Top‑down (otshape)
-
-Streaming interface: read runes, shape into a buffer, emit glyphs+pos.
+`otshape` owns text mapping, script/language and feature selection, segmentation,
+metadata, and sink delivery. Its public entry points are:
 
 ```go
-func Shape(r runeio.Reader, dst *BufferState, sink GlyphsSink, opt ShapeOptions) error
+func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts BufferOptions) error
+func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink, bufOpts BufferOptions) error
 ```
 
-Output should be a glyph+positioning stream:
+`GlyphSink.WriteGlyph(GlyphRecord) error` receives glyph ID, positioning, cluster,
+mask, and unsafe flags. Clusters and other shaping metadata remain in `otshape`;
+`otlayout.BufferState` owns layout glyphs/positions and its edit journal.
+The internal shaping executor calls `otlayout.ApplyFeature`, consumes completed
+edits once to update metadata, and handles isolated-span integration. There is no
+public `ApplyLookups` API matching the earlier design sketch.
 
-```go
-// GlyphsSink receives shaped glyphs with positioning.
-type GlyphsSink interface {
-    // WriteGlyphPos receives one glyph with its positioning info.
-    // cluster is optional but recommended for text->glyph mapping.
-    WriteGlyphPos(gid ot.GlyphIndex, pos PosItem, cluster int) error
-}
-```
-
-`ShapeOptions` should capture script/lang overrides, feature toggles, direction,
-and future variation axes.
-
-### 2) Bottom‑up (otlayout)
-
-Apply a lookup list (in lookup‑list order) to an existing buffer.
-
-```go
-func ApplyLookups(
-    lookups []ot.Lookup, // or []LookupRef
-    buf *BufferState,
-    opt ApplyOptions,
-) error
-```
-
-`ApplyOptions` can capture direction, debug/trace flags, and any additional
-context needed by lookup handlers.
-
-## Streaming Design Notes
-
-- `otshape` reads runes in chunks (or by script run), maps to glyphs, then calls
-  `otlayout.ApplyLookups(...)` on each run.
-- Clients may pass a pre‑allocated `BufferState` (or use a pool) to reduce
-  allocations.
-
-## Open Questions (to resolve)
-
-1. Should `BufferState` carry cluster info (rune→glyph mapping), or should that
-   remain inside `otshape` only?
-2. `ApplyLookups` should accept `[]Lookup` already resolved (decision).
-3. Where should directionality live: as a `BufferState` field or in
-   `ApplyOptions`?
-
-## Data Flow Diagram (Sketch)
-
-```text
-           +--------------------+
-           |   runeio.Reader    |
-           +---------+----------+
-                     |
-                     v
-        +------------+-------------+
-        |   otshape: script/lang   |
-        |   + feature selection    |
-        +------------+-------------+
-                     |
-                     v
-        +------------+-------------+
-        |  cmap / text->glyph map  |
-        +------------+-------------+
-                     |
-                     v
-        +------------+-------------+
-        |   BufferState (glyphs)   |
-        |   + PosBuffer (empty)    |
-        +------------+-------------+
-                     |
-                     v
-        +------------+-------------+
-        | otlayout.ApplyLookups    |
-        | (lookup-list order)      |
-        +------------+-------------+
-                     |
-                     v
-        +------------+-------------+
-        | BufferState (glyphs+pos) |
-        +------------+-------------+
-                     |
-                     v
-        +------------+-------------+
-        |   glyph stream / output  |
-        +--------------------------+
-```
+See [Partial Progress](PARTIAL_PROGRESS.md) for ownership and regression coverage,
+[Shaping Benchmarks](SHAPING_BENCHMARKS.md) for the measured performance baseline,
+and [Code Review](CODE_REVIEW.md) for unresolved work.

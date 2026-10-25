@@ -4,31 +4,46 @@ Updated: 2026-10-25
 
 Scope: unresolved findings in `ot/` and `otlayout/`, with supporting test and build-maintenance concerns. Locations refer to the current source. Severity distinguishes observable correctness issues from maintenance opportunities and deferred functionality.
 
-## Medium: inconsistent nil handling in layout APIs
+## Medium: nil table can panic in layout discovery APIs
 
-Locations: `otlayout/feature.go:183`, `otlayout/layout.go:128`.
+Locations: `otlayout/layout.go:19`, `otlayout/layout.go:128` (`GetLayoutTable`,
+`peekLayoutProperty`).
 
-`ApplyFeature` dereferences `st` for a nil feature before checking whether `st` itself is nil:
+The shared accessor dereferences its table argument without checking for nil:
 
 ```go
-if feat == nil {
-    return st.Index, false
-} else if st == nil || st.Glyphs == nil {
-    // ...
-}
+switch table.Self().NameTag() {
 ```
 
-Consequently, passing both nil panics despite the surrounding handling of unusable buffer state. The function also assumes that the font and appropriate layout table exist when extracting `AsGSub()` or `AsGPos()`. That table precondition is documented, but should be considered alongside the overall argument policy.
+Thus `GetLayoutTable(nil)` panics rather than returning an error. Graph accessors
+that delegate to it inherit this behavior. This is an API robustness concern,
+not a demonstrated malformed-font parsing vulnerability.
 
-`peekLayoutProperty`, described as extracting a property safely, calls `table.Self()` without checking for a nil table.
+Suggested work: return a descriptive error for a nil table and test direct and
+forwarding accessors. Define the policy for typed-nil table implementations too.
 
-Suggested work:
+## Medium: output glyph-count checks remain incomplete outside GSUB 1 format 1
 
-- Check buffer-state validity before dereferencing it, including the nil-feature path.
-- Decide and consistently document font/table preconditions, or return a controlled failure for invalid inputs.
-- Test nil feature plus nil state, nil table in layout accessors, and missing layout tables according to the chosen contract.
+Locations: `otlayout/gsub.go:58`, `otlayout/gsub.go:94`,
+`otlayout/gsub.go:135`, `otlayout/gsub.go:180`, `otlayout/gsub.go:524`.
 
-These are API robustness concerns; they do not by themselves demonstrate a font-data parsing vulnerability.
+Other substitution handlers consume explicit output glyph IDs without checking
+against the application environment's font glyph count. For example, format 2:
+
+```go
+glyph := payload.SubstituteGlyphIDs[inx]
+ctx.buf.Set(mpos, glyph)
+```
+
+A representable uint16 glyph ID is not necessarily present in the font. This is a
+separate remaining validation gap, outside the bounded format-1 change.
+
+Suggested work: share a small output-glyph validator using the existing immutable
+application environment. Validate every output of a leaf before any mutation;
+return contextual errors while retaining earlier completed composite operations.
+Test zero, the last valid ID, the count boundary, and multi-output operations
+whose later output is invalid. Preserve normal non-match and alternate-selection
+semantics. No implementation of this follow-up is included here.
 
 ## Low: cmap factory retains an invariant panic
 
@@ -88,7 +103,7 @@ Suggested shared helper: use typed internal rule parts or a narrowly constrained
 
 ## Low: commented-out matching implementations obscure active code
 
-Locations: `otlayout/feature.go:769`, `otlayout/feature.go:797`, `otlayout/feature.go:905`, `otlayout/feature.go:933`, `otlayout/feature.go:991`, `otlayout/feature.go:1017`.
+Locations: `otlayout/feature.go:903`, `otlayout/feature.go:932`, `otlayout/feature.go:1047`, `otlayout/feature.go:1075`, `otlayout/feature.go:1132`, `otlayout/feature.go:1158`.
 
 Directional matching wrappers contain substantial commented-out function bodies after their active return statements. These make a complex execution path harder to read and leave alternative implementations in the source without an active purpose.
 
@@ -123,3 +138,18 @@ replace github.com/go-text/typesetting => /Users/npi/prg/go/extern/typesetting
 The replacement ties resolution of this module to a developer-local path if the dependency is used. Its presence alone has not prevented the current test suite from running.
 
 Suggested work: remove the replacement if unused, or move local development overrides to a workspace configuration while keeping shared module configuration portable.
+
+## Follow-up: profile edit bookkeeping costs
+
+Locations: `otlayout/feature.go` (execution state and edit journal),
+`otlayout/feature.go:555` (position replacement), `otshape/lookups.go` (metadata replay).
+
+The exploratory [shaping benchmarks](SHAPING_BENCHMARKS.md) show increased
+allocation and execution costs in substitution-heavy cases relative to the
+pre-stage-5 baseline. That baseline lacks the current correctness guarantees;
+these measurements do not justify reverting edit-aware integration.
+
+Suggested work: profile before optimizing; consider reducing journal snapshots,
+replacement copies, and per-call allocation while preserving copy-on-write,
+attachment remapping, partial progress, and history independence. Longer repeated
+measurements and realistic script workloads remain necessary.

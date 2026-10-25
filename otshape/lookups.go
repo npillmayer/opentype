@@ -180,7 +180,7 @@ func (e *planExecutor) applyLookupIsolatedSpan(
 			st.Pos = otlayout.NewPosBuffer(len(st.Glyphs) - newLen + end - start)
 		}
 		for _, edit := range edits {
-			if edit.To-edit.From == 1 && edit.Len == 1 {
+			if !edit.ResetsPositions {
 				continue
 			}
 			st.Pos = st.Pos.ApplyEdit(&edit)
@@ -193,7 +193,7 @@ func (e *planExecutor) applyLookupIsolatedSpan(
 				} else if target < -1 {
 					target = -target - 2
 					for _, edit := range edits {
-						if edit.To-edit.From == 1 && edit.Len == 1 {
+						if !edit.ResetsPositions {
 							continue
 						}
 						if int(target) >= edit.From && int(target) < edit.To {

@@ -60,7 +60,7 @@ func TestPartialProgressNestedEditRemapsOuterInput(t *testing.T) {
 	if err == nil || !applied {
 		t.Fatalf("expected partial success: %v %v", applied, err)
 	}
-	if want := []EditSpan{{From: 0, To: 1, Len: 3}, {From: 3, To: 4, Len: 1}}; !reflect.DeepEqual(st.edits, want) {
+	if want := []EditSpan{{From: 0, To: 1, Len: 3, ResetsPositions: true}, {From: 3, To: 4, Len: 1}}; !reflect.DeepEqual(st.edits, want) {
 		t.Fatalf("nested journal: got %v want %v", st.edits, want)
 	}
 	if want := (GlyphBuffer{11, 12, 13, 21}); !reflect.DeepEqual(st.Glyphs, want) {
@@ -89,7 +89,7 @@ func TestPartialProgressContractionPreservesPositionSuffix(t *testing.T) {
 	if !reflect.DeepEqual(original.Glyphs, GlyphBuffer{10, 11, 20}) || len(original.Pos) != 3 || original.Pos[2].XAdvance != 123 {
 		t.Fatal("shared original mutated")
 	}
-	if !reflect.DeepEqual(st.edits, []EditSpan{{From: 0, To: 2, Len: 1}}) {
+	if !reflect.DeepEqual(st.edits, []EditSpan{{From: 0, To: 2, Len: 1, ResetsPositions: true}}) {
 		t.Fatalf("bad journal: %v", st.edits)
 	}
 }
@@ -154,7 +154,7 @@ func TestEditJournalRetainsZeroNetLengthChanges(t *testing.T) {
 	st.Pos[2].XAdvance = 123
 	st.ReplaceGlyphs(0, 1, []ot.GlyphIndex{11, 12})
 	st.DeleteGlyphs(2, 3)
-	want := []EditSpan{{From: 0, To: 1, Len: 2}, {From: 2, To: 3, Len: 0}}
+	want := []EditSpan{{From: 0, To: 1, Len: 2, ResetsPositions: true}, {From: 2, To: 3, Len: 0, ResetsPositions: true}}
 	if !reflect.DeepEqual(st.edits, want) {
 		t.Fatalf("got edits %v want %v", st.edits, want)
 	}

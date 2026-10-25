@@ -183,6 +183,9 @@ func (f feature) LookupIndex(i int) int {
 // A non-no-op application requires a valid maxp glyph count. Missing or invalid
 // count information returns an error before changing st. Lookup errors stop
 // application and are wrapped with feature, lookup, and subtable context.
+// Each call permits at most 64 simultaneously active lookup invocations and
+// 65536 work units (lookup entries plus sequence-record visits). Exceeding either
+// limit returns an error wrapping ErrLookupLimit; no table is disabled.
 // Earlier applications are not rolled back: applied may be true alongside an
 // error. See doc/FEATURE_APPLICATION.md for the remaining staged guarantees.
 func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bool, error) {
@@ -227,6 +230,9 @@ func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bo
 	if err := lookupGraph.Error(); err != nil {
 		return st.Index, false, fmt.Errorf("feature %s: lookup graph: %w", feat.Tag(), err)
 	}
+	previousExecution := st.execution
+	st.execution = &lookupExecution{remaining: maxLookupWork}
+	defer func() { st.execution = previousExecution }()
 	for i := 0; i < feat.LookupCount(); i++ { // lookups have to be applied in sequence
 		inx := feat.LookupIndex(i)
 		tracer().Debugf("feature %s lookup #%d => index %d", feat.Tag(), i, inx)
@@ -238,6 +244,32 @@ func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bo
 		}
 	}
 	return st.Index, applied, nil
+}
+
+// ErrLookupLimit reports exhaustion of a per-application execution limit.
+// It can be recognized through contextual wrapping with errors.Is. Completed
+// operations remain applied; the failing invocation does not mutate the buffer.
+var ErrLookupLimit = errors.New("layout lookup execution limit exceeded")
+
+// These are execution limits, not OpenType format-validity constraints.
+const (
+	maxLookupDepth = 64
+	maxLookupWork  = 65536
+)
+
+// lookupExecution belongs to one application, never to a shared font or graph.
+// Work counts lookup entries and sequence records, including non-matches.
+type lookupExecution struct {
+	depth     int
+	remaining int
+}
+
+func (e *lookupExecution) spend() error {
+	if e.remaining <= 0 {
+		return fmt.Errorf("%w: work budget exhausted", ErrLookupLimit)
+	}
+	e.remaining--
+	return nil
 }
 
 // applyEnv is a read-only snapshot of font validation data, passed by value to
@@ -284,6 +316,11 @@ type EditSpan struct {
 	From int // start index (inclusive) of the replaced range
 	To   int // end index (exclusive) of the replaced range
 	Len  int // length of the replacement segment
+	// ResetsPositions distinguishes ReplaceGlyphs from an in-place Set in the
+	// applied-edit journal, even when both replace one glyph with one glyph.
+	// It describes the mutation already performed; PosBuffer.ApplyEdit itself
+	// always applies its explicitly requested positional replacement.
+	ResetsPositions bool
 }
 
 // BufferState bundles glyph and position buffers with a current index.
@@ -296,7 +333,8 @@ type BufferState struct {
 	Index        int
 	glyphsShared bool
 	posShared    bool
-	edits        []EditSpan // ordered mutations, in coordinates immediately before each edit
+	execution    *lookupExecution // transient per-application limits, shared by nested calls
+	edits        []EditSpan       // ordered mutations, in coordinates immediately before each edit
 }
 
 // AppliedEdits returns a copy of the ordered glyph edits from the latest
@@ -421,7 +459,7 @@ func (b *BufferState) ReplaceGlyphs(i, j int, repl []ot.GlyphIndex) *EditSpan {
 	}
 	b.ensureUniqueGlyphs()
 	b.Glyphs = b.Glyphs.Replace(i, j, repl)
-	edit := &EditSpan{From: i, To: j, Len: len(repl)}
+	edit := &EditSpan{From: i, To: j, Len: len(repl), ResetsPositions: true}
 	b.edits = append(b.edits, *edit)
 	if b.Pos != nil {
 		b.ensureUniquePos()
@@ -570,6 +608,20 @@ func applyLookupConcrete(
 	if err := clookup.Error(); err != nil {
 		return st.Index, false, nil, fmt.Errorf("lookup table: %w", err)
 	}
+	// Internal direct callers get the same protection as ApplyFeature.
+	if st.execution == nil {
+		st.execution = &lookupExecution{remaining: maxLookupWork}
+		defer func() { st.execution = nil }()
+	}
+	execution := st.execution
+	if execution.depth >= maxLookupDepth {
+		return st.Index, false, nil, fmt.Errorf("%w: nesting depth exceeds %d", ErrLookupLimit, maxLookupDepth)
+	}
+	if err := execution.spend(); err != nil {
+		return st.Index, false, nil, err
+	}
+	execution.depth++
+	defer func() { execution.depth-- }()
 	ctx := applyCtx{
 		env:         env,
 		feat:        feat,
@@ -1202,7 +1254,14 @@ func applySequenceLookupRecords(
 	}
 
 	applied := false
+	if st.execution == nil {
+		st.execution = &lookupExecution{remaining: maxLookupWork}
+		defer func() { st.execution = nil }()
+	}
 	for recordIndex, rec := range records {
+		if err := st.execution.spend(); err != nil {
+			return st.Glyphs, st.Pos, applied, fmt.Errorf("sequence record %d: %w", recordIndex, err)
+		}
 		tracer().Debugf("sequence lookup record: seq=%d lookup=%d", rec.SequenceIndex, rec.LookupListIndex)
 		seqIndex := int(rec.SequenceIndex)
 		if seqIndex < 0 || seqIndex >= len(mapIdx) {

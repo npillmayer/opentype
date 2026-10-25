@@ -1,6 +1,8 @@
-# Partial Progress: Stage 5 Ownership Audit
+# Partial Progress: Implementation and Validation
 
-Status: all three bounded passes implemented. The regression tests are green.
+Status: stage 5 (all three bounded passes) and stage 6 validation/documentation
+are complete for the bounded GSUB single-substitution format-1 change. Remaining
+validation and performance work is tracked in [Code Review](CODE_REVIEW.md).
 
 ## Pass 3 Integration
 
@@ -13,6 +15,13 @@ Isolated spans update parent metadata with translated edits, then merge complete
 glyphs/positions on both success and error. During local processing they do not
 publish detached slice headers as the global run. Parent and local attachment
 coordinates are translated; outside-span references are preserved separately.
+
+The edit journal distinguishes in-place Set from ReplaceGlyphs using
+EditSpan.ResetsPositions. Isolated integration replays positional replacements
+based on that flag, not on whether the edit changes length. Whole-buffer and
+isolated one-to-one replacement therefore clear the same outside attachments;
+Set continues to preserve positioning. TestOneToOneAttachmentParity covers both
+operations, prefix/suffix attachments, and all returned position fields.
 
 Metadata policy for replacements:
 - Unaffected prefixes/suffixes retain their entries.
@@ -49,12 +58,11 @@ sink boundaries with/without prior output, and history independence after failur
 - EnsurePos detaches shared positioning before GPOS writes, even if lengths
   already match. CloneShared starts independent journal history.
 - ApplyFeature starts a new journal before applying its lookup sequence. Completed
-  edits remain available internally on error. Pass 3 adds a read-only snapshot API for the shaping consumer.
+  edits remain available on error; the shaping consumer reads a defensive snapshot.
 
 Tests now cover expansion/contraction alignment, nested mapping, journal order,
 preservation of suffix position values, contextual GSUB/GPOS copy-on-write, and
-multiple edits with zero net length change. The audit below describes the
-original defects; the original audit below is retained as implementation rationale.
+multiple edits with zero net length change.
 
 ## Failure Policy
 
@@ -78,7 +86,7 @@ result object. Their workspace owns the in-progress run. Shape calls
 shapeMappedRun before writing a flushable prefix. ShapeEvents similarly shapes
 and assembles event segments before emitting the current chunk.
 
-Contract for the next passes:
+Implemented contract:
 - A lookup error must prevent emission of the failing in-progress chunk.
 - Previously emitted prefixes remain in the sink; the whole call is not atomic.
 - A sink error can itself leave a partially written prefix.
@@ -95,39 +103,11 @@ to the current chunk, not retroactively to the entire streaming call.
 Relevant paths: otshape/shape_api.go (Shape, shapeMappedRun, sink writers);
 otshape/shape_events.go (ShapeEvents, event-segment assembly).
 
-## Original Ownership Audit (Pass 1)
+## Implemented Ownership Model
 
-| Layer | Current ownership/action | Gap / intended responsibility |
-| --- | --- | --- |
-| BufferState | Glyph/position slice headers; copy-on-write flags | Primary owner of layout mutations |
-| ReplaceGlyphs | Replaces glyph range and already edits Pos | This position edit must not be repeated by its caller |
-| applyLookupConcrete | Stores returned headers, calls ApplyEdit, sets Index | Reapplies ReplaceGlyphs' position edit; expansion from 2 to 4 glyphs produces 6 positions |
-| Contextual leaves | Return child buffers, generally nil aggregate edit | Must expose completed child edits to enclosing consumers |
-| applySequenceLookupRecords | Makes a child BufferState and remaps matched inputs using one returned edit | Nested composite edits disappear; later records can target inserted glyphs instead of the original matched input |
-| applyLookupSpan | Advances cursor and realigns on successful length changes | Error return precedes synchronization; run headers and side arrays remain stale |
-| applyLookups | Builds a BufferState from run slices; publishes headers after success | Early return bypasses publication, including reallocated position buffers |
-| applyLookupIsolatedSpan | Copies a syllable into detached buffers, merges on success | On error completed edits are discarded; successful inner realignment also needs coordinate/ownership review |
-| realignSideArrays | Resizes selected arrays and regenerates masks | Length alone cannot preserve interior edit correspondence; PlanIDs are not handled |
-| runBuffer.ApplyEdit | Edits glyphs, positions, and side arrays | Cannot be replayed wholesale after layout already edited glyphs/positions |
-
-Additional audit risks for follow-up tests:
-- NewBufferState around borrowed child slices does not inherit copy-on-write
-  ownership flags from an enclosing shared BufferState.
-- EnsurePos does not detach an already aligned shared Pos buffer before GPOS
-  writes to it.
-- Contractions and multiple edits with zero net length change require edit-aware
-  metadata handling, not only length comparisons.
-- AttachTo and other index-bearing metadata need an explicit remapping policy;
-  equal array lengths alone do not prove coherent attachment relationships.
-
-These additional risks are inspection findings, not all reproduced by this pass.
-
-## Internal Design and Remaining Integration
-
-Use an ordered internal edit stream rather than forcing composites into one
-EditSpan. Each entry describes coordinates immediately before that edit.
-The stream must include completed edits on error and allow a caller to delimit
-the edits produced by one child invocation.
+BufferState owns an ordered edit journal. Each entry uses coordinates immediately
+before that edit. Completed edits remain available on error; contextual frames
+use invocation checkpoints rather than a single aggregate replacement span.
 
 Responsibilities:
 1. BufferState mutation methods change glyphs and positions once.
@@ -170,7 +150,53 @@ insufficient capacity, exercising changed slice headers.
 ## Validation and Scope
 
 Run the full suite with go test ./... and the targeted race suite with
-go test ./otlayout ./otshape -race. No intentionally failing or skipped tests remain.
+go test ./otlayout ./otshape -race. The added regression tests have no intentional
+failures or skips. Existing font-golden tests can skip malformed subtables; see
+CODE_REVIEW.md.
 
 This work does not add rollback, retry, table disabling, exhaustive font
 sanitization, or glyph-count validation for other substitution formats.
+
+## Stage 6: Successful-Shaping Regression Coverage
+
+Added in otshape/successful_edits_test.go:
+- A three-lookup expansion/substitution/contraction sequence, in whole-run and
+  per-syllable modes, asserts exact glyphs, masks, clusters, plan IDs, syllables,
+  joiners, unsafe flags, codepoints, and retained suffix positioning after every
+  lookup. Feature ranges are initialized once on the original inputs.
+- A ligature matrix checks that isolated processing blocks cross-syllable matches
+  but permits same-syllable contraction; whole-run processing is the control.
+- A public Shape test verifies ranged-feature expansion and exact emitted cluster
+  IDs, including disabled inputs before and after the enabled range.
+
+These tests use independently parsed fixture fonts with controlled lookup payloads.
+Existing Arabic/Hebrew and core fixture tests are run alongside them; their passing
+does not constitute exhaustive real-world complex-script coverage.
+
+## Stage 6: Performance Baseline
+
+Allocation-reporting benchmarks now cover ordinary public shaping, whole-run and
+per-syllable lookup application, and positional replacement. See
+[Shaping Performance Baseline](SHAPING_BENCHMARKS.md) for the pre-stage-5 comparison,
+measurement limitations, and candidate profiling targets. No production
+optimization is included.
+
+## Stage 6: Bounded Execution and Closeout
+
+`otlayout/execution_limits_test.go` covers self/mutual recursion, terminating
+recursion, depth boundaries, broad work-budget exhaustion, independent calls,
+concurrent buffers, and retained partial GSUB/GPOS progress. The contract and
+limits are documented in [Feature Application](FEATURE_APPLICATION.md).
+
+The attachment-parity regression, bounded contextual execution, successful
+shaping coverage, benchmark baseline, and documentation reconciliation complete
+stage 6. This is completion of the agreed bounded change, not a claim of complete
+font sanitization, exhaustive script coverage, or performance optimization.
+
+Final validation commands:
+
+```sh
+go test ./... -count=1
+go test ./otlayout ./otshape ./otshape/otarabic ./otshape/othebrew -race -count=1
+git diff --check
+```

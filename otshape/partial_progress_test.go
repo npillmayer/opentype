@@ -180,3 +180,66 @@ func TestPartialProgressPositionOnlyErrorPublishesBuffer(t *testing.T) {
 		t.Fatalf("position-only partial result lost: %v %v", err, run.Pos)
 	}
 }
+
+func TestOneToOneAttachmentParity(t *testing.T) {
+	for _, replace := range []bool{false, true} {
+		t.Run(fmt.Sprintf("replace=%t", replace), func(t *testing.T) {
+			font := loadMiniOTFont(t, "gsub3_1_simple_f1.otf")
+			lookup := font.Layout.GSub.LookupGraph().Lookup(0)
+			node := lookup.Subtable(0)
+			lookup.Flag = 0
+			cov := ot.Coverage{GlyphRange: partialProgressCoverage{}}
+			if replace {
+				lookup.Type = ot.GSubLookupTypeMultiple
+				*node = ot.LookupNode{LookupType: lookup.Type, Format: 1, Coverage: cov, GSub: &ot.GSubLookupPayload{MultipleFmt1: &ot.GSubMultipleFmt1Payload{Sequences: [][]ot.GlyphIndex{{11}}}}}
+			} else {
+				lookup.Type = ot.GSubLookupTypeSingle
+				*node = ot.LookupNode{LookupType: lookup.Type, Format: 1, Coverage: cov, GSub: &ot.GSubLookupPayload{SingleFmt1: &ot.GSubSingleFmt1Payload{DeltaGlyphID: 1}}}
+			}
+			var whole otlayout.PosBuffer
+			for _, isolated := range []bool{false, true} {
+				run := newRunBuffer(0)
+				run.Glyphs = otlayout.GlyphBuffer{30, 10, 20}
+				run.Pos = otlayout.NewPosBuffer(3)
+				// Both outside-span glyphs attach to the replaced middle glyph.
+				for _, i := range []int{0, 2} {
+					run.Pos[i].AttachTo = 1
+					run.Pos[i].AttachKind = otlayout.AttachMarkToBase
+					run.Pos[i].AttachClass = 2
+					run.Pos[i].AnchorRef = otlayout.AnchorRef{MarkAnchor: 4, BaseAnchor: 8}
+				}
+				run.Pos[1].XAdvance = 17
+				st := otlayout.NewBufferState(run.Glyphs, run.Pos)
+				e := &planExecutor{run: run}
+				pl := &plan{font: font, Masks: maskLayout{ByFeature: map[ot.Tag]maskSpec{}}}
+				feat := planLookupFeature{tag: ot.T("test"), typ: otlayout.GSubFeatureType, lookupInx: 0}
+				var err error
+				if isolated {
+					_, err = e.applyLookupIsolatedSpan(pl, lookupOp{}, feat, st, 0, 1, 2)
+				} else {
+					_, err = e.applyLookupSpan(pl, lookupOp{}, feat, st, 0, 0, st.Len(), 0)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(st.Glyphs, otlayout.GlyphBuffer{30, 11, 20}) {
+					t.Fatalf("glyphs %v", st.Glyphs)
+				}
+				wantTarget := int32(1)
+				wantAdvance := int32(17)
+				if replace {
+					wantTarget = -1
+					wantAdvance = 0
+				}
+				if st.Pos[0].AttachTo != wantTarget || st.Pos[2].AttachTo != wantTarget || st.Pos[1].XAdvance != wantAdvance {
+					t.Errorf("isolated=%t: wrong attachment policy: %+v", isolated, st.Pos)
+				}
+				if !isolated {
+					whole = append(otlayout.PosBuffer(nil), st.Pos...)
+				} else if !reflect.DeepEqual(st.Pos, whole) {
+					t.Errorf("isolated positions %+v differ from whole %+v", st.Pos, whole)
+				}
+			}
+		})
+	}
+}

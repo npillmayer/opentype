@@ -167,3 +167,33 @@ func TestEditJournalRetainsZeroNetLengthChanges(t *testing.T) {
 		t.Fatal("clone shares journal history")
 	}
 }
+
+func TestAppliedEditsSnapshotAndReset(t *testing.T) {
+	st := NewBufferState(GlyphBuffer{10}, nil)
+	st.Set(0, 11)
+	edits := st.AppliedEdits()
+	edits[0].Len = 9
+	if st.AppliedEdits()[0].Len != 1 {
+		t.Fatal("journal exposed mutable storage")
+	}
+	_, _, _ = ApplyFeature(nil, nil, st, 0)
+	if len(st.AppliedEdits()) != 0 {
+		t.Fatal("no-op retained previous invocation edits")
+	}
+	st.Set(0, 12)
+	_, _, err := ApplyFeature(nil, errorTestFeature{GSubFeatureType, []int{0}}, st, 0)
+	if err == nil || len(st.AppliedEdits()) != 0 {
+		t.Fatal("failure retained previous invocation edits")
+	}
+}
+
+func TestPositionEditRemapsOrDropsAttachments(t *testing.T) {
+	pos := NewPosBuffer(4)
+	pos[0].AttachTo = 3
+	pos[3].AttachTo = 1
+	pos[3].AttachKind = AttachMarkToBase
+	pos = pos.ApplyEdit(&EditSpan{From: 1, To: 3, Len: 1})
+	if len(pos) != 3 || pos[0].AttachTo != 2 || pos[2].AttachTo != -1 || pos[2].AttachKind != AttachNone {
+		t.Fatalf("bad attachment remap: %v", pos)
+	}
+}

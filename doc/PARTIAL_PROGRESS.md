@@ -1,7 +1,38 @@
 # Partial Progress: Stage 5 Ownership Audit
 
-Status: second bounded pass implemented. Low-level partial-progress tests pass.
-The shaping-boundary regression test remains intentionally failing until pass 3.
+Status: all three bounded passes implemented. The regression tests are green.
+
+## Pass 3 Integration
+
+BufferState.AppliedEdits returns a defensive copy of the latest feature invocation's
+journal. Every invocation clears it, including no-ops and early failures. Shaping
+consumes the journal before checking the error and never replays glyph/position
+mutations. It publishes current headers even for positioning-only changes.
+
+Isolated spans update parent metadata with translated edits, then merge completed
+glyphs/positions on both success and error. During local processing they do not
+publish detached slice headers as the global run. Parent and local attachment
+coordinates are translated; outside-span references are preserved separately.
+
+Metadata policy for replacements:
+- Unaffected prefixes/suffixes retain their entries.
+- New slots inherit the first consumed input's codepoint, plan ID, mask, syllable,
+  and joiner annotations.
+- Clusters use the minimum consumed cluster; unsafe flags are ORed.
+- One-to-one substitutions preserve all side metadata.
+- Pure insertion has default metadata; deletion removes the consumed entries.
+- Retained position attachments follow shifted targets. Attachments to replaced
+  targets are cleared rather than redirected to a different glyph identity.
+  This is a conservative structural policy, not new ligature-component semantics.
+
+Public Shape and ShapeEvents comments specify that the failing chunk is withheld,
+but previously emitted prefixes and consumed input cannot be rolled back.
+Applications requiring atomic delivery must stage output themselves.
+
+Tests cover the original whole/isolated regressions with actual metadata values,
+suffix positioning and attachment indices, contraction/expansion with zero net
+length change, position-only errors, journal snapshot isolation/reset, both public
+sink boundaries with/without prior output, and history independence after failure.
 
 ## Pass 2 Implementation
 
@@ -18,14 +49,12 @@ The shaping-boundary regression test remains intentionally failing until pass 3.
 - EnsurePos detaches shared positioning before GPOS writes, even if lengths
   already match. CloneShared starts independent journal history.
 - ApplyFeature starts a new journal before applying its lookup sequence. Completed
-  edits remain available internally on error. No public API was added; exposing
-  completed edits to the shaping package is part of pass 3.
+  edits remain available internally on error. Pass 3 adds a read-only snapshot API for the shaping consumer.
 
 Tests now cover expansion/contraction alignment, nested mapping, journal order,
 preservation of suffix position values, contextual GSUB/GPOS copy-on-write, and
 multiple edits with zero net length change. The audit below describes the
-original defects; shaping synchronization and attachment-index policy remain
-outstanding.
+original defects; the original audit below is retained as implementation rationale.
 
 ## Failure Policy
 
@@ -110,8 +139,7 @@ Responsibilities:
    its completed state on both success and error.
 5. The public streaming layer emits only successfully shaped chunks.
 
-Pass 2 uses a BufferState journal with invocation checkpoints. Pass 3 must provide
-a safe consumption mechanism across the package boundary. Avoid a general
+Pass 2 uses a BufferState journal with invocation checkpoints. Pass 3 provides a defensive snapshot across the package boundary. Avoid a general
 transaction/rollback framework.
 
 Side-array policies must be explicit: preserve unaffected suffix entries;
@@ -139,13 +167,10 @@ Fixtures are independently parsed and their cached nodes are replaced with small
 controlled lookup graphs. No real font files are modified. Expansion inputs have
 insufficient capacity, exercising changed slice headers.
 
-## Remaining Passes
+## Validation and Scope
 
-Pass 2 is complete for the low-level scope described above.
+Run the full suite with go test ./... and the targeted race suite with
+go test ./otlayout ./otshape -race. No intentionally failing or skipped tests remain.
 
-Pass 3: synchronize shaping side arrays on all exits, merge isolated spans with
-coordinate translation, and make shaping tests green. Add sink-boundary tests
-(including a previously emitted prefix), history-independence tests, and
-positioning-only failure cases. Run the full suite and targeted race checks.
-
-Do not weaken or skip the remaining shaping-boundary test to make the suite green.
+This work does not add rollback, retry, table disabling, exhaustive font
+sanitization, or glyph-count validation for other substitution formats.

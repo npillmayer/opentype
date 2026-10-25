@@ -186,6 +186,9 @@ func (f feature) LookupIndex(i int) int {
 // Earlier applications are not rolled back: applied may be true alongside an
 // error. See doc/FEATURE_APPLICATION.md for the remaining staged guarantees.
 func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bool, error) {
+	if st != nil {
+		st.edits = nil
+	}
 	if feat == nil { // this is legal for unused mandatory feature slots
 		if st == nil {
 			return 0, false, nil
@@ -215,7 +218,6 @@ func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bo
 	if lytTable == nil {
 		return st.Index, false, fmt.Errorf("feature %s: missing layout table or invalid feature type %d", feat.Tag(), feat.Type())
 	}
-	st.edits = nil
 	var applied, ok bool
 	gdef := otf.Layout.GDef
 	lookupGraph := lytTable.LookupGraph()
@@ -295,6 +297,18 @@ type BufferState struct {
 	glyphsShared bool
 	posShared    bool
 	edits        []EditSpan // ordered mutations, in coordinates immediately before each edit
+}
+
+// AppliedEdits returns a copy of the ordered glyph edits from the latest
+// ApplyFeature call, including completed edits when that call returned an error.
+// Coordinates refer to the buffer immediately before each edit. Glyphs and Pos
+// already reflect these edits; consumers must replay them only on other metadata.
+// Each ApplyFeature call clears the journal, including no-op and failed calls.
+func (b *BufferState) AppliedEdits() []EditSpan {
+	if b == nil {
+		return nil
+	}
+	return append([]EditSpan(nil), b.edits...)
 }
 
 // NewBufferState constructs a buffer state with index 0.
@@ -513,6 +527,23 @@ func (pb PosBuffer) ApplyEdit(edit *EditSpan) PosBuffer {
 	}
 	out := append(pb[:edit.From:edit.From], repl...)
 	out = append(out, pb[edit.To:]...)
+	out = append(PosBuffer(nil), out...)
+	// Retained attachments follow shifted targets. A replaced target no longer
+	// has the same identity, so drop that attachment rather than inventing one.
+	for i := range out {
+		target := int(out[i].AttachTo)
+		if target < 0 {
+			continue
+		}
+		if target >= edit.From && target < edit.To {
+			out[i].AttachTo = -1
+			out[i].AttachKind = AttachNone
+			out[i].AttachClass = 0
+			out[i].AnchorRef = AnchorRef{}
+		} else if target >= edit.To {
+			out[i].AttachTo += int32(edit.Len - (edit.To - edit.From))
+		}
+	}
 	return out
 }
 

@@ -55,6 +55,9 @@ func NewShaper(engines ...ShapingEngine) *Shaper {
 //
 // Returns nil on success, or an error for invalid inputs, source/sink failures,
 // missing/invalid shaper selection, plan compilation failure, or pipeline failure.
+// A shaping error prevents emission of the current in-progress chunk. Previously
+// emitted prefixes remain in sink; neither consumed input nor sink writes are
+// rolled back. For atomic delivery, buffer output and commit only after success.
 func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts BufferOptions) error {
 	if params.Font == nil {
 		return ErrNilFont

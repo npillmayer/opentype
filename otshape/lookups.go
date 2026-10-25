@@ -87,6 +87,7 @@ func (e *planExecutor) applyLookups(pl *plan, table planTable, lookups []lookupO
 	}
 
 	st := otlayout.NewBufferState(e.run.Glyphs, e.run.Pos)
+	defer func() { e.run.Glyphs, e.run.Pos = st.Glyphs, st.Pos }()
 	for _, op := range lookups {
 		alt := 0
 		if op.Flags.has(lookupRandom) {
@@ -156,24 +157,65 @@ func (e *planExecutor) applyLookupIsolatedSpan(
 	var subPos otlayout.PosBuffer
 	if st.Pos != nil {
 		subPos = append(otlayout.PosBuffer(nil), st.Pos[start:end]...)
+		for i := range subPos {
+			target := int(subPos[i].AttachTo)
+			if target < 0 {
+				continue
+			}
+			if target >= start && target < end {
+				subPos[i].AttachTo -= int32(start)
+			} else {
+				// Preserve outside-span references separately from local attachment indices.
+				subPos[i].AttachTo = -int32(target) - 2
+			}
+		}
 	}
 	sub := otlayout.NewBufferState(subGlyphs, subPos)
-	if _, err := e.applyLookupSpan(pl, op, feat, sub, alt, 0, sub.Len(), start); err != nil {
-		return start, err
-	}
+	var edits []otlayout.EditSpan
+	_, err := e.applyLookupSpanInternal(pl, op, feat, sub, alt, 0, sub.Len(), start, false, &edits)
 	newLen := sub.Len()
 	st.Glyphs = st.Glyphs.Replace(start, end, append([]ot.GlyphIndex(nil), sub.Glyphs...))
-	if st.Pos != nil {
-		edit := &otlayout.EditSpan{From: start, To: end, Len: newLen}
-		st.Pos = st.Pos.ApplyEdit(edit)
-		if sub.Pos != nil && len(sub.Pos) == newLen {
+	if st.Pos != nil || sub.Pos != nil {
+		if st.Pos == nil {
+			st.Pos = otlayout.NewPosBuffer(len(st.Glyphs) - newLen + end - start)
+		}
+		for _, edit := range edits {
+			if edit.To-edit.From == 1 && edit.Len == 1 {
+				continue
+			}
+			st.Pos = st.Pos.ApplyEdit(&edit)
+		}
+		if sub.Pos != nil {
+			for i := range sub.Pos {
+				target := sub.Pos[i].AttachTo
+				if target >= 0 {
+					sub.Pos[i].AttachTo += int32(start)
+				} else if target < -1 {
+					target = -target - 2
+					for _, edit := range edits {
+						if edit.To-edit.From == 1 && edit.Len == 1 {
+							continue
+						}
+						if int(target) >= edit.From && int(target) < edit.To {
+							target = -1
+							sub.Pos[i].AttachKind = otlayout.AttachNone
+							sub.Pos[i].AttachClass = 0
+							sub.Pos[i].AnchorRef = otlayout.AnchorRef{}
+							break
+						}
+						if int(target) >= edit.To {
+							target += int32(edit.Len - (edit.To - edit.From))
+						}
+					}
+					sub.Pos[i].AttachTo = target
+				}
+			}
 			copy(st.Pos[start:start+newLen], sub.Pos)
 		}
 	}
-	if newLen != end-start {
-		e.realignSideArrays(pl, st)
-	}
-	return start + newLen, nil
+	st.Index = start + sub.Index
+	e.run.Glyphs, e.run.Pos = st.Glyphs, st.Pos
+	return start + newLen, err
 }
 
 func (e *planExecutor) applyLookupSpan(
@@ -185,6 +227,21 @@ func (e *planExecutor) applyLookupSpan(
 	start int,
 	end int,
 	indexBase int,
+) (int, error) {
+	return e.applyLookupSpanInternal(pl, op, feat, st, alt, start, end, indexBase, true, nil)
+}
+
+func (e *planExecutor) applyLookupSpanInternal(
+	pl *plan,
+	op lookupOp,
+	feat planLookupFeature,
+	st *otlayout.BufferState,
+	alt int,
+	start int,
+	end int,
+	indexBase int,
+	publish bool,
+	spanEdits *[]otlayout.EditSpan,
 ) (int, error) {
 	if start < 0 {
 		start = 0
@@ -204,6 +261,21 @@ func (e *planExecutor) applyLookupSpan(
 		prevIndex := st.Index
 		prevLen := st.Len()
 		_, applied, err := otlayout.ApplyFeature(pl.font, feat, st, alt)
+		for _, edit := range st.AppliedEdits() {
+			edit.From += indexBase
+			edit.To += indexBase
+			e.run.applyLayoutEdit(edit)
+			if spanEdits != nil {
+				*spanEdits = append(*spanEdits, edit)
+			}
+		}
+		if publish {
+			e.run.Glyphs, e.run.Pos = st.Glyphs, st.Pos
+		}
+		end += st.Len() - prevLen
+		if end > st.Len() {
+			end = st.Len()
+		}
 		if err != nil {
 			return end, err
 		}
@@ -213,17 +285,6 @@ func (e *planExecutor) applyLookupSpan(
 		}
 		if st.Len() == prevLen && st.Index == prevIndex {
 			st.Index++
-		}
-		if st.Len() != prevLen {
-			delta := st.Len() - prevLen
-			end += delta
-			if end < st.Index {
-				end = st.Index
-			}
-			e.realignSideArrays(pl, st)
-			if end > st.Len() {
-				end = st.Len()
-			}
 		}
 	}
 	return end, nil
@@ -235,9 +296,7 @@ func (e *planExecutor) lookupIndexEnabled(pl *plan, op lookupOp, st *otlayout.Bu
 	}
 	absInx := indexBase + inx
 	if op.Mask != 0 {
-		if absInx >= len(e.run.Masks) {
-			e.realignSideArrays(pl, st)
-		}
+
 		if absInx >= len(e.run.Masks) || e.run.Masks[absInx]&op.Mask == 0 {
 			return false
 		}
@@ -332,4 +391,61 @@ func normalizeMaskRange(start, end, n int) (int, int) {
 		end = start
 	}
 	return start, end
+}
+
+// applyLayoutEdit updates metadata only. Layout already owns glyph/position edits.
+// Replacement slots inherit the first input's annotations; clusters merge to the
+// minimum input cluster and unsafe flags accumulate across the consumed range.
+func (rb *runBuffer) applyLayoutEdit(edit otlayout.EditSpan) {
+	if edit.From+1 == edit.To && edit.Len == 1 {
+		return
+	}
+	var cluster uint32
+	var unsafe uint16
+	if rb.Clusters != nil && edit.From < edit.To {
+		cluster = rb.Clusters[edit.From]
+		for _, c := range rb.Clusters[edit.From:edit.To] {
+			if c < cluster {
+				cluster = c
+			}
+		}
+	}
+	if rb.UnsafeFlags != nil {
+		for _, f := range rb.UnsafeFlags[edit.From:edit.To] {
+			unsafe |= f
+		}
+	}
+	rb.Codepoints = inheritLayoutEdit(rb.Codepoints, edit)
+	rb.Clusters = inheritLayoutEdit(rb.Clusters, edit)
+	rb.PlanIDs = inheritLayoutEdit(rb.PlanIDs, edit)
+	rb.Masks = inheritLayoutEdit(rb.Masks, edit)
+	rb.UnsafeFlags = inheritLayoutEdit(rb.UnsafeFlags, edit)
+	rb.Syllables = inheritLayoutEdit(rb.Syllables, edit)
+	rb.Joiners = inheritLayoutEdit(rb.Joiners, edit)
+	if edit.From < edit.To {
+		for i := edit.From; i < edit.From+edit.Len; i++ {
+			if rb.Clusters != nil {
+				rb.Clusters[i] = cluster
+			}
+			if rb.UnsafeFlags != nil {
+				rb.UnsafeFlags[i] = unsafe
+			}
+		}
+	}
+}
+
+func inheritLayoutEdit[T any](s []T, edit otlayout.EditSpan) []T {
+	if s == nil {
+		return nil
+	}
+	var seed T
+	if edit.From < edit.To {
+		seed = s[edit.From]
+	}
+	replacement := make([]T, edit.Len)
+	for i := range replacement {
+		replacement[i] = seed
+	}
+	out := append(s[:edit.From:edit.From], replacement...)
+	return append(out, s[edit.To:]...)
 }

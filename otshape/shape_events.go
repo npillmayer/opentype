@@ -39,6 +39,9 @@ type ShapeEventsRequest struct {
 // In ShapeEvents, params.Features is restricted to global defaults only:
 // each FeatureRange must have Start==0 and End==0. Feature scoping is performed
 // exclusively via InputEventPushFeatures/InputEventPopFeatures events.
+// A shaping error prevents emission of the current in-progress chunk. Previously
+// emitted prefixes remain in sink; neither consumed input nor sink writes are
+// rolled back. For atomic delivery, buffer output and commit only after success.
 func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink, bufOpts BufferOptions) error {
 	if params.Font == nil {
 		return ErrNilFont

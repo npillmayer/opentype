@@ -5,7 +5,7 @@ batch‑mode lookup application, based on the OpenType spec.
 
 ## Lookup result and error contract
 
-Status: stages 2 through 4 implemented. `ApplyFeature` returns an independent error and
+Status: stages 2 through 5 implemented. `ApplyFeature` returns an independent error and
 rejects missing or invalid `maxp.NumGlyphs` before mutation. A read-only glyph-count
 snapshot is passed by value through direct and nested GSUB/GPOS lookups, separately
 from the mutable buffer state. Its valid range is 1 through 65535; no unbounded
@@ -22,11 +22,10 @@ returns a descriptive error, no application, and no edit; it does not trigger
 subtable fallback. Zero delta and a valid result of glyph zero remain successful
 applications. This check also applies inside contextual and extension lookups.
 
-Full partial-progress bookkeeping, including shaping side-array synchronization
-(stage 5), remains outstanding. Glyph-count validation for other substitution
-formats is outside this bounded fix. Existing leaf bounds checks are not yet a complete
-malformed-data audit. The full contract below is therefore still a target,
-not a guarantee of the current code.
+Completed edits now synchronize layout buffers, nested input mappings, and shaping
+side arrays on both success and error, including isolated syllable spans.
+Glyph-count validation for other substitution formats remains outside this bounded
+fix; the implementation is not a comprehensive malformed-data validator.
 
 ### Result semantics
 
@@ -74,12 +73,10 @@ that error through to `ApplyFeature` and the shaping caller.
 
 ### Stage 5 implementation checkpoint
 
-The second bounded pass fixes low-level edit ownership, nested edit transport,
-and shared-buffer isolation. Low-level regression tests pass; the shaping-boundary
-test remains intentionally failing until pass 3. See [Partial Progress Audit](PARTIAL_PROGRESS.md)
-for the confirmed defects, edit-ownership proposal, and next implementation passes.
-The public shaping APIs stream to a sink: a failed chunk must not be emitted, but
-already emitted prefixes cannot be retracted. Whole-call atomic output is not promised.
+All three bounded passes are implemented. See [Partial Progress Audit](PARTIAL_PROGRESS.md)
+for ownership, metadata policies, and regression coverage. The public shaping APIs
+stream to a sink: a failed chunk is not emitted, but already emitted prefixes
+cannot be retracted. Whole-call atomic output is not promised.
 
 ### Mutation and partial progress
 

@@ -166,3 +166,31 @@ func TestLayoutHelperErrors(t *testing.T) {
 		t.Fatalf("FeatureTags(nil) = %v, want nil", got)
 	}
 }
+
+func TestLayoutDiscoveryRejectsNilTables(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		table ot.Table
+	}{
+		{"nil interface", nil},
+		{"nil GSUB", (*ot.GSubTable)(nil)},
+		{"nil GPOS", (*ot.GPosTable)(nil)},
+		{"nil GDEF", (*ot.GDefTable)(nil)},
+		{"nil cmap", (*ot.CMapTable)(nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if result, err := GetLayoutTable(tc.table); result != nil || !errors.Is(err, ErrVoid) {
+				t.Fatalf("GetLayoutTable = %v, %v", result, err)
+			}
+			if result, err := GetScriptGraph(tc.table); result != nil || !errors.Is(err, ErrVoid) {
+				t.Fatalf("GetScriptGraph = %v, %v", result, err)
+			}
+			if result, err := GetFeatureGraph(tc.table); result != nil || !errors.Is(err, ErrVoid) {
+				t.Fatalf("GetFeatureGraph = %v, %v", result, err)
+			}
+			if result, err := GetLookupGraph(tc.table); result != nil || !errors.Is(err, ErrVoid) {
+				t.Fatalf("GetLookupGraph = %v, %v", result, err)
+			}
+		})
+	}
+}

@@ -4,24 +4,6 @@ Updated: 2026-10-25
 
 Scope: unresolved findings in `ot/` and `otlayout/`, with supporting test and build-maintenance concerns. Locations refer to the current source. Severity distinguishes observable correctness issues from maintenance opportunities and deferred functionality.
 
-## Medium: nil table can panic in layout discovery APIs
-
-Locations: `otlayout/layout.go:19`, `otlayout/layout.go:128` (`GetLayoutTable`,
-`peekLayoutProperty`).
-
-The shared accessor dereferences its table argument without checking for nil:
-
-```go
-switch table.Self().NameTag() {
-```
-
-Thus `GetLayoutTable(nil)` panics rather than returning an error. Graph accessors
-that delegate to it inherit this behavior. This is an API robustness concern,
-not a demonstrated malformed-font parsing vulnerability.
-
-Suggested work: return a descriptive error for a nil table and test direct and
-forwarding accessors. Define the policy for typed-nil table implementations too.
-
 ## Low: cmap factory retains an invariant panic
 
 Location: `ot/cmap.go:118`, `makeGlyphIndex`.

@@ -99,6 +99,10 @@ func errFontFormat(message string) error {
 // Parse parses an OpenType font from a byte slice.
 // An ot.Font needs ongoing access to the fonts byte-data after the Parse function returns.
 // Its elements are assumed immutable while the ot.Font remains in use.
+// Normal parsing supports the layout-enabled subset with both GSUB and GPOS;
+// this is a library policy, not a requirement for every valid OpenType font.
+// GDEF data is required when lookup flags need it. IsTestfont relaxes completeness
+// and consistency checks. No legacy kern fallback is provided.
 func Parse(font []byte, options ...ParseOption) (*Font, error) {
 	// https://www.microsoft.com/typography/otspec/otff.htm: Offset Table is 12 bytes.
 	r := bytes.NewReader(font)
@@ -218,7 +222,8 @@ var RequiredTables = []string{
 	"cmap", "head", "hhea", "hmtx", "maxp", "name", "OS/2", "post",
 }
 
-// These are the OpenType tables for advanced layout.
+// LayoutTables lists the layout tables required by this library's normal parsing
+// policy, rather than tables required by the OpenType format itself.
 var LayoutTables = []string{
 	"GSUB", "GPOS",
 	//"GSUB", "GPOS", "GDEF", "BASE", "JSTF",
@@ -266,7 +271,7 @@ func extractLayoutInfo(otf *Font, ec *errorCollector) error {
 		}
 	}
 
-	// We'll operate on OpenType fonts only, i.e. fonts containing GSUB and GPOS tables.
+	// Require the library's layout-enabled subset: both GSUB and GPOS.
 	for _, tag := range LayoutTables {
 		h := otf.tables[T(tag)]
 		if h == nil {

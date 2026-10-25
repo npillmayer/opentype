@@ -3,6 +3,7 @@ package otlayout
 import (
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/npillmayer/opentype/ot"
 )
@@ -16,6 +17,8 @@ var (
 )
 
 // GetLayoutTable returns the layout table component for a given OpenType GSUB or GPOS table.
+// A nil argument, including a typed-nil table, returns an error wrapping ErrVoid.
+// Other table kinds are rejected; this does not relax font parsing requirements.
 func GetLayoutTable(table ot.Table) (*ot.LayoutTable, error) {
 	return peekLayoutProperty(table,
 		func(gsub *ot.GSubTable) (*ot.LayoutTable, error) {
@@ -26,6 +29,7 @@ func GetLayoutTable(table ot.Table) (*ot.LayoutTable, error) {
 }
 
 // GetScriptGraph returns the concrete ScriptList graph for a GSUB/GPOS table.
+// Invalid table arguments return the same errors as GetLayoutTable.
 func GetScriptGraph(table ot.Table) (*ot.ScriptList, error) {
 	lyt, err := GetLayoutTable(table)
 	if err != nil {
@@ -38,6 +42,7 @@ func GetScriptGraph(table ot.Table) (*ot.ScriptList, error) {
 }
 
 // GetFeatureGraph returns the concrete FeatureList graph for a GSUB/GPOS table.
+// Invalid table arguments return the same errors as GetLayoutTable.
 func GetFeatureGraph(table ot.Table) (*ot.FeatureList, error) {
 	lyt, err := GetLayoutTable(table)
 	if err != nil {
@@ -50,6 +55,7 @@ func GetFeatureGraph(table ot.Table) (*ot.FeatureList, error) {
 }
 
 // GetLookupGraph returns the concrete LookupList graph for a GSUB/GPOS table.
+// Invalid table arguments return the same errors as GetLayoutTable.
 func GetLookupGraph(table ot.Table) (*ot.LookupListGraph, error) {
 	lyt, err := GetLayoutTable(table)
 	if err != nil {
@@ -127,6 +133,18 @@ func LookupsForFeature(feature *ot.Feature, lookupGraph *ot.LookupListGraph) ([]
 // Reach inside a GSUB or GPOS table and extract a property safely.
 func peekLayoutProperty[T any](table ot.Table,
 	sub func(*ot.GSubTable) (*T, error), pos func(*ot.GPosTable) (*T, error)) (*T, error) {
+	if table == nil {
+		return nil, fmt.Errorf("layout discovery: nil table: %w", ErrVoid)
+	}
+	// An interface containing a nil pointer is non-nil; calling its promoted
+	// Self method can panic before the table implementation gets control.
+	v := reflect.ValueOf(table)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		if v.IsNil() {
+			return nil, fmt.Errorf("layout discovery: nil table (%T): %w", table, ErrVoid)
+		}
+	}
 	switch table.Self().NameTag() {
 	case ot.T("GSUB"):
 		if gsub := table.Self().AsGSub(); gsub != nil {

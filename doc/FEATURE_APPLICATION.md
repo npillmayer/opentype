@@ -3,6 +3,19 @@
 This document summarizes the OpenType feature application flow (GSUB/GPOS) for
 batch‑mode lookup application, based on the OpenType spec.
 
+## Supported Font Policy
+
+Normal parsing requires both GSUB and GPOS as a library scope restriction, not
+as a definition of OpenType validity. GDEF and its relevant subtables are required
+when lookup flags demand their data. There is no legacy kern fallback.
+`IsTestfont` relaxes completeness and consistency checks for test fixtures.
+
+Layout discovery still validates its arguments: `GetLayoutTable`, `GetScriptGraph`,
+`GetFeatureGraph`, and `GetLookupGraph` return a nil result and an error wrapping
+`otlayout.ErrVoid` for nil or typed-nil table arguments. This reports a violated
+API precondition; it does not broaden the set of supported fonts. Non-layout
+tables remain rejected.
+
 ## Lookup result and error contract
 
 Status: stages 1 through 6 complete for the bounded format-1 change. `ApplyFeature` returns an independent error and

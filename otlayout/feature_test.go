@@ -30,6 +30,7 @@ func TestDispatchGSubLookupSingleFmt1Routing(t *testing.T) {
 		},
 	}
 	ctx := applyCtx{
+		env:     applyEnv{numGlyphs: 100},
 		clookup: &ot.LookupTable{},
 		subnode: &ot.LookupNode{
 			GSub: &ot.GSubLookupPayload{
@@ -40,7 +41,10 @@ func TestDispatchGSubLookupSingleFmt1Routing(t *testing.T) {
 		pos: 0,
 	}
 
-	pos, ok, buf, _, edit := dispatchGSubLookup(&ctx, &sub)
+	pos, ok, buf, _, edit, err := dispatchGSubLookup(&ctx, &sub)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatalf("expected lookup to apply")
 	}

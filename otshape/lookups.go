@@ -203,7 +203,10 @@ func (e *planExecutor) applyLookupSpan(
 		}
 		prevIndex := st.Index
 		prevLen := st.Len()
-		_, applied := otlayout.ApplyFeature(pl.font, feat, st, alt)
+		_, applied, err := otlayout.ApplyFeature(pl.font, feat, st, alt)
+		if err != nil {
+			return end, err
+		}
 		if !applied && st.Index == prevIndex {
 			st.Index++
 			continue

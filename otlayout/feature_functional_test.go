@@ -45,7 +45,14 @@ func applyGSUBLookup(t *testing.T, otf *ot.Font, lookupIndex int, input []ot.Gly
 	buf := append(GlyphBuffer(nil), input...)
 	st := NewBufferState(buf, NewPosBuffer(len(buf)))
 	st.Index = pos
-	_, ok, _ := applyLookupConcrete(clookup, otf.Layout.GSub.LookupGraph(), feat, st, alt, otf.Layout.GDef)
+	env, err := newApplyEnv(otf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, ok, _, err := applyLookupConcrete(clookup, otf.Layout.GSub.LookupGraph(), feat, st, alt, otf.Layout.GDef, env)
+	if err != nil {
+		t.Fatal(err)
+	}
 	out := st.Glyphs
 	return out, ok
 }

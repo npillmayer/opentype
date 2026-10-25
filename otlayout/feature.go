@@ -171,50 +171,99 @@ func (f feature) LookupIndex(i int) int {
 
 // --- Feature application ---------------------------------------------------
 
-// ApplyFeature will apply a feature to one or more glyphs of buffer buf, starting at
-// position pos. It will return the position after application of the feature.
+// ApplyFeature applies a feature starting at st.Index, updating the buffer state.
+// It returns the resulting position and whether any lookup was applied. Application
+// does not necessarily change a glyph or position value: a zero-delta substitution
+// can still be applied. The boolean is not an error/success indicator.
 //
-// If a feature is unsuited for the glyph at pos, ApplyFeature will do nothing and return pos.
+// A normal non-match leaves the buffer and position unchanged and returns false.
+// A nil feature represents an unused mandatory-feature slot and is a no-op when
+// st is non-nil.
 //
-// Attention: It is a requirement that font otf contains the appropriate layout table (either GSUB or
-// GPOS) for the feature. Having the table missing may result in a crash. This should never happen, as
-// extracting the feature will have required the layout table in the first place. Presence of the
-// layout table is not checked again.
-func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bool) {
+// A non-no-op application requires a valid maxp glyph count. Missing or invalid
+// count information returns an error before changing st. Lookup errors stop
+// application and are wrapped with feature, lookup, and subtable context.
+// Earlier applications are not rolled back: applied may be true alongside an
+// error. See doc/FEATURE_APPLICATION.md for the remaining staged guarantees.
+func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (int, bool, error) {
 	if feat == nil { // this is legal for unused mandatory feature slots
-		return st.Index, false
+		if st == nil {
+			return 0, false, nil
+		}
+		return st.Index, false, nil
 	} else if st == nil || st.Glyphs == nil || st.Index < 0 || st.Index >= len(st.Glyphs) {
 		tracer().Infof("application of font-feature requested for unusable buffer condition")
 		if st != nil {
-			return st.Index, false
+			return st.Index, false, errors.New("feature application: unusable buffer state")
 		}
-		return 0, false
+		return 0, false, errors.New("feature application: missing buffer state")
+	}
+	env, err := newApplyEnv(otf)
+	if err != nil {
+		return st.Index, false, err
 	}
 	var lytTable *ot.LayoutTable
 	if feat.Type() == GSubFeatureType {
-		lytTable = &otf.Table(ot.T("GSUB")).Self().AsGSub().LayoutTable
-	} else {
-		lytTable = &otf.Table(ot.T("GPOS")).Self().AsGPos().LayoutTable
+		if table := otf.Table(ot.T("GSUB")); table != nil && table.Self().AsGSub() != nil {
+			lytTable = &table.Self().AsGSub().LayoutTable
+		}
+	} else if feat.Type() == GPosFeatureType {
+		if table := otf.Table(ot.T("GPOS")); table != nil && table.Self().AsGPos() != nil {
+			lytTable = &table.Self().AsGPos().LayoutTable
+		}
+	}
+	if lytTable == nil {
+		return st.Index, false, fmt.Errorf("feature %s: missing layout table or invalid feature type %d", feat.Tag(), feat.Type())
 	}
 	var applied, ok bool
 	gdef := otf.Layout.GDef
 	lookupGraph := lytTable.LookupGraph()
 	if lookupGraph == nil {
-		tracer().Errorf("lookup graph missing for feature %s", feat.Tag())
-		return st.Index, false
+		return st.Index, false, fmt.Errorf("feature %s: missing lookup graph", feat.Tag())
+	}
+	if err := lookupGraph.Error(); err != nil {
+		return st.Index, false, fmt.Errorf("feature %s: lookup graph: %w", feat.Tag(), err)
 	}
 	for i := 0; i < feat.LookupCount(); i++ { // lookups have to be applied in sequence
 		inx := feat.LookupIndex(i)
 		tracer().Debugf("feature %s lookup #%d => index %d", feat.Tag(), i, inx)
 		clookup := lookupGraph.Lookup(inx)
-		_, ok, _ = applyLookupConcrete(clookup, lookupGraph, feat, st, alt, gdef)
+		_, ok, _, err = applyLookupConcrete(clookup, lookupGraph, feat, st, alt, gdef, env)
 		applied = applied || ok
+		if err != nil {
+			return st.Index, applied, fmt.Errorf("feature %s lookup %d: %w", feat.Tag(), inx, err)
+		}
 	}
-	return st.Index, applied
+	return st.Index, applied, nil
+}
+
+// applyEnv is a read-only snapshot of font validation data, passed by value to
+// every lookup, including nested lookups. It does not belong to BufferState.
+type applyEnv struct {
+	numGlyphs int
+}
+
+func newApplyEnv(font *ot.Font) (applyEnv, error) {
+	if font == nil {
+		return applyEnv{}, errors.New("feature application: font is nil; maxp glyph count unavailable")
+	}
+	table := font.Table(ot.T("maxp"))
+	if table == nil {
+		return applyEnv{}, errors.New("feature application: missing maxp glyph count")
+	}
+	maxp := table.Self().AsMaxP()
+	if maxp == nil {
+		return applyEnv{}, errors.New("feature application: invalid maxp table")
+	}
+	if maxp.NumGlyphs <= 0 || maxp.NumGlyphs > 0xffff {
+		return applyEnv{}, fmt.Errorf("feature application: invalid maxp.NumGlyphs %d", maxp.NumGlyphs)
+	}
+	return applyEnv{numGlyphs: maxp.NumGlyphs}, nil
 }
 
 // applyCtx bundles immutable lookup state for dispatch and helpers.
 type applyCtx struct {
+	env         applyEnv                 // immutable font validation data
 	feat        Feature                  // active feature for alternate selection and tracing
 	clookup     *ot.LookupTable          // concrete lookup currently being applied
 	lookupGraph *ot.LookupListGraph      // concrete lookup graph for nested lookups
@@ -463,6 +512,8 @@ func (pb PosBuffer) ApplyEdit(edit *EditSpan) PosBuffer {
 	return out
 }
 
+// applyLookupConcrete retains returned buffers and edits even on error.
+// The applied flag describes completed work, not absence of errors.
 func applyLookupConcrete(
 	clookup *ot.LookupTable,
 	lookupGraph *ot.LookupListGraph,
@@ -470,14 +521,22 @@ func applyLookupConcrete(
 	st *BufferState,
 	alt int,
 	gdef *ot.GDefTable,
-) (int, bool, *EditSpan) {
+	env applyEnv,
+) (int, bool, *EditSpan, error) {
+	if st == nil {
+		return 0, false, nil, errors.New("lookup: missing buffer state")
+	}
+	if st.Index < 0 || st.Index > st.Len() || feat == nil {
+		return st.Index, false, nil, errors.New("lookup: invalid cursor or missing feature")
+	}
 	if clookup == nil {
-		if st != nil {
-			return st.Index, false, nil
-		}
-		return 0, false, nil
+		return st.Index, false, nil, errors.New("lookup: missing or out-of-range lookup")
+	}
+	if err := clookup.Error(); err != nil {
+		return st.Index, false, nil, fmt.Errorf("lookup table: %w", err)
 	}
 	ctx := applyCtx{
+		env:         env,
 		feat:        feat,
 		clookup:     clookup,
 		lookupGraph: lookupGraph,
@@ -487,7 +546,7 @@ func applyLookupConcrete(
 		flag:        clookup.Flag,
 		gdef:        gdef,
 	}
-	pos, ok, buf, pbuf, edit := dispatchLookup(&ctx)
+	pos, ok, buf, pbuf, edit, err := dispatchLookup(&ctx)
 	if st != nil {
 		if buf != nil {
 			st.Glyphs = buf
@@ -500,12 +559,12 @@ func applyLookupConcrete(
 		}
 		st.Index = pos
 	}
-	return pos, ok, edit
+	return pos, ok, edit, err
 }
 
-func dispatchLookup(ctx *applyCtx) (int, bool, GlyphBuffer, PosBuffer, *EditSpan) {
+func dispatchLookup(ctx *applyCtx) (int, bool, GlyphBuffer, PosBuffer, *EditSpan, error) {
 	if ctx.clookup == nil {
-		return ctx.pos, false, ctx.buf.Glyphs, ctx.buf.Pos, nil
+		return ctx.pos, false, ctx.buf.Glyphs, ctx.buf.Pos, nil, errors.New("missing lookup table")
 	}
 	isGPos := ot.IsGPosLookupType(ctx.clookup.Type)
 	lookupType := ot.GSubLookupType(ctx.clookup.Type)
@@ -515,10 +574,10 @@ func dispatchLookup(ctx *applyCtx) (int, bool, GlyphBuffer, PosBuffer, *EditSpan
 	tracer().Debugf("applying lookup '%s'/%d flags=0x%04x", ctx.feat.Tag(), lookupType, uint16(ctx.clookup.Flag))
 	for i := 0; i < int(ctx.clookup.SubTableCount) && ctx.pos < ctx.buf.Glyphs.Len(); i++ {
 		tracer().Debugf("-------------------- pos = %d", ctx.pos)
-		subnode := effectiveLookupNode(ctx.clookup.Subtable(i))
+		subnode, err := effectiveLookupNode(ctx.clookup.Subtable(i))
 		ctx.subnode = subnode
-		if subnode == nil {
-			continue
+		if err != nil {
+			return ctx.pos, false, ctx.buf.Glyphs, ctx.buf.Pos, nil, fmt.Errorf("subtable %d: %w", i, err)
 		}
 		subType := subnode.LookupType
 		if isGPos {
@@ -535,73 +594,80 @@ func dispatchLookup(ctx *applyCtx) (int, bool, GlyphBuffer, PosBuffer, *EditSpan
 			edit *EditSpan
 		)
 		if isGPos {
-			pos, ok, buf, pbuf, edit = dispatchGPosLookup(ctx, subnode)
+			pos, ok, buf, pbuf, edit, err = dispatchGPosLookup(ctx, subnode)
 		} else {
-			pos, ok, buf, pbuf, edit = dispatchGSubLookup(ctx, subnode)
+			pos, ok, buf, pbuf, edit, err = dispatchGSubLookup(ctx, subnode)
+		}
+		if err != nil {
+			return pos, ok, buf, pbuf, edit, fmt.Errorf("subtable %d type %d format %d: %w", i, subType, subnode.Format, err)
 		}
 		if ok {
-			return pos, ok, buf, pbuf, edit
+			return pos, ok, buf, pbuf, edit, err
 		}
 	}
-	return ctx.pos, false, ctx.buf.Glyphs, ctx.buf.Pos, nil
+	return ctx.pos, false, ctx.buf.Glyphs, ctx.buf.Pos, nil, nil
 }
 
-func dispatchGSubLookup(ctx *applyCtx, sub *ot.LookupNode) (int, bool, GlyphBuffer, PosBuffer, *EditSpan) {
+func dispatchGSubLookup(ctx *applyCtx, sub *ot.LookupNode) (int, bool, GlyphBuffer, PosBuffer, *EditSpan, error) {
 	pos := ctx.pos
 	ok := false
 	buf := ctx.buf.Glyphs
 	var edit *EditSpan
+	err := fmt.Errorf("unsupported lookup type %d format %d", sub.LookupType, sub.Format)
 	subType := ot.GSubLookupType(sub.LookupType)
 	switch subType {
 	case ot.GSubLookupTypeSingle: // Single Substitution Subtable
 		switch sub.Format {
 		case 1:
-			pos, ok, buf, edit = gsubLookupType1Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			pos, ok, buf, edit, err = gsubLookupType1Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 2:
-			pos, ok, buf, edit = gsubLookupType1Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			pos, ok, buf, edit, err = gsubLookupType1Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		}
 	case ot.GSubLookupTypeMultiple: // Multiple Substitution Subtable
-		pos, ok, buf, edit = gsubLookupType2Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+		if sub.Format == 1 {
+			pos, ok, buf, edit, err = gsubLookupType2Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+		}
 	case ot.GSubLookupTypeAlternate: // Alternate Substitution Subtable
-		pos, ok, buf, edit = gsubLookupType3Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos, ctx.alt)
+		if sub.Format == 1 {
+			pos, ok, buf, edit, err = gsubLookupType3Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos, ctx.alt)
+		}
 	case ot.GSubLookupTypeLigature: // Ligature Substitution Subtable
-		pos, ok, buf, edit = gsubLookupType4Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+		if sub.Format == 1 {
+			pos, ok, buf, edit, err = gsubLookupType4Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+		}
 	case ot.GSubLookupTypeContext:
 		switch sub.Format {
 		case 1:
-			pos, ok, buf, edit = gsubLookupType5Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			pos, ok, buf, edit, err = gsubLookupType5Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 2:
-			pos, ok, buf, edit = gsubLookupType5Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			pos, ok, buf, edit, err = gsubLookupType5Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 3:
-			pos, ok, buf, edit = gsubLookupType5Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			pos, ok, buf, edit, err = gsubLookupType5Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		}
 	case ot.GSubLookupTypeChainingContext:
 		switch sub.Format {
 		case 1:
-			pos, ok, buf, edit = gsubLookupType6Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			pos, ok, buf, edit, err = gsubLookupType6Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 2:
-			pos, ok, buf, edit = gsubLookupType6Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			pos, ok, buf, edit, err = gsubLookupType6Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		case 3:
-			pos, ok, buf, edit = gsubLookupType6Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			pos, ok, buf, edit, err = gsubLookupType6Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		}
-	case ot.GSubLookupTypeExtensionSubs:
-		tracer().Errorf("GSUB extension subtable reached dispatch; extension should be unwrapped during parsing")
 	case ot.GSubLookupTypeReverseChaining:
 		switch sub.Format {
 		case 1:
-			pos, ok, buf, edit = gsubLookupType8Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+			pos, ok, buf, edit, err = gsubLookupType8Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 		}
-	default:
-		tracer().Errorf("unknown GSUB lookup type %d/%d", subType, sub.Format)
 	}
-	return pos, ok, buf, ctx.buf.Pos, edit
+	return pos, ok, buf, ctx.buf.Pos, edit, err
 }
 
-func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupNode) (int, bool, GlyphBuffer, PosBuffer, *EditSpan) {
+func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupNode) (int, bool, GlyphBuffer, PosBuffer, *EditSpan, error) {
 	pos := ctx.pos
 	ok := false
 	buf := ctx.buf.Glyphs
 	var edit *EditSpan
+	err := fmt.Errorf("unsupported lookup type %d format %d", sub.LookupType, sub.Format)
 	subType := ot.GPosLookupType(sub.LookupType)
 	switch subType {
 	case ot.GPosLookupTypeSingle,
@@ -616,65 +682,58 @@ func dispatchGPosLookup(ctx *applyCtx, sub *ot.LookupNode) (int, bool, GlyphBuff
 		case ot.GPosLookupTypeSingle:
 			switch sub.Format {
 			case 1:
-				pos, ok, buf, edit = gposLookupType1Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType1Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			case 2:
-				pos, ok, buf, edit = gposLookupType1Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType1Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			}
 		case ot.GPosLookupTypePair:
 			switch sub.Format {
 			case 1:
-				pos, ok, buf, edit = gposLookupType2Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType2Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			case 2:
-				pos, ok, buf, edit = gposLookupType2Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType2Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			}
 		case ot.GPosLookupTypeCursive:
 			switch sub.Format {
 			case 1:
-				pos, ok, buf, edit = gposLookupType3Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType3Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			}
 		case ot.GPosLookupTypeMarkToBase:
 			switch sub.Format {
 			case 1:
-				pos, ok, buf, edit = gposLookupType4Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType4Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			}
 		case ot.GPosLookupTypeMarkToLigature:
 			switch sub.Format {
 			case 1:
-				pos, ok, buf, edit = gposLookupType5Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType5Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			}
 		case ot.GPosLookupTypeMarkToMark:
 			switch sub.Format {
 			case 1:
-				pos, ok, buf, edit = gposLookupType6Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType6Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			}
 		case ot.GPosLookupTypeContextPos:
 			switch sub.Format {
 			case 1:
-				pos, ok, buf, edit = gposLookupType7Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType7Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			case 2:
-				pos, ok, buf, edit = gposLookupType7Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType7Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			case 3:
-				pos, ok, buf, edit = gposLookupType7Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType7Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			}
 		case ot.GPosLookupTypeChainedContextPos:
 			switch sub.Format {
 			case 1:
-				pos, ok, buf, edit = gposLookupType8Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType8Fmt1(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			case 2:
-				pos, ok, buf, edit = gposLookupType8Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType8Fmt2(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			case 3:
-				pos, ok, buf, edit = gposLookupType8Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
+				pos, ok, buf, edit, err = gposLookupType8Fmt3(ctx, sub, ctx.buf.Glyphs, ctx.pos)
 			}
 		}
-		//tracer().Errorf("GPOS lookup type %d/%d not implemented", sub.LookupType, sub.Format)
-	case ot.GPosLookupTypeExtensionPos:
-		tracer().Errorf("GPOS extension subtable reached dispatch; extension should be unwrapped during parsing")
-		panic("GPOS extension subtable reached dispatch, should be unwrapped during parsing")
-	default:
-		tracer().Errorf("unknown GPOS lookup type %d/%d", subType, sub.Format)
-		panic("unknown GPOS lookup type")
 	}
-	return pos, ok, buf, ctx.buf.Pos, edit
+	return pos, ok, buf, ctx.buf.Pos, edit, err
 }
 
 // --- Helpers ---------------------------------------------------------------
@@ -873,17 +932,24 @@ func markAttachmentType(flag ot.LayoutTableLookupFlag) uint16 {
 	return uint16((flag & ot.LOOKUP_FLAG_MARK_ATTACHMENT_TYPE_MASK) >> 8)
 }
 
-func effectiveLookupNode(n *ot.LookupNode) *ot.LookupNode {
+func effectiveLookupNode(n *ot.LookupNode) (*ot.LookupNode, error) {
 	if n == nil {
-		return nil
+		return nil, errors.New("missing lookup subtable")
 	}
+	if err := n.Error(); err != nil {
+		return nil, fmt.Errorf("lookup node: %w", err)
+	}
+	resolved := n
 	if p := n.GSubPayload(); p != nil && p.ExtensionFmt1 != nil && p.ExtensionFmt1.Resolved != nil {
-		return p.ExtensionFmt1.Resolved
+		resolved = p.ExtensionFmt1.Resolved
 	}
 	if p := n.GPosPayload(); p != nil && p.ExtensionFmt1 != nil && p.ExtensionFmt1.Resolved != nil {
-		return p.ExtensionFmt1.Resolved
+		resolved = p.ExtensionFmt1.Resolved
 	}
-	return n
+	if err := resolved.Error(); err != nil {
+		return nil, fmt.Errorf("resolved extension node: %w", err)
+	}
+	return resolved, nil
 }
 
 type matchingGlyphCtx struct {
@@ -1073,6 +1139,10 @@ func matchChainedForward(ctx *applyCtx, buf GlyphBuffer, pos int, backtrack, inp
 	return inputPos, true
 }
 
+// applySequenceLookupRecords applies nested lookups in record order. Its boolean
+// accumulates whether any nested lookup applied. Nested operations can mutate the
+// buffer incrementally; callers must not assume rollback. The planned error path
+// must preserve completed edits and return their current buffers and bookkeeping.
 func applySequenceLookupRecords(
 	buf GlyphBuffer,
 	posBuf PosBuffer,
@@ -1082,34 +1152,46 @@ func applySequenceLookupRecords(
 	feat Feature,
 	alt int,
 	gdef *ot.GDefTable,
-) (GlyphBuffer, PosBuffer, bool) {
+	env applyEnv,
+) (GlyphBuffer, PosBuffer, bool, error) {
 	mapIdx := buildInputMap(matchPositions)
-	if lookupGraph == nil || len(mapIdx) == 0 {
-		return buf, posBuf, false
+	if len(records) == 0 {
+		return buf, posBuf, false, nil
+	}
+	if lookupGraph == nil {
+		return buf, posBuf, false, errors.New("context lookup: missing lookup graph")
+	}
+	if err := lookupGraph.Error(); err != nil {
+		return buf, posBuf, false, fmt.Errorf("context lookup graph: %w", err)
 	}
 
 	applied := false
-	for _, rec := range records {
+	for recordIndex, rec := range records {
 		tracer().Debugf("sequence lookup record: seq=%d lookup=%d", rec.SequenceIndex, rec.LookupListIndex)
 		seqIndex := int(rec.SequenceIndex)
 		if seqIndex < 0 || seqIndex >= len(mapIdx) {
-			continue
+			return buf, posBuf, applied, fmt.Errorf("sequence record %d: input index %d outside %d matched positions", recordIndex, seqIndex, len(mapIdx))
 		}
 		targetPos := mapIdx[seqIndex]
-		if targetPos < 0 || targetPos >= buf.Len() {
+		if targetPos < 0 { // an earlier record deleted this matched input
 			continue
+		}
+		if targetPos >= buf.Len() {
+			return buf, posBuf, applied, fmt.Errorf("sequence record %d: target position %d outside buffer", recordIndex, targetPos)
 		}
 		tracer().Debugf("sequence lookup record: target position %d", targetPos)
 		clookup := lookupGraph.Lookup(int(rec.LookupListIndex))
 		st := NewBufferState(buf, posBuf)
 		st.Index = targetPos
-		_, ok, edit := applyLookupConcrete(clookup, lookupGraph, feat, st, alt, gdef)
+		_, ok, edit, err := applyLookupConcrete(clookup, lookupGraph, feat, st, alt, gdef, env)
+		applied = applied || ok
+		buf, posBuf = st.Glyphs, st.Pos
+		if err != nil {
+			return buf, posBuf, applied, fmt.Errorf("sequence record %d input %d lookup %d: %w", recordIndex, seqIndex, rec.LookupListIndex, err)
+		}
 		if !ok {
 			continue
 		}
-		applied = true
-		buf = st.Glyphs
-		posBuf = st.Pos
 		if edit == nil {
 			continue
 		}
@@ -1129,7 +1211,7 @@ func applySequenceLookupRecords(
 			}
 		}
 	}
-	return buf, posBuf, applied
+	return buf, posBuf, applied, nil
 }
 
 // check if we recognize a feature tag

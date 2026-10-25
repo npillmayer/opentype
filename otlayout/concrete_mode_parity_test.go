@@ -20,9 +20,9 @@ func TestMissingConcretePayloadDoesNotApply(t *testing.T) {
 		buf:     &BufferState{Glyphs: GlyphBuffer{10}},
 		pos:     0,
 	}
-	_, ok, _, _, _ := dispatchGSubLookup(&ctx, &sub)
-	if ok {
-		t.Fatalf("expected missing concrete payload to skip lookup")
+	_, ok, _, _, _, err := dispatchGSubLookup(&ctx, &sub)
+	if ok || err == nil {
+		t.Fatalf("expected missing concrete payload error, got applied=%v err=%v", ok, err)
 	}
 }
 

@@ -97,7 +97,10 @@ func TestFeatureCase(t *testing.T) {
 	in := prepareGlyphBuffer("@", otf, t)
 	st := NewBufferState(in, NewPosBuffer(len(in)))
 	st.Index = 0
-	_, applied := ApplyFeature(otf, featcase, st, 0)
+	_, applied, applyErr := ApplyFeature(otf, featcase, st, 0)
+	if applyErr != nil {
+		t.Fatal(applyErr)
+	}
 	buf := st.Glyphs
 	t.Logf("Application of 'case' returned glyph buffer %v", buf)
 	if !applied {
@@ -165,7 +168,10 @@ func TestFeatureCCMPCalibri(t *testing.T) {
 	in := []ot.GlyphIndex{3776, 3780, 840}
 	st := NewBufferState(in, NewPosBuffer(len(in)))
 	st.Index = 0
-	_, applied := ApplyFeature(otf, featCCMP, st, 0)
+	_, applied, applyErr := ApplyFeature(otf, featCCMP, st, 0)
+	if applyErr != nil {
+		t.Fatal(applyErr)
+	}
 	buf := st.Glyphs
 	t.Logf("Application of 'ccmp' returned glyph buffer %v", buf)
 	if !applied {
@@ -206,7 +212,10 @@ func TestFeatureCCMPGentium(t *testing.T) {
 	in := []ot.GlyphIndex{76, 2195} // glyphs 'i' + '^' (#0069)
 	st := NewBufferState(in, NewPosBuffer(len(in)))
 	st.Index = 0
-	_, applied := ApplyFeature(otf, featCCMP, st, 0)
+	_, applied, applyErr := ApplyFeature(otf, featCCMP, st, 0)
+	if applyErr != nil {
+		t.Fatal(applyErr)
+	}
 	buf := st.Glyphs
 	t.Logf("Application of 'ccmp' returned glyph buffer %v", buf)
 	if !applied {

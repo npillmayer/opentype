@@ -3,6 +3,98 @@
 This document summarizes the OpenType feature application flow (GSUB/GPOS) for
 batch‑mode lookup application, based on the OpenType spec.
 
+## Lookup result and error contract
+
+Status: stages 2 through 4 implemented. `ApplyFeature` returns an independent error and
+rejects missing or invalid `maxp.NumGlyphs` before mutation. A read-only glyph-count
+snapshot is passed by value through direct and nested GSUB/GPOS lookups, separately
+from the mutable buffer state. Its valid range is 1 through 65535; no unbounded
+fallback is used. GSUB/GPOS leaves, dispatchers, and contextual helpers now carry
+errors to the public API and shaping caller. Lazy graph/table/node errors (including
+resolved extension errors), missing required payloads, unsupported lookup formats,
+and invalid lookup/sequence references stop application rather than becoming
+non-matches. Wrapping preserves causes for `errors.Is` / `errors.As`.
+
+Earlier applied operations retain their buffers and applied flag when a later
+operation fails. GSUB single substitution format 1 now computes the output modulo
+65536 and checks it against `maxp.NumGlyphs` before mutation. An out-of-range output
+returns a descriptive error, no application, and no edit; it does not trigger
+subtable fallback. Zero delta and a valid result of glyph zero remain successful
+applications. This check also applies inside contextual and extension lookups.
+
+Full partial-progress bookkeeping, including shaping side-array synchronization
+(stage 5), remains outstanding. Glyph-count validation for other substitution
+formats is outside this bounded fix. Existing leaf bounds checks are not yet a complete
+malformed-data audit. The full contract below is therefore still a target,
+not a guarantee of the current code.
+
+### Result semantics
+
+Keep the `applied` boolean and add an independent `error` result throughout GSUB
+and GPOS application. `applied` means that a lookup operation was applied, not
+that a value changed or that processing completed without errors. A valid
+zero-delta substitution can return `applied == true`.
+
+| Outcome | applied | err |
+| --- | --- | --- |
+| Normal coverage/context non-match | false | nil |
+| Successful application, including a value-preserving operation | true | nil |
+| Failure before any operation applied | false | descriptive error |
+| Failure after earlier operations applied | true | descriptive error |
+
+Composite operations accumulate `applied` across their completed children. A nil
+feature for an unused mandatory-feature slot remains a normal no-op with a valid
+buffer state. Invalid required arguments and malformed lookup data must not be
+reported as ordinary non-matches.
+
+The public signature is:
+
+```go
+func ApplyFeature(otf *ot.Font, feat Feature, st *BufferState, alt int) (
+    pos int, applied bool, err error,
+)
+```
+
+Leaf GSUB/GPOS functions retain position, applied flag, glyph buffer, and edit
+metadata, and add a final error result. Dispatchers and contextual helpers carry
+that error through to `ApplyFeature` and the shaping caller.
+
+### Dispatch and diagnostics
+
+- After a normal non-match, dispatch may try the next subtable.
+- After successful application, dispatch stops searching that lookup's subtables.
+- After an error, stop the current application and propagate it; do not try an
+  alternative subtable or advance the shaping cursor as though this were a miss.
+- Check errors on lazy lookup nodes before using their payloads. Missing required
+  payloads, invalid lookup references, and invalid output glyphs are failures.
+- Describe the failing operation locally and wrap with feature, lookup, and
+  subtable context where known, preserving causes with `%w`. Exact message text
+  is not an API contract. Runtime errors are returned, not added to parse-time
+  font diagnostics or silently replaced by logging.
+
+### Mutation and partial progress
+
+Validate a leaf operation before mutating glyphs, positions, or its cursor. A
+failed single substitution leaves its input state unchanged and reports no edit.
+Do not substitute `.notdef` automatically for an invalid GSUB output.
+
+Application is not transactional. If a later lookup or nested record fails,
+earlier successful operations remain applied. Return the actual current glyph
+and position buffers and the accumulated applied flag, together with the error.
+The returned position must agree with the buffer state's cursor at the stopping
+point; it is not a promise that shaping can safely resume after the error.
+
+Preserve completed edit bookkeeping, including position-buffer alignment and
+contextual index remapping. Apply each edit exactly once. Shaping callers must
+retain current slice headers and synchronize side arrays before returning an
+error; they must not expose fabricated records or stale metadata. A nil edit
+does not imply no application: positioning and composite operations can apply
+without returning a single replacement span.
+
+Callers must check `err` even when `applied` is true. They may discard an incomplete
+run, but must not assume that an error restored the original state. Rollback and
+automatic recovery are outside this change.
+
 ## Summary
 
 Key points from the spec (paraphrased):

@@ -10,10 +10,11 @@ plan in this document predated these implementations; its restrictions on
 multiple lookups and its proposal to create `internal/ttxtest` are obsolete.
 
 The review included source inspection, existing tests, and temporary public-API
-probes. The full `go test ./... -count=1` run passed. The probes exposed
-correctness gaps that the committed suite does not detect. These findings are
-an assessment of the reviewed implementation, not fixes or newly committed
-regression tests.
+probes. The full `go test ./... -count=1` run passed. Four probes now have
+reproducible, opt-in regression tests under the `shaping_knownbugs` build tag.
+[SHAPING_FINDINGS.md](SHAPING_FINDINGS.md) records their workflow, evidence, and
+open contract questions. These tests expose correctness gaps; they do not fix
+the implementation and are excluded from the ordinary suite.
 
 ## Modules, directories, and testing responsibilities
 
@@ -26,7 +27,7 @@ within the same Go module.
 | [`otquery/`](../otquery/) | Supplies cmap lookup, glyph metrics, and font/script queries. Tests cover mapping, metrics, and query errors; failures can appear as incorrect glyphs or advances downstream. |
 | [`otlayout/`](../otlayout/) | Executes GSUB/GPOS features and lookups on glyph/position buffers. Tests isolate substitution and positioning, nested lookups, edits, attachment remapping, errors, glyph bounds, and execution limits. |
 | [`otshape/`](../otshape/) | Owns the public API, engine selection, normalization, feature plans/masks, streaming, and output. Tests cover orchestration, hooks, ranges, events, buffer correspondence, partial progress, and flushing. |
-| [`otshape/otcore/`](../otshape/otcore/) | Generic engine. External-package tests exercise the public API with GSUB/GPOS fixtures, including single/pair adjustments and attachment metadata. |
+| [`otshape/otcore/`](../otshape/otcore/) | Generic engine. External-package tests exercise the public API with GSUB/GPOS fixtures, including single/pair adjustments and attachment metadata. `shared_api_knownbugs_test.go` adds opt-in reproductions for shared API findings. |
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
@@ -99,8 +100,11 @@ That stub does not describe the implementation state of `Shaper.Shape`.
 
 ### Failures reproduced through the public API
 
-These were temporary review probes, not additions to the committed suite. The
-following inputs and configurations identify regression cases to add.
+These began as temporary review probes. Mask preservation, feature ranges,
+alternate values, and engine selection now have tagged public-API regressions;
+see [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md) for stable IDs, exact commands,
+and current status. Streaming-context and script-tag observations below remain
+review probes outside that first regression batch.
 
 | Finding | Reproduction / result | Implementation location |
 | --- | --- | --- |
@@ -234,6 +238,9 @@ go test ./ot ./otquery ./internal/ttxtest -count=1
 go test ./otshape/... -cover
 go test ./...
 
+# Known-bug discovery suite: expected to fail while recorded findings are open
+go test -tags shaping_knownbugs ./otshape/... -count=1
+
 # Optional concurrency and allocation checks
 go test -race ./otshape/... ./otlayout ./internal/hbcmp
 go test ./otshape -run '^$' -bench 'Benchmark(LookupApplication|ShapeOrdinary|PositionReplacement)$' -benchmem
@@ -268,6 +275,13 @@ loader: the existing end-to-end loader reads `internal/hbcmp/testdata/`.
 Extend that convention deliberately rather than placing undiscovered JSON beside
 fonts.
 
+For a known failure, follow the discovery and promotion process in
+[SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#process-and-scope): assert desired
+behavior in the tagged suite, record evidence, and move the regression into the
+ordinary suite once fixed. Keep unresolved API choices explicit. The broader
+roadmap belongs in [TO_DO.md](TO_DO.md); detailed reproductions belong in the
+findings file.
+
 For manual inspection:
 
 ```sh
@@ -282,18 +296,40 @@ small fixture, not a representative complex-script workload.
 
 ## Next testing priorities
 
-1. Promote the reproduced mask reset, range, alternate value, engine-selection,
-   and script-tag failures into public-API regression tests.
-2. Add boundary-sensitive ligature, pair-positioning, cursive, Arabic joining,
-   and combining-mark cases. Compare multiple watermarks with independent output,
-   including cuts at and around each context boundary.
-3. Complete attachment positioning and test final coordinates, not only
-   `AttachKind`, `AttachTo`, and anchor references.
-4. Expand HarfBuzz fixtures to Arabic/Syriac, Hebrew marks, normalization/font
-   coverage, feature values/ranges, and RTL output. Extend the runner or use
-   dedicated public-API tests for events and streaming configurations.
-5. Exercise decomposition, canonical ordering, unavailable composed glyphs, and
-   length-changing normalization with cluster/range preservation.
+The current focus is Latin-script text and Hebrew. Arabic/Syriac and other
+scripts are deferred to a later phase. Shared pipeline defects remain in scope
+where they affect Latin or Hebrew; use fixtures from those scripts or small
+synthetic cases to isolate them. Existing tests for deferred scripts should
+continue to pass, but expanding their coverage is not a current priority.
+
+1. **Shared API correctness.** The first four tagged regressions cover mask
+   preservation, feature ranges, alternate values, and engine selection; track
+   their resolution in [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md). Implement the
+   agreed alternate-value contract in a separate fix session and promote
+   regressions to the ordinary suite as fixes land. Continue discovery with
+   Latin/Hebrew script and language selection; defer expanding the script map
+   and regressions specific to other scripts.
+2. **Independent Latin/Hebrew baselines.** Expand the HarfBuzz corpus beyond
+   `AB`: Latin ligatures, kerning, feature values/ranges, and accented text;
+   Hebrew letters, combining marks, and RTL glyph/cluster order. Compare glyph
+   IDs, clusters, advances, and offsets, not just output lengths.
+3. **Normalization and cluster preservation.** Exercise composed/decomposed
+   Latin accents and Hebrew combining sequences, canonical ordering, unavailable
+   composed glyphs, and length-changing normalization. Assert original input
+   correspondence and feature-range behavior alongside glyph output.
+4. **Final mark positioning.** Complete attachment positioning needed by Latin
+   accents and Hebrew marks, including mark-to-base and mark-to-mark cases and
+   marks on ligatures where applicable. Test final coordinates and advances,
+   not only `AttachKind`, `AttachTo`, and anchor references.
+5. **Streaming and feature-scope boundaries.** Use the Latin/Hebrew baselines to
+   test ligatures, pair positioning, normalization, and combining-mark attachments
+   across buffer cuts. Sweep watermarks and feature push/pop boundaries, checking
+   clusters, ranges, and positions against independent output. Include
+   length-changing and empty-output cases to verify progress. Extend the fixture
+   runner or add dedicated public-API tests for event/streaming configurations.
+
+Arabic joining, Syriac shaping, script-specific cursive behavior, and broader
+script coverage remain follow-up work after these Latin/Hebrew priorities.
 
 Related design notes: [SHAPER_PLAN.md](SHAPER_PLAN.md),
 [SHAPER_INTERFACES.md](SHAPER_INTERFACES.md),

@@ -1,277 +1,185 @@
-# TO DO
-
-## Feature-on/off Switch for Runs of Input-Runes
-
-Currently, the feature-on/off switch is implemented as a run of input, indexed in terms
-of runBuffer positions.
-
-### In-Band vs Out-of-Band
-
-We have to change the semantics here, as this is not a sensible approach for the streaming interface.
-First we'll have to decide how the feature-on/off information is passed from the client
-to the shaping-pipeline. The client has their own notion of an index into the rune-sequence,
-currently not shared with the pipeline. For now, I'd propose to not make the client pass this
-index information, as that would defy the idea behind a streaming interface somewhat. The
-features-on/off can either be passed in-band or out-of-band. For streaming, in-band would feel
-more natural. Currently the rune source only allows for reading runes. I am unsure of the
-best way to extend the interface (or introduce an additional interface) for passing
-feature-on/off information.
-
-### Taking Advantage of Run-Nesting
-
-Switching features on or off should be viewed as beining nested: A client may switch on “small caps” 
-for a run of text (e.g., for an acronym), but after the run the previous feature-set will be restored.
-This is a restriction we will impose on the input-sequence. It is reasonable when thinking about
-handling of text-properties in word processors. Therefore, we will be using a more strict model
-than Harfbuzz.
-
-Nesting should give us the opportunity to manage a stack of active feature-sets. A nested run of
-input may be associated with a feature-set, and the features-set (or the whole plan including it)
-will be put on a stack. When the on-switch for “small caps” (`smcp`) is sent by the client, a new
-feature-set including `smcp` will be created and pushed onto the stack.
-
-Ending the application of a nested feature-set is signaled by the client in the form of
-“pop the current feature-set”, not as the inverse of the activation signal. For the `smcp` example:
-The client sends an (in-band) `+ smcp` signal, then the acronym, and then a “pop” signal,
-not a `- smcp` signal. The feature-set will be popped from the stack and the previous
-feature-set will be restored.
-
-### API Options
-
-The API-descision about feature-on/off runs of input is crucial and *very* important. I see the
-following options, each posing different trade-offs:
-
-1. **In-Band “special” runes**: Some runes are mis-used as special on/off markers. There are
-  enough unused Unicode code-points (or used for very strange pseudo-scripts like “Klingon”) which
-  lend themselves to this purpose. *Trade-offs*:
-    1.  Does not feel “clean” in terms of interface-design.
-    2.  Not very explicit in terms of intent.
-    3.  May lead to confusion with other special runes.
-    4.  Very simple
-3. **Move to a `bufio.Scanner` interface**: The scanner interface would allow for natural 
-  breaking up the input sequence into runs. A custom split function would manage to capture
-  runs with the same set of features. *Trade-offs*:
-    1.  Looses fine control over error-handling. The documentation for `bufio.Scanner` says:
-        > Programs that need more control over error handling or large tokens, or must run sequential scans on a reader, should use bufio.Reader instead. 
-    2.  Prevents clients from simply providing a bufio.reader wrapped about their text source.
-    3.  Maybe awkward to align with runBuffer semantics (not sure about this one)
-4. **Extend the `ReadRune` contract**: Add a field to the input interface to hold on/off markers.
-  Instead of reading just a rune, a small struct could be read in, consisting of a rune and a
-  marker. *Trade-offs*:
-    1.  Feels like a “clean” solution in terms of design
-    2.  Prevents clients from simply providing a bufio.reader wrapped about their text source.
-    3.  Communicates intent explicitly.
-    4.  Straightforward to implement.
+# Feature Scopes: Decisions and Remaining Work
 
-To preserve the idea that clients should be able to provide a `bufio.Reader`, we could go
-with 2 variants of the top-level API, one for `bufio.Reader` and one with an extended
-Reader type. Clients with unsophisticated text shaping requirements could just use a
-`bufio.Reader`, while clients with more sophisticated requirements could use the extended
-Reader type.
+Reviewed against the source on 2026-10-26. This document preserves the design
+decisions behind feature-control events and tracks remaining scope/boundary
+work. It is not the complete shaping backlog; [TESTING.md](TESTING.md) owns the
+current testing priorities.
 
-### Feedback Summary
+The immediate focus is Latin-script text and Hebrew. Arabic/Syriac and other
+scripts are deferred. Shared fixes remain in scope, and existing tests for
+deferred scripts should continue to pass.
 
-The section is strong. Main feedback:
+## Implemented decisions
 
-1. **Special runes** should be ruled out.
-   1. It pollutes Unicode semantics.
-   2. Private-use code points may be valid text content.
-   3. It complicates normalization/cmap/fallback handling.
-2. **`bufio.Scanner`** is not a good primary abstraction for shaping streams.
-   1. Scanner token semantics and limits are a poor fit for shaping.
-   2. It weakens low-level control that `ReadRune` currently gives.
-   3. It awkwardly pushes shaping boundaries into split policy.
-3. **Extended read contract with explicit events** is the best direction.
-   1. Explicit intent.
-   2. Deterministic sequencing for streaming.
-   3. Fits the proposed push/pop nesting model naturally.
+### Explicit events alongside ordinary rune input
 
-Recommended design:
+The selected design keeps `RuneSource.ReadRune` for simple clients and adds
+`InputEventSource.ReadEvent` for feature-control events. Both APIs exist:
 
-1. Keep current rune-only API for simple clients.
-2. Add an event-based input interface for advanced clients.
-3. Normalize both inputs internally to one event stream.
+- `(*Shaper).Shape` accepts rune input.
+- `(*Shaper).ShapeEvents` accepts rune, push-features, and pop-features events.
+- `NewInputEventSource` adapts a rune source to events, or returns an existing
+  event source unchanged.
+- `FeatureSetting` carries `Tag`, `Value`, and `Enabled`, making feature
+  deltas explicit.
 
-Concrete model:
+See [input_events.go](../otshape/input_events.go) and
+[shape_events.go](../otshape/shape_events.go).
 
-```go
-type InputEventSource interface {
-    ReadEvent() (InputEvent, error)
-}
+The earlier suggestion to normalize both entry points internally into one event
+stream was not implemented. Ordinary shaping reads runes directly; the two
+paths share runtime helpers but retain separate ingestion loops.
 
-type InputEvent struct {
-    Kind InputEventKind // Rune, PushFeatures, PopFeatures
-    Rune rune           // when Kind == Rune
-    Size int            // optional: source byte width, parity with ReadRune
-    Push []FeatureSetting // when Kind == PushFeatures
-}
-```
+### Explicit stack and restoration by pop
 
-`FeatureSetting` should be explicit (`Tag`, `Value`, `Enabled`) so pushed frames can carry deltas clearly.
+Nested feature scopes use an explicit stack in
+[plan_stack.go](../otshape/plan_stack.go). Push clones the current assignments,
+applies a delta, compiles a plan, and assigns a plan ID. Pop restores the previous
+frame.
 
-Behavioral constraints to define up front:
+For example, a client can push `smcp=1`, supply an acronym, and pop. The pop
+restores the previous assignment, which is not necessarily equivalent to
+explicitly disabling `smcp`. This nesting behavior is implemented.
 
-1. `Push` / `Pop` are boundary events between runes.
-2. `Pop` underflow is an error.
-3. EOF with unclosed stack should be either strict error (recommended) or explicit auto-pop policy.
-4. Feature-change boundaries must force shaping boundaries (no lookup crossing boundary).
+A pop at the root is an error. EOF with unclosed scopes is also an error; there
+is no auto-pop mode. That final validation can occur after output has been
+emitted, so strict stack validation does not mean atomic output.
+
+The stack is iterative rather than recursive. The implementation detects
+`uint16` plan-ID exhaustion, but does not expose a configurable nesting-depth
+limit. Compiled plans remain in a request-wide map even after pop.
 
-Overall recommendation:
+## Historical alternatives and rationale
 
-Choose option 4 (extended contract) plus a compatibility adapter for plain `RuneSource`.
+The original discussion considered three approaches:
 
-## Decisions
-
-### Input API
-
-Decision:
-
-1. We will implement API option 4: an extended input contract with explicit feature-control events.
-2. We will keep compatibility for simple clients by providing an adapter from plain `RuneSource`.
-
-Rationale:
-
-1. Feature intent is explicit and unambiguous.
-2. The model is stream-friendly and does not depend on client-side absolute indices.
-3. It supports strict push/pop nesting semantics naturally.
-4. Existing rune-only clients remain supported.
-
-### Nested Feature-State Management
-
-Decision:
-
-1. We will manage our own explicit stack for nested feature states (feature sets / derived plans).
-2. We will not use recursive calls and the Go call stack as the primary nesting mechanism.
-
-Rationale:
-
-1. Streaming control flow is iterative by design; an explicit stack integrates better.
-2. It gives direct control over depth limits, validation, and underflow handling.
-3. It avoids risks from unbounded recursion depth and absence of tail-call optimization.
-4. It is easier to inspect/debug current active feature state during shaping.
-
-Note:
-
-1. Recursion remains conceptually valid for nested scope semantics and can still be useful in localized helpers.
-2. For the main shaping pipeline, explicit stack management is the chosen strategy.
-
-### Contextual Continuity and Plan Fences
-
-Decision:
-
-1. We keep a single shared `runBuffer` for the pipeline.
-2. We treat plan push/pop boundaries as **semantic fences** for contextual shaping.
-3. We do not force hard physical buffer boundaries for these fences in this phase.
-4. Cross-fence continuity handling is deferred; for now, semantic strictness is preferred over complexity.
-
-Rationale:
-
-1. Single-buffer processing keeps implementation simple and avoids avoidable copying/splitting complexity.
-2. Semantic fences provide explicit and strict behavior when plan-local strategy differs.
-3. This avoids introducing fragile revalidation/fixup logic early in development.
-4. It aligns with project priorities: strict guardrails and correctness-first semantics over optimization.
-
-## Boundary Semantics Contract
-
-### Definitions
-
-1. **FeatureRange boundary**: index-based on/off/value changes handled through masks inside one compiled plan.
-2. **Plan-fence boundary**: push/pop transitions where nested feature state selects a different compiled plan.
-
-### FeatureRange Boundaries (single-plan semantics)
-
-Guarantees:
-
-1. A single compiled plan is used for the full shaped span.
-2. Lookup inventory, stage ordering, shaper plan-state, and validation policy are stable across the span.
-3. Feature switching is represented by per-index masks only.
-
-Non-guarantees:
-
-1. Full contextual continuity is not promised where masks disable lookups in one sub-range and enable them in a neighbor range.
-2. No retroactive fixup pass is guaranteed for earlier decisions affected by later masked regions.
-
-### Plan-Fence Boundaries (cross-plan semantics)
-
-Guarantees:
-
-1. The pipeline keeps one physical `runBuffer`.
-2. Fence transitions are explicit and strict in semantics.
-3. Each fenced region is shaped under its active plan only.
-
-Non-guarantees:
-
-1. Contextual continuity across fences is not guaranteed in this phase.
-2. No cross-fence revalidation/fixpoint behavior is performed.
-3. No overlap-window repair strategy is implemented yet.
-
-### Error and Validation Rules
-
-1. Push/pop underflow is an error.
-2. EOF with an unclosed push/pop stack follows strict policy unless explicitly relaxed later.
-3. Any future “continuity mode” must be opt-in and documented separately from strict mode.
-
-### Future Extension Point
-
-1. A later optimization/correctness extension may introduce cross-fence overlap re-shaping (small repair windows), without changing strict-mode default semantics.
-
-## Danger of Violating Contextual Continuity at Plan-Boundaries
-
-**This section is outdated, but kept for making our decisions traceable.**
-
-Yes, there are clear cases where continuity conflicts with plan boundaries.
-
-`Coverage` alone cannot solve this:
-1. `Coverage` only says “this lookup applies to these glyphs” inside one lookup execution.
-2. Contextual lookups need neighboring glyphs in the same shaping buffer.
-3. If you split into separate plans/runs, those neighbors are missing, so lookups cannot see across the boundary.
-
-**Remarks**:
-My intention has never been to associate separate plans with separate runs. Input will always be a sequence of input runes/glyphs in a runBuffer. *On/off*-switches of features are in-band for the event interface, but will always have to be converted explict properties of runs of input-glyphs in the `runBuffer`. However, that should not trigger any kind of buffer-operation to force a hard boundary betwen runs. My preferred model would be to have a certain amount of glyph-context available wherever the cursor is in the runBuffer (except at start of text, EOF, font-change, script-change, bidi-change etc.)
-
-#### Cases where this breaks:
-
-1. Arabic joining forms at boundary
-- Last letter of left run and first letter of right run may need each other to become `medi/fina/init`.
-- If shaped separately, they can degrade to `isol/fina` incorrectly.
-
-2. Arabic contextual substitutions (`rlig/calt/rclt`) across boundary
-- Rules like Lam-Alef-style contextual behavior or other multi-glyph contexts fail if pair is split across plans.
-
-3. Cursive attachment (`GPOS curs`) across boundary
-- Connection points require adjacent glyph context.
-- Split plans can break joining/attachment.
-
-4. Pair kerning across boundary
-- Simple but common: last glyph of run A with first glyph of run B won’t kern if shaped independently.
-
-5. Mark attachment across boundary (`mark/mkmk`)
-- If base and combining mark land in different plan runs, attachment can fail or change.
-
-6. Normalization/composition edge effects
-- Composition opportunities at boundary (including script-specific compose hooks) can be lost when split.
-
-**Remarks**:
-
-I acknowledge most of those points (I am not in a situation to argue about Arabic shaping). I have no overview if there is a need for having an explicit boundary contract, but I will follow your advice on this one.
-
-### Implications
-
-Practical implication for your strict design:
-1. If plan boundaries are hard boundaries, continuity is intentionally not guaranteed there.
-2. That is valid, but must be an explicit API contract.
-3. If client needs continuity, it must avoid push/pop inside shaping-sensitive spans.
-
-**Remarks**:
-Push/pop is for plans only, not necessarily affecting the runBuffer contents. Please explain why it should be difficult for the pipeline to handle this scenario:  
-- The cursor is at the last input-glyph of a `smcp` run
-- A lookup to be processed wants to do a coverage match with the next glyph
-- The next glyph is to be processed with a new plan, which is not yet instantiated as the cursor is not there yet
-- The lookup's coverage checks the next glyph as is in the runBuffer, without caring about the feature-set change yet
-- The lookup is performed if a match occurs
-
-Strong guardrail option:
-1. Treat feature push/pop as “must be break-safe boundary”.
-2. If boundary is inside unsafe/context-sensitive region, return an error (strict mode) instead of silently degrading.
-
-That keeps semantics simple and strict, and avoids Harfbuzz-level complexity.
+| Approach | Decision and rationale |
+| --- | --- |
+| Special Unicode runes as control markers | Rejected: control would conflict with valid text, including private-use characters, and complicate normalization and cmap handling. |
+| `bufio.Scanner` as the primary input abstraction | Not selected: tokenization would move shaping boundaries into split policy and lose the direct rune-reader model. |
+| Explicit event records plus a rune-source adapter | Selected and implemented: intent and ordering are explicit, nesting is natural, and clients can still use `bufio.Reader` for ordinary input. |
+
+The choice of an explicit stack made feature restoration and validation
+inspectable without tying nesting to the Go call stack.
+
+These API decisions are settled. They do not settle every question about what
+context a lookup may read or modify across a feature-scope boundary.
+
+## Boundary semantics: intent versus implementation
+
+There are three different boundaries:
+
+| Boundary | Current meaning |
+| --- | --- |
+| Indexed `FeatureRange` boundary | Mask changes inside one compiled plan used by `Shape`. The intended indexes are input codepoints, but runtime assignment currently uses chunk-local buffer indexes. |
+| Event plan boundary | A change of plan ID caused by feature push/pop. `ShapeEvents` permits only global defaults in `Params.Features`; nested scope comes from events. |
+| Streaming flush boundary | A prefix emitted to the sink and removed from raw carry. It can occur independently of feature scopes. |
+
+### The earlier continuity goal
+
+The original design expressed a preference for retaining neighboring glyph
+context in one shared buffer even when the active feature plan changed.
+Its example was a lookup starting at the last glyph of a small-caps scope and
+examining the following glyph under a different feature set.
+
+A later decision recorded semantic fences and deferred cross-fence continuity,
+while still proposing one physical `runBuffer` without forced physical splits.
+Those were design intentions, not a description of the implementation now in
+place.
+
+### What the code actually does
+
+[shapeEventCarry](../otshape/shape_events.go) finds contiguous plan-ID spans,
+normalizes and maps each span into a reusable segment buffer, shapes it
+separately, and appends the result to an output buffer. Normalization and
+lookups therefore do not see neighboring spans.
+
+This contradicts the former guarantee of one physical shaping buffer with
+context retained across plan boundaries. Sharing raw carry and reusing scratch
+allocation do not provide cross-span lookup context.
+
+Each span selects its stored compiled schedule. However, all plans share the
+selected engine instance: compilation can mutate engine-local state, and pop or
+replay does not restore that state. The old assertion that every region uses
+only its own plan state was therefore too strong.
+
+Other current limitations relevant to scopes are:
+
+- Indexed feature ranges can change behavior after streaming compaction.
+- The executor overwrites masks set by `SetupMasks`.
+- Feature values do not currently select alternate glyphs correctly.
+- Appending shaped spans copies attachment targets without rebasing them to the
+  combined output run.
+- There is no cross-fence overlap repair or revalidation pass.
+- Push/pop events are not rejected merely because they occur inside a
+  shaping-sensitive sequence. The proposed break-safe-boundary error check is
+  not implemented.
+
+See [SHAPER_PLAN.md](SHAPER_PLAN.md),
+[SHAPER_INTERFACES.md](SHAPER_INTERFACES.md), and
+[STREAMING_API.md](STREAMING_API.md) for the implementation details.
+The review's reproduced failures are recorded in [TESTING.md](TESTING.md);
+the state-isolation and attachment-rebasing concerns are inspection findings
+that still need dedicated regressions.
+
+## Why continuity still matters for Latin and Hebrew
+
+The concern is not limited to Arabic joining:
+
+- **Latin pair positioning:** a kerning pair can straddle a feature scope or
+  emitted prefix.
+- **Latin ligatures/contextual substitutions:** a lookup may inspect or consume
+  multiple glyphs while feature activation differs among them.
+- **Latin accents and Hebrew marks:** separating a base from a mark, or one
+  mark from another, can change attachment.
+- **Normalization:** a scope or flush cut between a base and combining mark can
+  remove a composition/reordering opportunity.
+
+Coverage matching alone does not define the desired behavior. Even with both
+neighbors available, the implementation needs rules for where a lookup may
+start, what context it may inspect, and which glyphs it may replace or position
+when those glyphs have different feature assignments.
+
+The earlier proposal to reject unsafe feature boundaries remains a possible
+design choice, not a shipped guardrail. Preserving context or using overlap
+repair are other possibilities. This status update does not select a new
+continuity policy or turn the current physical split into a final API contract.
+
+## Remaining work
+
+Follow the overall ordering in [TESTING.md](TESTING.md). For feature scopes,
+the concrete tasks are:
+
+1. **Cover shared feature semantics through the public API.** Add regressions
+   for mask preservation, global input-coordinate ranges, and alternate values
+   using Latin fixtures or synthetic engines. Test nested enable/disable/value
+   changes and restoration of the exact previous assignments.
+2. **Isolate plan-local engine state.** Use a synthetic stateful engine with
+   distinguishable per-plan state. Verify root/pushed/popped spans and repeated
+   streaming cycles before choosing how state is stored or restored. This work
+   does not require expanding Arabic coverage.
+3. **Define expected Latin/Hebrew boundary behavior.** Build independent
+   baselines for ligatures, kerning, accents, Hebrew marks, and RTL glyph/cluster
+   order. Specify expected scope behavior separately from current output; tests
+   should not silently make current defects the contract.
+4. **Resolve context and attachment handling.** Specify lookup-start,
+   context-read, and mutation rules across feature scopes. Test final mark
+   coordinates and attachment correspondence when spans are combined. Decide
+   whether sensitive boundaries preserve context, require repair, or produce an
+   explicit error; document and test the chosen policy.
+5. **Exercise streaming and failure boundaries.** Sweep watermarks and push/pop
+   locations around the Latin/Hebrew cases, including length-changing and empty
+   output. Verify progress, cluster/range preservation, source/sink failures,
+   and the documented retention of previously emitted output.
+
+A unified internal event stream, configurable scope-depth limits, and releasing
+unused plans are potential later improvements. They should not displace the
+current correctness work without evidence that they are needed.
+
+Arabic/Syriac joining, script-specific cursive behavior, and broader script
+coverage remain deferred. The historical continuity concerns still apply to
+them, but they do not drive the immediate fixture backlog.
+
+For orientation, see [SHAPING_OVERVIEW.md](SHAPING_OVERVIEW.md). Use
+[TESTING.md](TESTING.md) for test commands and fixture conventions rather than
+treating the historical proposals in this document as unfinished API work.

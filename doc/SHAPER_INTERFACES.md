@@ -1,287 +1,191 @@
-# Shaper Interfaces and Pipeline Interaction (harfbuzz)
+# Shaper Interfaces and Pipeline Interaction
 
-## 1. Architecture and Dependency Direction
+Validated against the source on 2026-10-26. The authoritative declarations are
+in [engine_api.go](../otshape/engine_api.go); this document describes their
+current use by the pipeline, including mismatches between comments and behavior.
 
-The codebase uses a split design:
+The previous version mixed a HarfBuzz-derived reference design with an
+`otshape` API proposal. The local `harfbuzz/` package is absent; names such as
+`ShapeRequest`, `ShapeOptions`, `PreprocessText`, and `PostprocessGlyphs` do
+not describe the current API.
 
-1. `harfbuzz/` (base package) owns:
-   - shaping pipeline and plan execution,
-   - shaper registry and selection,
-   - core interfaces and hook wrappers.
-2. `harfbuzz/otcore`, `harfbuzz/othebrew`, `harfbuzz/otarabic` own script-/engine-specific behavior.
-3. Dependency direction is one-way:
-   - shaper packages import `harfbuzz`,
-   - `harfbuzz` does not import those shaper packages in non-test code.
+## Dependencies and client wiring
 
-This matches the desired direction for `otshape`: engine packages depend on the base package, never the reverse.  
-  
-**Remarks:** 
-- Package `harfbuzz` is not even in test-code allowed to depend on a concrete shaper sub-package.
-- Shaper registry and selection should only be ported partially: No registry (parameters instead, see below), no "registration" of shapers, but “voting” for confidence via `Match()`.
-- For `otshape`, keep this strict rule for tests as well: shaper-specific tests belong to the shaper package, not the base package.
+`otshape` owns orchestration, engine selection, interfaces, and internal plans.
+`otshape/otcore`, `otshape/othebrew`, and `otshape/otarabic` import the base
+package. The base package does not import concrete engines, including in its
+current tests. Script-specific tests belong in the engine subpackages.
+Clients such as `ot-tools` and `internal/hbcmp` assemble the engine list.
 
-## 2. Interface Model in `harfbuzz`
-
-### 2.1 Mandatory engine interface
-
-`ShapingEngine` is intentionally small:
-
-1. `Name() string`
-2. `Match(ctx SelectionContext) int`
-3. `New() ShapingEngine`
-
-Selection is score-based (`Match >= 0`), highest score wins; tie-break is deterministic by name/order.
-
-### 2.2 Optional hook interfaces
-
-Behavior is extended via optional interfaces (type assertions in wrapper helpers):
-
-1. `ShapingEnginePolicy`
-   - `MarksBehavior()`
-   - `NormalizationPreference()`
-   - `GposTag()`
-2. `ShapingEnginePlanHooks`
-   - `CollectFeatures()`
-   - `OverrideFeatures()`
-   - `InitPlan()`
-3. `ShapingEnginePostResolveHook`
-   - `PostResolveFeatures()`
-4. Runtime hooks
-   - `ShapingEnginePreprocessHook` (`PreprocessText`)
-   - `ShapingEnginePreGSUBHook` (`PrepareGSUB`)
-   - `ShapingEngineDecomposeHook` / `ShapingEngineComposeHook`
-   - `ShapingEngineMaskHook` (`SetupMasks`)
-   - `ShapingEngineReorderHook` (`ReorderMarks`)
-   - `ShapingEnginePostprocessHook` (`PostprocessGlyphs`)
-
-### 2.3 Narrow context interfaces passed to hooks
-
-The base package does not expose full internals to engines. It passes narrow views:
-
-1. `FeaturePlanner` (plan-time feature collection)
-2. `ResolvedFeaturePlanner` + `ResolvedFeatureView` (post-resolution stage anchor control)
-3. `PlanContext` (engine plan init)
-4. `NormalizeContext` (compose/decompose decisions)
-5. `PauseContext` (GSUB stage pause callback context)
-
-## 3. Plan-Time Interaction Between Pipeline and Engine
-
-Plan building path:
-
-1. `Buffer.Shape(...)` creates/uses `shapePlan`.
-2. `shapePlan.init` initializes `shaperOpentype`.
-3. `shaperOpentype.compile(...)` -> `otShapePlan.init0(...)`.
-4. `newOtShapePlanner(...)` selects engine using `SelectionContext`.
-5. `otShapePlanner.CollectFeatures(...)`:
-   - adds base default features,
-   - calls engine `CollectFeatures(...)`,
-   - then engine `OverrideFeatures(...)`.
-6. `otMapBuilder.compile(...)` resolves features and stages.
-7. During map compile, engine `PostResolveFeatures(...)` may add pause anchors (`before/after feature tag`).
-8. After compile, engine `InitPlan(...)` runs with `PlanContext`.
-
-## 4. Runtime Interaction (Pipeline Phase Order)
-
-`shaperOpentype.shape(...)` executes phases in this order:
-
-1. Buffer prelude:
-   - initialize masks,
-   - set unicode props,
-   - insert dotted circle,
-   - form clusters,
-   - ensure native direction.
-2. `PreprocessText(...)` hook.
-3. Substitution pre-position (`substituteBeforePosition`):
-   - normalization (`otShapeNormalize`) where:
-     - compose/decompose hooks are consulted,
-     - mark reorder hook runs after combining-class sort,
-   - mask setup (`SetupMasks`) where:
-     - `PrepareGSUB(...)` hook runs,
-     - then `SetupMasks(...)` hook runs,
-     - then user ranged masks are applied.
-4. GSUB/GPOS application through compiled `otMap.apply(...)`:
-   - lookups run by stage,
-   - stage pause callbacks run between stages.
-5. Positioning phase.
-6. Post-substitution cleanup:
-   - hide default ignorables,
-   - `PostprocessGlyphs(...)` hook.
-7. Cluster flag propagation and direction restore.
-
-## 5. GSUB Pause Hooks and Stage Anchoring
-
-Pause callbacks are first-class plan controls:
-
-1. Planner can add direct pauses (`AddGSUBPause`).
-2. Post-resolve hook can add anchored pauses (`AddGSUBPauseBefore/After(tag)`).
-3. `otMapBuilder` resolves anchors to concrete stage indices.
-4. `otMap.apply` executes pauses at stage boundaries.
-
-Note: `GSUBPauseFunc` returns `bool`, but current runtime path does not branch on that return value.
-
-## 6. Engine Package Responsibilities
-
-### 6.1 `otcore`
-
-1. Thin adapter over default engine (`harfbuzz.NewDefaultShapingEngine`).
-2. No custom script behavior.
-
-### 6.2 `othebrew`
-
-Implements a narrow set:
-
-1. `ShapingEngine` + `ShapingEnginePolicy`
-2. `ShapingEngineComposeHook`
-3. `ShapingEngineReorderHook`
-
-Hebrew behavior is mostly normalization/mark-order specific (compose/reorder), without custom plan-stage or mask hooks.
-
-### 6.3 `otarabic`
-
-Implements a broad set:
-
-1. `ShapingEngine` + `ShapingEnginePolicy`
-2. `ShapingEnginePlanHooks`
-3. `ShapingEnginePostResolveHook`
-4. `ShapingEnginePreGSUBHook`
-5. `ShapingEngineMaskHook`
-6. `ShapingEngineReorderHook`
-7. `ShapingEnginePostprocessHook`
-
-Arabic uses plan-time feature programming plus runtime state:
-
-1. Collects Arabic/Syriac shaping features, including manual joiner behavior and staged pauses.
-2. Adds post-resolve anchored pauses (e.g. after `stch`, after `rlig` for fallback shaping).
-3. Computes joining state in `PrepareGSUB`.
-4. Applies per-glyph feature masks in `SetupMasks`.
-5. Runs fallback synthesis and stretch postprocessing via pause/postprocess logic.
-
-## 7. Registration and Discovery
-
-1. Base registry includes default engine only by default.
-2. Script engines are opt-in via `Register()` from subpackages.
-3. Tests often register Hebrew/Arabic in `init()` to exercise split-shaper behavior.
-
-**Remarks:** 
-- Shapers should be given as arguments to the top-level `Shape(…)` call (possibly packaged together with other parameters)
-- There will be no registry for now. Shapers will have to be wired into the call-graph
-- The `Register()` call semantics are not to be ported
-- A call to `Shape(…)` may be performed without the client supplying a concrete shaper, resulting in an error (for now)
-- There is no "automatic discovery" for shapers from the pipeline. The wiring (dependency injection) of a shaper to the pipeline has to be done on client-level
-
-## 8. Practical Pattern to Reuse in `otshape`
-
-A direct transferable pattern is:
-
-1. Keep one minimal mandatory engine interface (`Name/Match/New`).
-2. Add optional narrow hook interfaces per pipeline phase.
-3. Pass phase-specific context interfaces instead of exposing full internals.
-4. Keep shaper packages independent and wired/injected from outside the base package.
-5. Keep pipeline->hook call order explicit and stable so engine behavior remains deterministic.
-
-## 9. Draft `otshape` API Proposal
-
-This section proposes concrete API shapes for `otshape`, aligned with the remarks above.
-
-### 9.1 Top-level call (no registry, explicit injection)
+There is no registry, `Register` call, or automatic discovery.
 
 ```go
-type ShapeRequest struct {
-	Options ShapeOptions
-	Source  RuneSource
-	Sink    GlyphSink
-	Shapers []ShapingEngine // injected by client; no global registry
-}
-
-func Shape(req ShapeRequest) error
+shaper := otshape.NewShaper(otcore.New(), otarabic.New(), othebrew.New())
+err := shaper.Shape(params, source, sink, options)
 ```
 
-Semantics:
-
-1. If `len(req.Shapers) == 0`, return `ErrNoShaper`.
-2. If one shaper is provided, use it directly.
-3. If multiple shapers are provided, call `Match(...)` and select highest score (`<0` means no match).
-4. If none match, return `ErrNoMatchingShaper`.
-
-### 9.2 Mandatory shaper interface
+Current entry-point signatures are:
 
 ```go
-type SelectionContext struct {
-	Direction bidi.Direction
-	Script    language.Script
-	Language  language.Tag
-	ScriptTag ot.Tag
-	LangTag   ot.Tag
-}
+func NewShaper(engines ...ShapingEngine) *Shaper
+func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts BufferOptions) error
+func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink, bufOpts BufferOptions) error
+```
 
+These are method-based calls, not package-level `Shape(req)` functions.
+`ShapeEventsRequest` remains as a deprecated type but is not accepted by these
+methods. See [STREAMING_API.md](STREAMING_API.md) for sources, sinks, and events.
+
+## Engine selection and lifetime
+
+```go
 type ShapingEngine interface {
-	Name() string
-	Match(ctx SelectionContext) int // voting/confidence
-	New() ShapingEngine             // fresh per-plan instance
+    Name() string
+    Match(ctx SelectionContext) ShaperConfidence
+    New() ShapingEngine
 }
 ```
 
-### 9.3 Optional hook interfaces (phase-based)
+`SelectionContext` supplies direction, ISO script, BCP 47 language, and derived
+OpenType script/language tags. `ShaperConfidence` is a named integer type with
+`None, Low, Medium, High, Certain` values starting at zero.
 
-```go
-type ShapingEnginePolicy interface {
-	NormalizationPreference() NormalizationMode
-	ApplyGPOS() bool
-}
+Current selection behavior in [shape_api.go](../otshape/shape_api.go):
 
-type ShapingEnginePlanHooks interface {
-	CollectFeatures(plan FeaturePlanner, ctx SelectionContext)
-	OverrideFeatures(plan FeaturePlanner)
-	InitPlan(plan PlanContext)
-}
+1. `NewShaper` copies candidates and ignores nil interface entries.
+2. An empty list returns `ErrNoShaper`.
+3. Even a single engine is scored. Highest score wins; equal scores use the
+   lexicographically smaller name, with the first candidate retained for equal
+   names.
+4. Negative scores are skipped. **Known bug:** zero (`None`) is accepted, so an
+   explicitly nonmatching engine can still win. `ErrNoMatchingShaper` does not
+   currently protect the ordinary all-`None` case.
+5. The winner's `New` is called once per shaping request. If it returns nil,
+   the candidate itself is reused.
 
-type ShapingEnginePostResolveHook interface {
-	PostResolveFeatures(plan ResolvedFeaturePlanner, view ResolvedFeatureView, ctx SelectionContext)
-}
+This is not fresh-per-plan construction. One selected engine is reused across
+streaming cycles and, for `ShapeEvents`, all compiled feature-scope plans.
+Stateful engines should supply independent instances from `New`; event scope
+state isolation remains an implementation gap.
 
-type ShapingEnginePreprocessHook interface {
-	PreprocessRun(run RunContext)
-}
+## Optional hooks
 
-type ShapingEnginePreGSUBHook interface {
-	PrepareGSUB(run RunContext)
-}
+Hooks are discovered with type assertions. They are not all mandatory methods
+on an engine.
 
-type ShapingEngineMaskHook interface {
-	SetupMasks(run RunContext)
-}
+| Interface | Method(s) and current role |
+| --- | --- |
+| `ShapingEnginePolicy` | `NormalizationPreference() NormalizationMode`; `ApplyGPOS() bool`. |
+| `ShapingEnginePlanHooks` | `CollectFeatures(FeaturePlanner, SelectionContext)`, `OverrideFeatures(FeaturePlanner)`, `InitPlan(PlanContext)`. |
+| `ShapingEnginePlanValidateHook` | `ValidatePlan(PlanContext) error`, called after init only when the engine also implements `ShapingEnginePlanHooks`. |
+| `ShapingEnginePostResolveHook` | `PostResolveFeatures(ResolvedFeaturePlanner, ResolvedFeatureView, SelectionContext)`. |
+| `ShapingEnginePreprocessHook` | `PreprocessRun(RunContext)`; currently runs after normalization/mapping, despite its pre-normalization source comment. |
+| `ShapingEngineComposeHook` | `Compose(NormalizeContext, rune, rune) (rune, bool)`, during pair composition. |
+| `ShapingEngineReorderHook` | `ReorderMarks(RunContext, int, int)`, currently invoked once over the mapped run. |
+| `ShapingEnginePreGSUBHook` | `PrepareGSUB(RunContext)`, after reorder. |
+| `ShapingEngineMaskHook` | `SetupMasks(RunContext)`, after initial mask setup; its changes are currently overwritten by executor mask initialization. |
+| `ShapingEnginePostprocessHook` | `PostprocessRun(RunContext)`, after lookup/position-policy execution. |
 
-type ShapingEnginePostprocessHook interface {
-	PostprocessRun(run RunContext)
-}
-```
+There is no custom decomposition hook, `MarksBehavior`, `GposTag`, or
+script-specific streaming-boundary hook. Normalization modes are `Auto`,
+`None`, `Composed`, and `Decomposed` (with the `Normalization` prefix).
 
-Notes:
+The public path reads `ApplyGPOS`, but a false value produces an all-zero
+internal policy that compilation resets to GPOS-on. Internal strictness,
+mark-zeroing, and fallback-positioning switches are not exposed by the policy
+interface. See [SHAPER_PLAN.md](SHAPER_PLAN.md).
 
-1. Keep contexts narrow; do not expose internal `runBuffer` directly.
-2. Keep hooks optional via type assertions in the base pipeline.
-3. Add compose/decompose/reorder hooks only if needed by the first shaper ports.
+## Context interfaces
 
-### 9.4 Planner/runtime call sequence
+| Context | Available operations |
+| --- | --- |
+| `FeaturePlanner` | Enable/add/disable feature intents, register direct GSUB pauses, and query `HasFeature`. The latter checks intents/defaults, not actual font support. |
+| `ResolvedFeaturePlanner` | Attach GSUB pauses before/after a resolved tag; methods return whether attachment succeeded. |
+| `ResolvedFeatureView` | Read selected GSUB/GPOS features and resolution metadata. |
+| `PlanContext` | Font, selection metadata, first mask bit for a feature, and whether a feature needs fallback. |
+| `RunContext` | Read/write glyphs, codepoints, clusters, positions, and masks; merge clusters; insert glyphs/copies; swap records. |
+| `NormalizeContext` | Font/selection, Unicode pair composition, and `HasGposMark`. |
+| `PauseContext` | Font and a `RunContext`. |
 
-Recommended call order for one shaped segment:
+`RunContext` keeps the private `runBuffer` hidden. It does not expose setters
+for unsafe flags, syllables, or plan IDs. Codepoint setters mutate metadata; they
+do not automatically remap the glyph.
 
-1. Select engine from `req.Shapers`.
-2. Build plan:
-   - `CollectFeatures` -> feature resolution/compile -> `PostResolveFeatures` -> `InitPlan`.
-3. Runtime:
-   - `PreprocessRun`
-   - normalization/mapping
-   - `PrepareGSUB`
-   - `SetupMasks`
-   - apply GSUB stages (+ pauses)
-   - apply GPOS (policy-controlled)
-   - `PostprocessRun`
-   - emit to `GlyphSink`
+`HasGposMark` is currently computed from allocated `mark/mkmk` masks, not from
+a definitive check that corresponding GPOS lookups will execute. Do not treat it
+as a complete font capability query.
 
-### 9.5 Package and testing rules for `otshape`
+## Actual plan-time order
 
-1. `otshape` must not import concrete shaper packages.
-2. Concrete shaper packages (`otshapecore`, `otshapehebrew`, `otshapearabic`, ...) may import `otshape`.
-3. `otshape` tests must not import concrete shaper packages.
-4. Shaper-specific behavior tests belong in the respective shaper package.
+In [plan.go](../otshape/plan.go):
+
+1. Seed base feature defaults and user toggles.
+2. `CollectFeatures`, then `OverrideFeatures`.
+3. Allocate masks and resolve table features/stages.
+4. Append direct GSUB pauses and compute fallback/resolved-feature metadata.
+5. `PostResolveFeatures` may anchor GSUB pauses.
+6. `InitPlan`, followed by `ValidatePlan` when both interfaces are implemented.
+7. Validate the internal plan.
+
+`PauseHook` is `func(PauseContext) error`; an error stops execution.
+Direct pauses currently append empty stages after all GSUB lookups. They are
+not interleaved at their collection call sites. Anchored pauses attach to
+resolved lookup stages. The public API has no GPOS pause-registration methods.
+
+## Actual runtime order
+
+For each current raw carry buffer, or each contiguous event-plan span:
+
+1. Normalize runes; consult `Compose` when enabled by normalization mode.
+2. Map runes through cmap into a `runBuffer`.
+3. `PreprocessRun`.
+4. `ReorderMarks(run, 0, run.Len())`.
+5. `PrepareGSUB`.
+6. Initialize feature masks and apply indexed ranges.
+7. `SetupMasks`.
+8. Enter `planExecutor.apply`, which **initializes masks again**.
+9. Annotate GSUB joiners/syllables and execute GSUB stages and pauses.
+10. Execute GPOS when the compiled policy enables it.
+11. Apply internal position policies.
+12. `PostprocessRun`.
+13. Select an output prefix and emit `GlyphRecord` values, adding nominal
+    horizontal advances during materialization.
+
+This order is taken from [shape_api.go](../otshape/shape_api.go) and
+[plan.go](../otshape/plan.go), not from the earlier proposed hook order.
+There is no general combining-class sort before the reorder hook, dotted-circle
+prelude, default-ignorable cleanup, or direction-restore phase here.
+Mark/cursive anchor resolution is also incomplete.
+
+Because carry is reshaped, runtime hooks can run more than once for input that
+has not yet been emitted. Hooks must not assume one invocation per source rune.
+
+## Supplied engines
+
+| Engine | Current contribution |
+| --- | --- |
+| [otcore](../otshape/otcore/otcore.go) | Minimal engine and normalization/GPOS policy; no custom run hooks. Latin gets high confidence before the direction check; other LTR scripts get low confidence, other directions get `None`. |
+| [othebrew](../otshape/othebrew/othebrew.go) | Hebrew matching, policy, Unicode/presentation-form composition, and selected mark reorder behavior. No custom feature-plan or mask hooks. |
+| [otarabic](../otshape/otarabic/otarabic.go) | Arabic/Syriac matching, policy, feature collection, plan init/validation, post-resolve pauses, joining preparation, masks, mark reordering, and postprocessing. |
+
+Arabic stores masks/fallback data on the engine in `InitPlan`, computes joining
+forms in `PrepareGSUB`, and uses them in `SetupMasks` and postprocessing.
+Its pause callbacks are currently no-ops. Postprocessing includes simplified
+tatweel expansion and narrow `.notdef` repair, not a general fallback shaper.
+The mask reset prevents assuming correct public-pipeline joining behavior.
+
+In event mode, compiling a later plan mutates this engine-local state.
+Processing an older stored plan or popping a feature scope does not restore it.
+The multiple-plan/stateful-engine combination needs dedicated integration tests.
+
+## Testing and pending contracts
+
+Base-package tests use synthetic engines; concrete-engine behavior is tested in
+the engine subpackages. Existing tests cover composition/reorder hooks,
+validation, pauses, masks, and script helpers. The public-API probes and coverage
+limits are recorded in [TESTING.md](TESTING.md).
+
+Before treating these interfaces as stable behavioral contracts, resolve mask
+preservation, validation-hook gating, preprocessing order, GPOS opt-out,
+direct-pause placement, and per-plan engine state. Source comments and a
+declared interface alone do not demonstrate that every policy is honored.

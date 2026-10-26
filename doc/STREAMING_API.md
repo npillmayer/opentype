@@ -1,253 +1,221 @@
-# Streaming API Realization Plan
-
-## 1. Target Behavior
-
-The streaming shaper shall work as a bounded, repeated fill/shape/flush/compact loop:
-
-1. Read runes from source into an internal buffer until either:
-   1. a high-watermark fill level is reached, or
-   2. source returns EOF.
-2. Shape buffered content until a flush-safe cut can be selected:
-   1. cut must be at or beyond low-watermark, and
-   2. cut must be at a break-safe cursor position.
-3. Flush shaped glyph records for the safe prefix (SoA -> AoS boundary conversion).
-4. Compact buffer by moving unflushed (unshaped-for-output) tail to buffer start.
-5. Repeat from step 1 until EOF and no carry remains.
-
-## 2. Core Design Decision
-
-Use two layers:
-
-1. **Raw carry buffer** (source of truth across cycles):
-   1. stores buffered codepoints and cluster ids not yet committed to sink,
-   2. survives across loop iterations.
-2. **Scratch shaping buffer** (ephemeral per cycle):
-   1. built from current raw carry,
-   2. fully shaped each iteration,
-   3. discarded after flush decision.
-
-This avoids fragile partial GSUB/GPOS continuation logic while still enabling real streaming output.
-
-## 3. Required State
-
-Add internal streaming state (likely in `otshape/shape_api.go`):
-
-1. `rawRunes []rune`
-2. `rawClusters []uint32` (monotonic global cluster ids)
-3. `nextCluster uint32`
-4. `eof bool`
-5. `highWatermark int`
-6. `lowWatermark int`
-7. `maxBuffer int` (hard cap for forced progress)
-
-Suggested defaults:
-
-1. `highWatermark = 256`
-2. `lowWatermark = 128`
-3. `maxBuffer = 4096`
-
-Validation rules:
-
-1. `highWatermark > 0`
-2. `0 <= lowWatermark <= highWatermark`
-3. `maxBuffer >= highWatermark`
-
-## 4. Streaming Loop Algorithm
-
-### 4.1 Fill phase
-
-1. While `len(rawRunes) < highWatermark` and `!eof`:
-   1. `ReadRune()`
-   2. append rune to `rawRunes`
-   3. append `nextCluster` to `rawClusters`
-   4. increment `nextCluster`
-3. On `io.EOF`, set `eof = true`.
-4. On read error, return error.
-
-### 4.2 Shape phase
-
-1. If `len(rawRunes) == 0`:
-   1. if `eof`, return success,
-   2. else continue fill loop.
-2. Normalize current `rawRunes/rawClusters` according to existing normalization logic.
-3. Map normalized stream to temporary `runBuffer`.
-4. Execute existing pipeline:
-   1. preprocess/reorder/pre-GSUB hooks,
-   2. masks setup,
-   3. GSUB/GPOS apply,
-   4. postprocess hook.
-
-### 4.3 Cut selection phase
-
-Determine `cut` as number of shaped glyphs to flush:
-
-1. If `eof`, `cut = shapedLen` (flush all).
-2. Else compute candidate boundaries:
-   1. cluster boundaries are baseline candidates.
-3. Select first break-safe boundary where cursor `>= lowWatermark`.
-4. If no such boundary:
-   1. if `len(rawRunes) < maxBuffer`, return to fill phase without flush,
-   2. else force progress (see 4.5).
-
-### 4.4 Flush phase
-
-1. Flush shaped range `[0:cut)` to sink as `GlyphRecord` (AoS).
-2. Preserve current flush mode semantics:
-   1. `FlushOnRunBoundary`: one contiguous write for selected prefix,
-   2. `FlushOnClusterBoundary`: cluster chunking within selected prefix.
-3. On sink error, return error.
-
-### 4.5 Compact phase
-
-1. Remove first `cut` codepoints/clusters from raw carry:
-   1. `rawRunes = rawRunes[cutCodepointEquivalent:]`
-   2. `rawClusters = rawClusters[cutCodepointEquivalent:]`
-2. Preserve monotonic global cluster ids (do not renumber remaining tail).
-3. Loop back to fill phase.
-
-**Important note on cut equivalence:**  
-The first implementation should preserve 1:1 rune<->glyph flush assumptions at cluster granularity for correctness. If edits alter length in a cycle, compact based on cluster boundary mapping, not raw index equality.
-
-## 5. Break-Safe Boundary Model
-
-Implement in stages:
-
-1. **Stage 1 (mandatory):**
-   1. any cluster boundary is break-safe.
-2. **Stage 2 (mandatory):**
-   1. if `UnsafeFlags` are populated, disallow cuts through unsafe regions.
-3. **Stage 3 (optional):**
-   1. add script-specific veto/approval hook for boundary safety.
-
-This keeps first delivery simple and makes safety stricter without architectural changes.
-
-## 6. API Surface Changes
-
-No public API break required.
-
-Possible additions to `ShapeOptions` (optional but recommended):
-
-1. `HighWatermark int`
-2. `LowWatermark int`
-3. `MaxBuffer int`
-
-If omitted/zero, use internal defaults.
-
-## 7. PR Breakdown
-
-### PR A: Streaming state and configuration
-
-1. Introduce internal streaming state struct.
-2. Add watermark config parsing/defaulting.
-3. Add helper functions:
-   1. `fillUntilHighWatermark(...)`
-   2. `compactCarry(...)`
-
-### PR B: Replace one-shot read with loop
-
-1. Replace one-shot full-input read/shape flow in `Shaper.Shape`.
-2. Keep shaping internals unchanged per iteration.
-3. Ensure EOF empty-input semantics remain unchanged.
-
-### PR C: Flush cut selection
-
-1. Add `findFlushCut(...)` with low-watermark + cluster boundary logic.
-2. Add forced-progress behavior at `maxBuffer`.
-3. Ensure loop makes forward progress in all states.
-
-### PR D: Break safety from unsafe flags
-
-1. Integrate `UnsafeFlags` into boundary eligibility.
-2. Ensure no cut inside unsafe spans.
-3. Add tests for unsafe-flag constrained cuts.
-
-### PR E: Hardening and docs
-
-1. Add end-to-end streaming parity tests.
-2. Add regression tests for Hebrew/Arabic/core behavior across multiple cycles.
-3. Document invariants and failure modes.
-
-## 8. Testing Strategy
-
-Add/extend tests in `otshape/shape_flush_test.go` and new `otshape/shape_streaming_test.go`.
-
-### 8.1 Correctness parity
-
-1. One-shot vs streaming output parity on long mixed input.
-2. Same glyph ids, positions, clusters, masks, unsafe flags.
-
-### 8.2 Watermark mechanics
-
-1. Fill stops at high-watermark unless EOF.
-2. Flush does not occur before low-watermark except forced-progress/EOF.
-3. Carry compaction preserves tail content and ordering.
-
-### 8.3 Boundary safety
-
-1. Cuts only at cluster boundaries.
-2. Unsafe-flag protected regions are not cut through.
-
-### 8.4 EOF behavior
-
-1. Final partial carry is flushed completely on EOF.
-2. Empty source yields no output and no error.
-
-### 8.5 Progress guarantees
-
-1. If no break-safe boundary exists before `maxBuffer`, forced progress happens.
-2. Loop termination guaranteed for finite input.
-
-### 8.6 Script regressions
-
-1. Arabic:
-   1. `.notdef` fallback repair still works across cycle boundaries,
-   2. no regression in strict fallback policy.
-2. Hebrew:
-   1. reorder/compose behavior preserved with chunked execution.
-3. Core Latin:
-   1. GPOS pair/mark/cursive expectations unchanged.
-
-## 9. Invariants
-
-Must always hold and be asserted using `assert(…)` calls:
-
-1. Raw carry arrays remain aligned (`len(rawRunes) == len(rawClusters)`).
-2. Cluster ids are monotonic globally across entire stream.
-3. Flush prefix is always a valid cut under break-safe policy.
-4. Every loop iteration either:
-   1. reads additional input, or
-   2. flushes at least one cluster, or
-   3. terminates.
-
-## 10. Risks and Mitigations
-
-1. **Length-changing substitutions can desync cut mapping.**
-   1. Mitigation: cut on cluster boundaries and compact using cluster mapping, not naive index.
-2. **No break-safe boundary for long spans.**
-   1. Mitigation: `maxBuffer` forced-progress policy.
-3. **Performance overhead from re-shaping carry each cycle.**
-   1. Mitigation: acceptable first implementation; optimize later with plan caching and incremental normalization.
-
-## 11. Acceptance Criteria
-
-Streaming API realization is complete when:
-
-1. `Shape` no longer requires reading full source before first output flush.
-2. Output is identical to one-shot shaping for regression suites.
-3. Watermark and break-safe rules are enforced by tests.
-4. Arabic/Hebrew/core shaper regressions are clean.
-5. Full `go test ./...` passes.
-
-## 12. PR E Status
-
-Implemented in repository:
-
-1. Streaming parity tests for core shaper in `otshape/otcore/streaming_parity_test.go`.
-2. Streaming parity tests for Hebrew shaper in `otshape/othebrew/streaming_parity_test.go`.
-3. Streaming parity tests for Arabic shaper in `otshape/otarabic/streaming_parity_test.go`.
-4. Test runs include both `go test ./otshape/...` and full `go test ./...`.
-
-Scope note:
-
-1. Current parity fixtures for Arabic/Hebrew focus on stable multi-cycle behavior.
-2. Boundary veto hooks for script-specific context cuts remain a later enhancement path.
+# Streaming Shaping: Implementation and Remaining Guarantees
+
+Validated against the source on 2026-10-26. The repeated fill/shape/flush/compact
+loop is implemented. Context-safe equivalence to shaping a complete run is not
+established and has known counterexamples; see [TESTING.md](TESTING.md).
+
+## Public API
+
+```go
+type RuneSource interface {
+    ReadRune() (r rune, size int, err error)
+}
+
+type GlyphSink interface {
+    WriteGlyph(g GlyphRecord) error
+}
+
+type BufferOptions struct {
+    FlushBoundary FlushBoundary
+    HighWatermark int
+    LowWatermark  int
+    MaxBuffer     int
+}
+```
+
+Call `(*Shaper).Shape(Params, RuneSource, GlyphSink, BufferOptions)`, or
+`(*Shaper).ShapeEvents(Params, InputEventSource, GlyphSink, BufferOptions)`.
+There is no current `ShapeOptions` type. Font, script, language, and direction
+are fixed for a request; events change feature scopes only.
+
+The source must return `io.EOF` to terminate. Rune byte sizes are ignored by
+ordinary ingestion; cluster IDs are monotonically assigned codepoint indexes.
+The sink receives individual records, not batches or flush notifications.
+
+## State and ownership
+
+| Source | Responsibility |
+| --- | --- |
+| [shape_api.go](../otshape/shape_api.go) | Ordinary streaming loop, shared shaping hooks, and output materialization. |
+| [shape_events.go](../otshape/shape_events.go) | Event ingestion, feature-plan spans, and the event streaming loop. |
+| [shape_streaming.go](../otshape/shape_streaming.go) | Configuration, raw carry, cut selection, safety checks, and compaction. |
+| [shape_runtime.go](../otshape/shape_runtime.go) | Shared ingestor/compiler adapters and reusable scratch workspace. |
+| [plan_stack.go](../otshape/plan_stack.go) | Nested feature sets and compiled-plan frames. |
+| [runbuffer.go](../otshape/runbuffer.go) | Mutable glyph/position/metadata arrays. |
+
+Raw carry is the source of truth between cycles: `rawRunes`, `rawClusters`,
+optional `rawPlanIDs`, `nextCluster`, and EOF/configuration state.
+A separate scratch run is rebuilt and shaped from that carry. Scratch allocation
+is reused through `shapeWorkspace`; the logical shaping result is recomputed
+rather than incrementally resumed after a GSUB/GPOS cursor.
+
+`MaxBuffer` caps raw rune count. It is not a hard limit on total memory:
+normalization/substitutions can expand glyph buffers, scratch storage is separate,
+and event plans remain in a request-wide map after their scopes are popped.
+
+## Watermark configuration
+
+Current defaults in `resolveStreamingConfig` are:
+
+| Option | Default | Unit |
+| --- | ---: | --- |
+| `HighWatermark` | 3500 | Raw codepoints buffered before an ordinary shaping attempt |
+| `LowWatermark` | 1024 | Raw codepoints covered by a candidate flush prefix |
+| `MaxBuffer` | 4096 | Maximum raw codepoints held before forced-progress handling |
+
+Zero selects a default, including `LowWatermark=0`; callers cannot use zero to
+request an explicit zero threshold. If a smaller high watermark is supplied
+without a low watermark, the default low is clamped down to the high value.
+If high exceeds the default max and max is omitted, max is raised to high.
+
+Negative values are rejected. The resolved configuration must satisfy
+`high > 0`, `0 <= low <= high`, and `max >= high`.
+Explicit inconsistent nonzero values return an error rather than being clamped.
+
+## Current loop
+
+For ordinary rune input, `Shape` selects one engine and compiles one plan before
+reading. It then:
+
+1. Fills raw carry up to the high watermark or EOF.
+2. Copies carry into scratch, normalizes, and maps codepoints through cmap.
+3. Runs preprocess/reorder/pre-GSUB hooks, masks, GSUB/GPOS stages, and
+   postprocessing. The exact hook order and mask-reset defect are described in
+   [SHAPER_INTERFACES.md](SHAPER_INTERFACES.md).
+4. Calls `findFlushCut`.
+5. If no cut is ready, fills up to max and reshapes.
+6. Emits the selected glyph prefix, then removes the corresponding raw prefix
+   with `compactCarry`.
+7. Repeats until EOF and no carry remains.
+
+Compaction preserves global raw cluster IDs. It copies the unconsumed suffix
+within the existing slices; it does not renumber clusters or simply remove
+`glyphCut` runes. A decision contains separate `glyphCut` and `rawFlush`
+counts.
+
+Source errors abort before shaping that newly filled carry. Lookup/hook errors
+prevent emission of the failing chunk. Previously written output and consumed
+input are not rolled back.
+
+## Actual cut selection
+
+For a nonempty shaped run:
+
+1. At EOF, flush the entire run and all raw carry.
+2. If shaped glyph count differs from raw rune count, do not partially compact.
+   Wait for more input, or flush the whole buffer when max is reached.
+3. Otherwise enumerate contiguous cluster spans in glyph order.
+4. Check the boundary with `isBreakSafeCut`.
+5. Require `rawFlushForGlyphPrefix` to demonstrate strictly consecutive,
+   one-to-one cluster coverage starting at the raw carry's first cluster.
+   Repeated, decreasing, or skipped cluster IDs reject partial compaction.
+6. Select the first eligible prefix covering at least the low watermark.
+7. At max, if no prefix qualifies, force a full-buffer flush.
+
+This is more conservative than the earlier proposed general cluster mapping,
+but the forced full flush can still break contextual shaping.
+
+`isBreakSafeCut` treats interior boundaries as unsafe only when both adjacent
+glyphs carry one of the internal unsafe-to-break/concat bits. Missing flag
+storage permits the cut; a cut at the run end is always allowed. The predicate
+exists and is unit-tested, but the production pipeline does not generate
+sufficient unsafe-span information, and `RunContext` provides no flag setter.
+There is no script boundary-veto hook.
+
+A cluster boundary is therefore a candidate, not proof that context can safely
+be discarded. Joining, ligatures, pair positioning, cursive attachment, and
+combining sequences can require context across that boundary.
+
+## Flush modes and output
+
+- `FlushOnRunBoundary` writes the selected prefix in glyph order. The name does
+  not imply waiting for EOF or emitting an atomic whole run.
+- `FlushOnClusterBoundary` iterates cluster spans within that same prefix and
+  rejects a cut inside a span.
+- Both modes call `WriteGlyph` once per glyph; neither provides atomic cluster
+  delivery. If the sink fails midway, earlier writes remain.
+- `FlushExplicit` returns `ErrFlushExplicitUnsupported`; no explicit flush
+  event exists.
+- Unknown flush-enum values currently fall through to ordinary range emission,
+  rather than failing validation.
+
+Materialization copies glyph/position/cluster/mask/unsafe data and adds nominal
+horizontal advance to the positioning delta. Mark/cursive anchors are not
+resolved into final coordinates. Attachment indexes are not converted to a
+global sink index during emission.
+
+For atomic output, collect records and publish only after success. Raising
+watermarks above a known finite input length allows a whole-input baseline;
+the defaults alone do not guarantee that baseline.
+
+## Event input
+
+`InputEventSource.ReadEvent` returns rune, push-features, or pop-features events.
+`NewInputEventSource` adapts a rune source, or returns an existing event source
+unchanged. Ordinary `Shape` does not automatically switch to event processing.
+
+`ShapeEvents` rejects non-global ranges for nonzero feature tags.
+A push clones the current assignments, applies a delta, compiles a plan, and
+allocates a new `uint16` plan ID. A pop restores the preceding frame. Underflow,
+unclosed scopes at EOF, malformed events, and plan-ID exhaustion return errors.
+The final unclosed-stack check can occur after glyphs have already been emitted.
+
+Each rune carries the active plan ID. `shapeEventCarry` normalizes and shapes
+each contiguous plan-ID span separately, then appends it to an output run.
+Consequently, a feature-scope boundary also separates normalization and lookup
+context. It is not just a mask change inside one contextual shaping run.
+
+Further integration limits visible in the source:
+
+- All plans share the selected engine. Compilation mutates engine-local plan
+  state; shaping an older span or popping does not restore that state.
+- `AppendRun` copies position records without rebasing span-local attachment
+  targets to the concatenated run.
+- Plans are retained in `plansByID` for the request; max raw buffer size does
+  not bound plan count or total plan storage.
+
+These are inspection findings requiring dedicated event/attachment regressions.
+
+## Guarantees, counterexamples, and tests
+
+The code asserts raw-array alignment, monotonic raw clusters, resolved
+configuration validity, raw buffer size, and emitted cut bounds. It does not
+assert a complete semantic context-safety invariant or prove progress for every
+possible engine transformation.
+
+In particular, ordinary `Shape` checks for empty mapped output before GSUB,
+but has no equivalent consume-carry branch when shaping later deletes all
+glyphs. `findFlushCut` returns no decision for an empty run. That path needs a
+termination regression; the event loop does have an empty-shaped-output branch.
+
+The review reproduced:
+
+- A cursive attachment lost with high/low/max `1/1/2`, compared with default
+  buffering on `gpos3_font1.otf`, input U+0012 U+0013, feature `test`.
+- An indexed feature range missed after compaction because masks use local
+  buffer indexes. See [TESTING.md](TESTING.md) for the exact fixture.
+
+Current tests include configuration/fill/compaction/cut helpers in
+`shape_streaming_test.go`, loop exercises in `shape_streaming_loop_test.go`,
+flush tests, event-stack tests, and engine streaming-parity tests.
+Arabic parity uses non-joining digits; Hebrew parity uses plain letters.
+Passing these tests and the full suite does not establish arbitrary-context
+equivalence.
+
+## Remaining acceptance criteria
+
+The mechanical streaming loop and basic parity tests are implemented. Completion
+still requires:
+
+1. A context-retention/boundary policy covering joining, lookback/lookahead,
+   normalization, substitutions, and attachments, including max-buffer handling.
+2. Global input-coordinate feature ranges and reliable provenance after
+   length-changing transformations.
+3. Final attachment resolution and consistent attachment-index semantics across
+   spans and emitted prefixes.
+4. Per-plan state isolation and defined context behavior for feature events.
+5. Termination tests for empty shaped output and other length-changing cases.
+6. Independent expected outputs and boundary sweeps, not only comparison of two
+   configurations of the same implementation.
+
+Use [TESTING.md](TESTING.md) for commands and fixture conventions.

@@ -41,12 +41,12 @@ successful reproduction. Each new entry should follow the fields used below.
 The current scope is shared API correctness needed by Latin and Hebrew.
 Arabic/Syriac and other script-specific extensions are deferred. Synthetic
 fonts are suitable for isolating shared behavior; these tests do not establish
-Latin or Hebrew shaping conformance. This first batch adds tests and records
+Latin or Hebrew shaping conformance. The discovery batches add tests and record
 findings, without production fixes or new external test dependencies.
 
 ## Test location and execution
 
-The reproductions live in
+The first four reproductions live in
 [`otshape/otcore/shared_api_knownbugs_test.go`](../otshape/otcore/shared_api_knownbugs_test.go),
 in external package `otcore_test`. They exercise exported `NewShaper`/`Shape`
 and engine hooks. This keeps the base `otshape` tests independent of concrete
@@ -54,7 +54,7 @@ engine imports. The file reuses `loadMiniOTFont` from `gpos_test.go` and
 `glyphCollector` from `otcore_test.go`, adding only small fixture/assertion
 helpers and two test engines.
 
-All four cases use
+Those four cases use
 [`gsub3_1_simple_f1.otf`](../testdata/fonttools/gsub3_1_simple_f1.otf).
 The helper finds the cmap-backed rune for GID 18 and verifies that it maps back
 to 18; missing/broken fixtures fail the test. The paired
@@ -69,17 +69,18 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: currently expected to exit nonzero on four top-level tests.
-go test -tags shaping_knownbugs ./otshape/... -count=1
+# Discovery suite: six failing top-level tests across the two packages.
+go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Inspect one finding (replace 001 with 002, 003, or 004).
 go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE001' -count=1 -v
 ```
 
-Verification baseline: production source at
+Original shared-API batch verification baseline: production source at
 `19aa02407cd4066f2dd48baa933c1b0d0ce57fdd`, tested on **2026-10-26** with
 the new regression file and documentation changes in the working tree.
-The commands below refer to that snapshot, not a guarantee about later revisions.
+The following validation statement refers to that original batch; the AOTS
+batch has a separate baseline recorded under SHAPE-005/006.
 
 Validation at this snapshot: `go test ./... -count=1` passed. The tagged
 shaping suite failed on exactly the four listed top-level tests; their control
@@ -92,6 +93,16 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | reproduced | Ranged feature behavior changes with buffer size |
 | [SHAPE-003](#shape-003--feature-values-do-not-select-alternates) | reproduced | Ignored values; contract agreed: one-based positives, zero default, negatives random |
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
+| [SHAPE-005](#shape-005--gdef-classification-prevents-ignoremarks) | reproduced | GDEF range endpoints and class constants prevent ignoring marks |
+| [SHAPE-006](#shape-006--contextual-lookup-revisits-matched-input) | reproduced | Contextual lookup progression applies overlapping matches |
+
+The AOTS baseline batch adds SHAPE-005/006 in
+[`internal/hbcmp/aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go).
+It reads unchanged upstream records through a test-only adapter. See the
+[adapter report](../testdata/harfbuzz/aots/ADAPTER.md) for the explicit context,
+independent HarfBuzz verification, passing case, and output limitations.
+At the AOTS batch revision, the ordinary full suite passes and the combined
+tagged command above fails on exactly SHAPE-001 through SHAPE-006.
 
 ## SHAPE-001 — SetupMasks changes are overwritten
 
@@ -228,9 +239,96 @@ zero; `ShaperConfidenceNone` is zero in [engine_api.go](../otshape/engine_api.go
 
 **Reproduce:** use the individual command above with `SHAPE004`.
 
+## SHAPE-005 — GDEF classification prevents IgnoreMarks
+
+**Status:** reproduced. **Test:** `TestKnownBugSHAPE005AOTSIgnoreMarks`.
+**Verified:** 2026-10-26, production revision
+`7b9df6582ee7154a8f9be2a2ba718689e4a7681e` plus the new tests.
+
+**Expected behavior and basis:** active upstream record
+[`gsub_context1_lookupflag.tests:2`](../testdata/harfbuzz/aots/tests/gsub_context1_lookupflag.tests)
+at HarfBuzz revision `29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b` requires
+contextual substitution across interleaved mark glyphs. Lookup 4 has
+`IgnoreMarks`; nested single substitutions change 20/21/22 to 60/61/62 while
+leaving marks 90/91/92 in place. The source/font hashes are checked by the test.
+
+**Reproduction:** `gsub_context1_lookupflag_f1.otf`, input
+`U+0000 U+0014 U+005A U+0015 U+005B U+005C U+0016 U+0000`, global `test` enabled,
+Latin/English/LTR with the core engine and watermarks `9/1/10`.
+
+**Observed:** `Shape` returns nil and emits `[0,20,90,21,91,92,22,0]`;
+expected `[0,60,90,61,91,92,62,0]`. The contextual substitution never applies.
+Clusters and positions are not asserted by this upstream record.
+
+**Diagnostic evidence:** two independently testable classification problems
+contribute to this failure:
+
+1. The font's GDEF ClassDef format 2 contains singleton ranges `[90,90]`,
+   `[91,91]`, and `[92,92]`, each with class 3. The exported class lookup returns
+   zero for each. `classDefinitionsFormat2.Lookup` in
+   [layout.go](../ot/layout.go) checks `glyph < endGlyphID`, excluding the range
+   endpoint. The range includes both endpoints under the
+   [OpenType ClassDef definition](https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#class-definition-table).
+2. `GlyphClassDefEnum` in [layout_gdef.go](../ot/layout_gdef.go) assigns
+   base/ligature/mark/component the values 0/1/2/3, while GDEF encodes them as
+   1/2/3/4. `glyphClass` and `skipGlyph` in
+   [feature.go](../otlayout/feature.go) compare the raw class values with those
+   constants. Correcting the endpoint alone therefore does not establish proper
+   mark filtering. See the [GDEF class definitions](https://learn.microsoft.com/en-us/typography/opentype/spec/gdef#glyph-class-definition-table).
+
+The tagged test asserts the unchanged upstream output, the three class lookups,
+and the four class constant values. Existing
+`TestGSUBContextSubstFmt1IgnoreMarks` vectors contain no interleaved marks, so
+they do not expose this case despite the test name. The broader effects of these
+classification defects on other GSUB/GPOS operations remain to be tested.
+
+**Reproduce:**
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE005' -count=1 -v
+```
+
+## SHAPE-006 — Contextual lookup revisits matched input
+
+**Status:** reproduced. **Test:** `TestKnownBugSHAPE006AOTSContextProgression`.
+**Verified:** 2026-10-26, production revision
+`7b9df6582ee7154a8f9be2a2ba718689e4a7681e` plus the new tests.
+
+**Expected behavior and basis:** active upstream record
+[`gsub_context1_next_glyph.tests:2`](../testdata/harfbuzz/aots/tests/gsub_context1_next_glyph.tests)
+at the same pinned HarfBuzz revision expects successive non-overlapping matches
+of a two-glyph context. The fixture's lookup 4 matches `[20,20]` and invokes
+lookup 0 to replace the first glyph with 60. Processing then continues beyond
+the matched input pair.
+
+**Reproduction:** `gsub_context1_next_glyph_f1.otf`, input
+`U+0000 U+0014 U+0014 U+0014 U+0014 U+0014 U+0000`, global `test` enabled,
+Latin/English/LTR with the core engine and watermarks `8/1/9`.
+
+**Observed:** `Shape` returns nil and emits `[0,60,60,60,60,20,0]`;
+expected `[0,60,20,60,20,20,0]`. The pipeline substitutes extra glyphs by
+revisiting positions inside previously matched contexts. Clusters and positions
+are not asserted by this upstream record.
+
+**Implementation evidence:** `gsubLookupType5Fmt1` in
+[gsub.go](../otlayout/gsub.go) returns its incoming `pos` after successful nested
+application rather than the position following the matched context.
+`applySequenceLookupRecords` in [feature.go](../otlayout/feature.go) restores
+the caller's index; `applyLookupSpanInternal` in
+[lookups.go](../otshape/lookups.go) increments an unchanged index by one.
+This path explains the overlapping matches observed here. The fix must preserve
+partial-progress and edit-remapping contracts; length-changing contexts and
+other contextual formats are outside this reproduction's scope.
+
+**Reproduce:**
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE006' -count=1 -v
+```
+
 ## Remaining discovery work
 
-This is the first shared-API batch, not a complete defect inventory.
+The shared-API and initial AOTS batches are not a complete defect inventory.
 [TESTING.md](TESTING.md#next-testing-priorities) retains the wider priorities
 and earlier inspection/review observations. Next shared-API cases include
 Latin/Hebrew script and language selection, range behavior under normalization,

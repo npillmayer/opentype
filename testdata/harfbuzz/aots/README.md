@@ -2,10 +2,11 @@
 
 Recovered on 2026-10-26 from [HarfBuzz commit
 29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b](https://github.com/harfbuzz/harfbuzz/tree/29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b/test/shape/data/aots).
-This is source material for the next baseline-adapter step, not an executable
-Go baseline suite. HarfBuzz was not built or run during recovery, and our shaper
-was not compared against these cases. No new shaping pass/fail claims follow
-from this import.
+These files preserve the upstream source material. HarfBuzz was not built or
+run during the initial recovery, and recovery itself established no shaping
+pass/fail results. The subsequent [first adapter batch](ADAPTER.md) now exercises
+three active GSUB records: one passes in the ordinary suite, and two reproduce
+documented failures in the tagged suite.
 
 ## Scope and provenance
 
@@ -19,7 +20,7 @@ They retain comments, the `@shaper=ot` directive, original font paths, options,
 inputs, expected output, and line numbers. They are registered in upstream
 [`meson.build`](https://github.com/harfbuzz/harfbuzz/blob/29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b/test/shape/data/aots/meson.build).
 Fonts were not duplicated or changed. Consequently, the original `../fonts/`
-paths do not resolve within this snapshot; the future adapter must use the
+paths do not resolve within this snapshot; the adapter uses the
 local paths recorded in the manifest.
 
 [`manifest.json`](manifest.json) records source paths, revision, SHA-256 hashes,
@@ -87,16 +88,20 @@ The stored output is deliberately narrower than our current `hbcmp` JSON:
   remove them during fixture preparation.
 - The records select `@shaper=ot` and `--single-par`, but do not explicitly set
   script, language, or direction. The AOTS generator sets Latin, English, LTR,
-  and font-unit scale. The later adapter must resolve and document the context
+  and font-unit scale. Any adapter must resolve and document the context
   against the upstream runner's behavior rather than silently assuming that
   generation settings and command-line defaults are interchangeable.
 
 Therefore these records cannot be mechanically expanded into full `hbcmp`
-records by filling absent fields with zero. The next step must either compare
+records by filling absent fields with zero. Adapters must either compare
 only the independently supplied fields (including calculated glyph origins),
 or run a pinned HarfBuzz build to obtain richer output and preserve that output
 as a separate, documented derivation. Full cluster/advance/offset expectations
 must never be inferred from our own shaper's output.
+
+The [initial adapter](ADAPTER.md) implements glyph-only comparison for three
+GSUB records and verifies their explicit context against HarfBuzz. GPOS origins
+and ranged feature options remain later adapter work.
 
 Cursive cases are recovered for completeness of the existing-font inventory;
 they remain lower priority under the Latin/Hebrew scope. This synthetic AOTS

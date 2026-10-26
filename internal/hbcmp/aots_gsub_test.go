@@ -20,17 +20,18 @@ import (
 
 const aotsRevision = "29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b"
 
-// This adapter accepts glyph-only AOTS cases with global or single-index test
-// features. It is not a general HarfBuzz command-line parser.
+// This adapter accepts glyph-only or glyph-origin AOTS cases with global or
+// single-index test features. It is not a general HarfBuzz command-line parser.
 // Missing positions and clusters never become zero-valued expectations.
-type aotsGSUBCase struct {
-	id       string
-	fontPath string
-	fontData []byte
-	options  string
-	features []otshape.FeatureRange
-	input    []rune
-	want     []ot.GlyphIndex
+type aotsCase struct {
+	id          string
+	fontPath    string
+	fontData    []byte
+	options     string
+	features    []otshape.FeatureRange
+	input       []rune
+	want        []ot.GlyphIndex
+	wantOrigins []aotsGlyphOrigin
 }
 
 type aotsManifest struct {
@@ -67,35 +68,39 @@ func readAOTSHashedFile(path, hash string) ([]byte, error) {
 	return data, nil
 }
 
-func loadAOTSGSUBCase(id string) (aotsGSUBCase, error) {
+func loadAOTSGSUBCase(id string) (aotsCase, error) {
+	return loadAOTSCase(id, "glyph_ids")
+}
+
+func loadAOTSCase(id, expectedFields string) (aotsCase, error) {
 	root := filepath.Join("..", "..")
 	dir := filepath.Join(root, "testdata", "harfbuzz", "aots")
 	data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
-		return aotsGSUBCase{}, err
+		return aotsCase{}, err
 	}
 	var manifest aotsManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return aotsGSUBCase{}, err
+		return aotsCase{}, err
 	}
 	if manifest.SchemaVersion != 1 || manifest.Revision != aotsRevision {
-		return aotsGSUBCase{}, fmt.Errorf("unsupported AOTS manifest schema/revision: %d/%s", manifest.SchemaVersion, manifest.Revision)
+		return aotsCase{}, fmt.Errorf("unsupported AOTS manifest schema/revision: %d/%s", manifest.SchemaVersion, manifest.Revision)
 	}
 	for _, entry := range manifest.Cases {
 		if entry.ID != id {
 			continue
 		}
 		if !entry.Active || entry.Status != "candidate" || entry.LocalFontPath == "" {
-			return aotsGSUBCase{}, fmt.Errorf("%s: not an active local candidate (%s)", id, entry.Status)
+			return aotsCase{}, fmt.Errorf("%s: not an active local candidate (%s)", id, entry.Status)
 		}
-		if entry.ExpectedFields != "glyph_ids" {
-			return aotsGSUBCase{}, fmt.Errorf("%s: unsupported expected fields %q", id, entry.ExpectedFields)
+		if entry.ExpectedFields != expectedFields {
+			return aotsCase{}, fmt.Errorf("%s: unsupported expected fields %q", id, entry.ExpectedFields)
 		}
 		if id != fmt.Sprintf("%s:%d", filepath.Base(entry.SourceFile), entry.SourceLine) ||
 			entry.SourceFile != "tests/"+filepath.Base(entry.SourceFile) ||
 			entry.LocalFontPath != "testdata/fonttools/"+entry.Font ||
 			entry.Font != filepath.Base(entry.Font) {
-			return aotsGSUBCase{}, fmt.Errorf("%s: inconsistent source/font identity", id)
+			return aotsCase{}, fmt.Errorf("%s: inconsistent source/font identity", id)
 		}
 		var sourceHash, fontHash string
 		for _, source := range manifest.Sources {
@@ -110,37 +115,49 @@ func loadAOTSGSUBCase(id string) (aotsGSUBCase, error) {
 		}
 		data, err := readAOTSHashedFile(filepath.Join(dir, filepath.FromSlash(entry.SourceFile)), sourceHash)
 		if err != nil {
-			return aotsGSUBCase{}, err
+			return aotsCase{}, err
 		}
 		lines := strings.Split(string(data), "\n")
 		if entry.SourceLine < 2 || entry.SourceLine > len(lines) {
-			return aotsGSUBCase{}, fmt.Errorf("%s: invalid source line", id)
+			return aotsCase{}, fmt.Errorf("%s: invalid source line", id)
 		}
 		// The selected files use exactly one directive before their records.
 		if strings.TrimSpace(lines[0]) != "@shaper=ot" {
-			return aotsGSUBCase{}, fmt.Errorf("%s: expected @shaper=ot", id)
+			return aotsCase{}, fmt.Errorf("%s: expected @shaper=ot", id)
 		}
 		for _, line := range lines[1:entry.SourceLine] {
 			if strings.HasPrefix(strings.TrimSpace(line), "@") {
-				return aotsGSUBCase{}, fmt.Errorf("%s: unsupported additional directive", id)
+				return aotsCase{}, fmt.Errorf("%s: unsupported additional directive", id)
 			}
 		}
-		c, err := parseAOTSGSUBRecord(lines[entry.SourceLine-1])
+		c, err := parseAOTSRecord(lines[entry.SourceLine-1], expectedFields)
 		if err != nil {
-			return aotsGSUBCase{}, fmt.Errorf("%s: %w", id, err)
+			return aotsCase{}, fmt.Errorf("%s: %w", id, err)
 		}
 		if c.fontPath != "../fonts/"+entry.Font {
-			return aotsGSUBCase{}, fmt.Errorf("%s: source font differs from manifest", id)
+			return aotsCase{}, fmt.Errorf("%s: source font differs from manifest", id)
 		}
 		c.id, c.fontPath = id, entry.LocalFontPath
 		c.fontData, err = readAOTSHashedFile(filepath.Join(root, filepath.FromSlash(c.fontPath)), fontHash)
 		return c, err
 	}
-	return aotsGSUBCase{}, fmt.Errorf("AOTS case %q not found", id)
+	return aotsCase{}, fmt.Errorf("AOTS case %q not found", id)
 }
 
-func parseAOTSGSUBRecord(line string) (aotsGSUBCase, error) {
-	var c aotsGSUBCase
+func parseAOTSGSUBRecord(line string) (aotsCase, error) {
+	return parseAOTSRecord(line, "glyph_ids")
+}
+
+func parseAOTSRecord(line, expectedFields string) (aotsCase, error) {
+	var c aotsCase
+	positionOption := "--no-positions"
+	switch expectedFields {
+	case "glyph_ids":
+	case "glyph_ids_and_origins":
+		positionOption = "--ned"
+	default:
+		return c, fmt.Errorf("unsupported expected fields %q", expectedFields)
+	}
 	line = strings.TrimSpace(line)
 	if strings.HasPrefix(line, "#") {
 		return c, fmt.Errorf("upstream-disabled record")
@@ -152,7 +169,7 @@ func parseAOTSGSUBRecord(line string) (aotsGSUBCase, error) {
 	c.fontPath, c.options = fields[0], fields[1]
 	required := map[string]bool{
 		"--features": false, "--single-par": false, "--no-clusters": false,
-		"--no-glyph-names": false, "--no-positions": false,
+		"--no-glyph-names": false, positionOption: false,
 	}
 	for _, option := range strings.Fields(c.options) {
 		if option == "--features" {
@@ -202,6 +219,15 @@ func parseAOTSGSUBRecord(line string) (aotsGSUBCase, error) {
 	}
 	if output = output[1 : len(output)-1]; output != "" {
 		for _, token := range strings.Split(output, "|") {
+			if expectedFields == "glyph_ids_and_origins" {
+				origin, err := parseAOTSGlyphOrigin(token)
+				if err != nil {
+					return c, err
+				}
+				c.wantOrigins = append(c.wantOrigins, origin)
+				c.want = append(c.want, origin.GID)
+				continue
+			}
 			n, err := strconv.ParseUint(token, 10, 16)
 			if err != nil {
 				return c, fmt.Errorf("expected glyph ID only, got %q", token)
@@ -253,7 +279,12 @@ func runAOTSGSUBCase(t *testing.T, id string) {
 
 func runAOTSGSUBCaseWithBuffers(t *testing.T, id string, opts otshape.BufferOptions) {
 	t.Helper()
-	c, err := loadAOTSGSUBCase(id)
+	runAOTSCaseWithBuffers(t, id, "glyph_ids", opts)
+}
+
+func runAOTSCaseWithBuffers(t *testing.T, id, expectedFields string, opts otshape.BufferOptions) {
+	t.Helper()
+	c, err := loadAOTSCase(id, expectedFields)
 	if err != nil {
 		t.Fatalf("%s: load upstream case: %v", id, err)
 	}
@@ -278,6 +309,14 @@ func runAOTSGSUBCaseWithBuffers(t *testing.T, id string, opts otshape.BufferOpti
 	got := make([]ot.GlyphIndex, len(sink.glyphs))
 	for i, glyph := range sink.glyphs {
 		got[i] = glyph.GID
+	}
+	if expectedFields == "glyph_ids_and_origins" {
+		origins := aotsGlyphOrigins(sink.glyphs)
+		if err != nil || !slices.Equal(origins, c.wantOrigins) {
+			t.Fatalf("upstream=%s@%s font=%s\noptions=%s\ncontext=Latn/en/ltr/core, font units, buffers=%+v input=%U\nerror=%v\ngot=%v\nwant=%v\nrecords=%+v",
+				c.id, aotsRevision, c.fontPath, c.options, opts, c.input, err, origins, c.wantOrigins, sink.glyphs)
+		}
+		return
 	}
 	if err != nil || !slices.Equal(got, c.want) {
 		t.Fatalf("upstream=%s@%s font=%s\noptions=%s\nfeatures=%+v\ncontext=Latn/en/ltr/core, buffers=%+v input=%U\nerror=%v\ngot=%v\nwant=%v",

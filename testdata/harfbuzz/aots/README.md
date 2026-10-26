@@ -5,8 +5,10 @@ Recovered on 2026-10-26 from [HarfBuzz commit
 These files preserve the upstream source material. HarfBuzz was not built or
 run during the initial recovery, and recovery itself established no shaping
 pass/fail results. The subsequent [adapter batches](ADAPTER.md) now exercise
-five active GSUB records: one passes in the ordinary suite, and four reproduce
-documented failures in the tagged suite.
+five active GSUB and six active GPOS records: two pass in the ordinary suite,
+and nine reproduce documented failures in the tagged suite. The GSUB simple
+alternate record also has a failing streaming execution. See the
+[GPOS report](GPOS.md) for origin comparisons and remaining pair-positioning scope.
 
 ## Scope and provenance
 
@@ -100,9 +102,11 @@ as a separate, documented derivation. Full cluster/advance/offset expectations
 must never be inferred from our own shaper's output.
 
 The [adapter](ADAPTER.md) implements glyph-only comparison for five GSUB records
-and verifies their explicit context against HarfBuzz. It supports global and
+and glyph-origin comparison for six GPOS records, verifying their explicit
+context against HarfBuzz. It supports global and
 single-index feature requests, including alternate values and explicit
-disabling. GPOS origins and broader feature syntax remain later adapter work.
+disabling. Broader feature syntax and independent pair-positioning coverage
+remain later work; the current chained-positioning case invokes a single lookup.
 
 Cursive cases are recovered for completeness of the existing-font inventory;
 they remain lower priority under the Latin/Hebrew scope. This synthetic AOTS

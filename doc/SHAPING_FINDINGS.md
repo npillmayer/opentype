@@ -69,7 +69,7 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: nine failing top-level tests across the two packages.
+# Discovery suite: twelve failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Inspect one finding (replace 001 with 002, 003, or 004).
@@ -95,6 +95,8 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
 | [SHAPE-005](#shape-005--gdef-classification-prevents-ignoremarks) | reproduced | GDEF range endpoints and class constants break IgnoreMarks/IgnoreBaseGlyphs filtering |
 | [SHAPE-006](#shape-006--contextual-lookup-revisits-matched-input) | reproduced | Contextual lookup progression applies overlapping matches |
+| [SHAPE-007](#shape-007--mark-attachments-do-not-resolve-to-origins) | reproduced | Mark attachment metadata does not become final anchor offsets |
+| [SHAPE-008](#shape-008--marks-retain-nominal-advances) | reproduced | Mark advances shift following glyph origins |
 
 The AOTS baseline batch adds SHAPE-005/006 in
 [`internal/hbcmp/aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go).
@@ -107,6 +109,11 @@ The alternate-substitution extension at revision
 `88627506dae374b163968c67cf97601a4ada18c1` adds three tagged tests for existing
 findings SHAPE-002/003/005, bringing the total to nine failing top-level tests
 for six findings. The ordinary full suite still passes.
+The [GPOS batch](../testdata/harfbuzz/aots/GPOS.md) at revision
+`f560698c2ecf09ed0c317a78327862707e5d8f46` adds three more tagged tests:
+SHAPE-007/008 and a further SHAPE-005 reproduction. The combined tagged suite
+now has twelve failing top-level tests for eight findings; the ordinary suite
+still passes. All batch revisions refer to source plus the tests added at that step.
 
 ## SHAPE-001 — SetupMasks changes are overwritten
 
@@ -348,6 +355,24 @@ exercise SHAPE-003's second-alternate selection; do not assume a single fix
 will make it pass. See the [adapter report](../testdata/harfbuzz/aots/ADAPTER.md#alternate-substitution-batch)
 for the verification revision and unchanged upstream oracle.
 
+**Interleaved-mark ligature extension (2026-10-26):**
+`TestKnownBugSHAPE005AOTSLigatureAcrossMark` runs
+[`gpos5.tests:2`](../testdata/harfbuzz/aots/tests/gpos5.tests), whose GSUB lookup
+forms ligature 18 from 30 and 31 with `IgnoreMarks`. Input is
+`U+0011 U+001E U+0013 U+001F U+0011`, Latin/English/LTR, global `test`, buffers
+`6/1/7`. GID 19 lies between the components and has GDEF singleton `[19,19]`
+class 3, but is currently classified as zero. The output GIDs remain
+`[17,30,19,31,17]` instead of `[17,18,19,17]`, with nil error. The adjacent
+component control (`gpos5.tests:3`) forms the ligature but fails final positioning
+(SHAPE-007/008). The tagged assertion retains the complete origin expectation;
+see [GPOS.md](../testdata/harfbuzz/aots/GPOS.md) for actual/expected origins.
+
+Classification is the first blocker here. Source inspection also shows
+`gsubLookupType4Fmt1` replacing the full matched span and GPOS selecting the
+last ligature component by default. Preservation of skipped marks and component
+association will need separate verification after this blocker is fixed;
+this run does not establish those later behaviors.
+
 **Reproduce:**
 
 ```sh
@@ -390,6 +415,82 @@ other contextual formats are outside this reproduction's scope.
 
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE006' -count=1 -v
+```
+
+## SHAPE-007 — Mark attachments do not resolve to origins
+
+**Status:** reproduced. **Test:** `TestKnownBugSHAPE007AOTSMarkAttachmentOrigins`.
+**Verified:** 2026-10-26, source revision
+`f560698c2ecf09ed0c317a78327862707e5d8f46` plus new tests.
+
+**Expected behavior and basis:** active upstream `gpos4_simple.tests:2` and
+`gpos5.tests:3` require a mark origin aligned with its base or ligature anchor.
+The public output must contain the offsets needed to reproduce those origins;
+attachment references alone do not satisfy the baseline.
+
+**Reproduction:** core engine, Latin/English/LTR, global `test`, one shaping
+window. Mark-to-base input is `U+0011 U+0012 U+0013 U+0011`, buffers `5/1/6`;
+mark-to-ligature input is `U+0011 U+001E U+001F U+0013 U+0011`, buffers `6/1/7`.
+The font/source hashes and exact upstream expectations are checked at runtime.
+
+**Observed:** both calls return nil and the correct GIDs `[17,18,19,17]`.
+GID 19 has `AttachTo:1` and the appropriate mark-to-base/mark-to-ligature kind
+and anchor references, but `XOffset/YOffset` remain zero. Its origin is
+`(3000,0)`, rather than `(1400,-80)` for the base or `(1401,-79)` for the ligature.
+The final glyph also has the wrong origin due to SHAPE-008. Complete sequences
+and independent HarfBuzz checks are in [GPOS.md](../testdata/harfbuzz/aots/GPOS.md).
+
+**Implementation evidence:** `gposLookupType4Fmt1`/`gposLookupType5Fmt1` in
+[gpos.go](../otlayout/gpos.go) call `setMarkAttachment` in
+[gpos_helpers.go](../otlayout/gpos_helpers.go). That helper records metadata
+without resolving anchor coordinates. The public execution/output path does
+not subsequently turn those references into offsets. Existing attachment tests
+assert metadata, so their success does not establish final positioning.
+
+**Fix scope:** resolve the appropriate anchors and relative pen positions before
+emitting public output. Retain separate checks for mark advance handling,
+ligature component association, mark-to-mark chains, and streaming boundaries;
+the two cases here do not establish those other behaviors.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE007' -count=1 -v
+```
+
+## SHAPE-008 — Marks retain nominal advances
+
+**Status:** reproduced. **Test:** `TestKnownBugSHAPE008AOTSUnattachedMarkAdvances`.
+**Verified:** 2026-10-26, source revision
+`f560698c2ecf09ed0c317a78327862707e5d8f46` plus new tests.
+
+**Expected behavior and basis:** active upstream `gpos4_simple.tests:3` and `:4`
+place an unattached mark and the following glyph at `(3000,0)`. The mark must
+not add its nominal 1500-unit horizontal advance in these cases. This expectation
+comes from the synthetic font's upstream baseline, not from treating its control
+codepoint as a Unicode combining character.
+
+**Reproduction:** `gpos4_simple_1.otf`, input `U+0011 U+0011 U+0013 U+0011` or
+`U+0019 U+0019 U+0013 U+0011`, core engine, Latin/English/LTR, global `test`,
+buffers `5/1/6`. Neither input has a covered attachment base for GID 19.
+
+**Observed:** nil errors; GIDs and the mark's own origin match. The following
+GID 17 starts at `(4500,0)`, not `(3000,0)`. Emitted GID 19 has `XAdvance:1500`,
+zero offsets, and no attachment. These controls isolate the extra displacement
+from SHAPE-007's unresolved anchor problem. Attached marks in SHAPE-007 also
+retain 1500-unit advances. See [GPOS.md](../testdata/harfbuzz/aots/GPOS.md) for
+the full outputs and supplementary HarfBuzz advance diagnostics.
+
+**Implementation evidence:** `compileShapePlanWithFeatures` in
+[shape_api.go](../otshape/shape_api.go) enables GPOS but leaves `ZeroMarks` false.
+The helpers in [plan.go](../otshape/plan.go) can zero internal position values
+when that policy is set, but the public output path later adds each glyph's
+nominal metric in `materializeGlyphRecord`. Merely enabling that helper is
+therefore not enough to establish zero final advances. GDEF classification
+(SHAPE-005) also affects unattached mark recognition. A fix must address the
+policy, classification, and nominal-versus-adjustment representation together.
+This finding does not prescribe zero advances for every mark in every script.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE008' -count=1 -v
 ```
 
 ## Remaining discovery work

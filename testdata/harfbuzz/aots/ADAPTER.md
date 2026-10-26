@@ -1,10 +1,14 @@
-# AOTS GSUB baseline adapter
+# AOTS baseline adapter
 
 The test-only adapter in
 [`internal/hbcmp/aots_gsub_test.go`](../../../internal/hbcmp/aots_gsub_test.go)
 reads explicitly selected records from the recovered files. It checks the
 pinned manifest revision and the source/font SHA-256 hashes before shaping.
 Upstream files and the recovery manifest remain unchanged.
+The shared adapter now also supports GPOS glyph-origin records through
+[`aots_gpos_test.go`](../../../internal/hbcmp/aots_gpos_test.go).
+The [GPOS batch report](GPOS.md) documents its coordinate contract, six records,
+and results. The GSUB sections below retain the earlier batch history.
 
 ## Selection and results
 
@@ -46,7 +50,7 @@ The lookup-flag case enables positions 5 and 6 with values 1 and 2 and disables
 4 and 7; whole-input watermarks are `10/1/11`. Its filtering failure masks
 alternate selection, so this is not an isolated SHAPE-003 reproduction.
 
-There are now five selected upstream records: one ordinary passing baseline
+At the end of the GSUB batches there were five selected upstream records: one ordinary passing baseline
 and four failing records, with an additional streaming execution of the simple
 alternate case. No new finding IDs are needed for this batch.
 
@@ -80,10 +84,10 @@ alternate case. No new finding IDs are needed for this batch.
   (high/low/max) against the same upstream expectation.
 - `--no-glyph-names --no-clusters --no-positions` means compare only numeric
   glyph IDs and their order. Clusters, advances, offsets, and unsafe flags are
-  deliberately unchecked; this batch establishes no positioning or cluster
+  deliberately unchecked in glyph-only mode; the GSUB batch establishes no positioning or cluster
   parity and tests only one small-buffer configuration.
 - Disabled records, unavailable fonts, unknown record IDs, unsupported
-  directives, malformed scalars, and invalid glyph-only output are errors.
+  directives, malformed scalars, and output incompatible with the selected mode are errors.
   Fixture problems do not silently skip tests. Focused adapter tests cover
   unsupported inputs and preservation of NUL/glyph zero.
 
@@ -109,7 +113,7 @@ inspected from the pinned recovery archive.
 
 `/opt/homebrew/bin/hb-shape --version` reported **HarfBuzz 15.0.0** on the
 verification machine. This was an installed binary, not a build of the pinned
-upstream source commit. Each selected record was run with its recorded options
+upstream source commit. Each selected GSUB record was run with its recorded options
 under `LC_ALL=C`, selecting the `ot` shaper and `ot` font functions, then again
 with explicit `--script=Latn --language=en --direction=ltr`. All ten invocations
 returned exactly the stored expectation. These checks corroborate the context
@@ -148,12 +152,13 @@ PY
 # Passing baseline and adapter validation; no HarfBuzz/Python required.
 go test ./internal/hbcmp -run '^TestAOTS' -count=1 -v
 
-# Five failing top-level tests for four findings; expected nonzero exit.
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE00[2356]' -count=1 -v
+# All AOTS findings, including GPOS: eight failing top-level tests.
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE' -count=1 -v
 ```
 
 The full ordinary `go test ./... -count=1` suite passed. Once a defect is fixed,
 move its record ID into the ordinary baseline list and remove its tagged test;
 promote useful diagnostic regressions as well. No production fixes are included
-in these batches. GPOS origin comparisons and broader feature syntax remain
-later adapter work. Promote each streaming configuration only when it too passes.
+in these batches. GPOS origin comparisons are now covered in [GPOS.md](GPOS.md);
+pair positioning, richer position captures, and broader feature syntax remain
+later work. Promote each streaming configuration only when it too passes.

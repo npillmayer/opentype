@@ -1,212 +1,303 @@
-# Test Strategy
+# Shaping Engine and Test Strategy
 
-We need a set of very small and very specific test fonts. Each font should be designed to include a very small set of lookups. The number of glyphs should be kept to a minimum to ensure that the tests are fast and easy to understand.
+## Assessment as of 2026-10-26
 
-## Existing Tools and Fonts
+The shaping pipeline is substantially implemented and easy to exercise through
+tests, but it is not yet a complete, reliable general-purpose shaper. Feature
+planning, sequenced GSUB/GPOS execution, streaming output, script-specific
+engines, and an offline HarfBuzz comparison harness exist. The earlier milestone
+plan in this document predated these implementations; its restrictions on
+multiple lookups and its proposal to create `internal/ttxtest` are obsolete.
 
-### FontTools (Python)
+The review included source inspection, existing tests, and temporary public-API
+probes. The full `go test ./... -count=1` run passed. The probes exposed
+correctness gaps that the committed suite does not detect. These findings are
+an assessment of the reviewed implementation, not fixes or newly committed
+regression tests.
 
-FontTools ships with a `Tests` directory, where subfolders contain test fonts.
+## Modules, directories, and testing responsibilities
 
-### Harfbuzz (C)
+Paths are relative to the repository root. These are packages and directories
+within the same Go module.
 
-Harfbuzz ships with a `tests` directory, where subfolders contain test fonts.
+| Location | Role in shaping and testing |
+| --- | --- |
+| [`ot/`](../ot/) | Parses font tables and concrete lookup graphs. Structural, synthetic, negative, and TTX tests check whether GSUB/GPOS data is read correctly, independently of shaping output. |
+| [`otquery/`](../otquery/) | Supplies cmap lookup, glyph metrics, and font/script queries. Tests cover mapping, metrics, and query errors; failures can appear as incorrect glyphs or advances downstream. |
+| [`otlayout/`](../otlayout/) | Executes GSUB/GPOS features and lookups on glyph/position buffers. Tests isolate substitution and positioning, nested lookups, edits, attachment remapping, errors, glyph bounds, and execution limits. |
+| [`otshape/`](../otshape/) | Owns the public API, engine selection, normalization, feature plans/masks, streaming, and output. Tests cover orchestration, hooks, ranges, events, buffer correspondence, partial progress, and flushing. |
+| [`otshape/otcore/`](../otshape/otcore/) | Generic engine. External-package tests exercise the public API with GSUB/GPOS fixtures, including single/pair adjustments and attachment metadata. |
+| [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
+| [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
+| [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
+| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API and compares glyph IDs, clusters, advances, and offsets with stored HarfBuzz-style JSON output. It does not invoke HarfBuzz during tests. |
+| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expected-output fixtures. Currently only `Gentium_AB.json`, covering Latin `AB`. |
+| [`testdata/fonttools/`](../testdata/fonttools/) | Mini-fonts and paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps for narrowly controlled parsing and lookup tests. |
+| [`testdata/fonts/`](../testdata/fonts/) | Larger fonts, including Calibri, Gentium Plus, and Go fonts, for mapping, metrics, parser, shaping, and diagnostic exercises. |
+| [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` is a preparation utility. These are not Go test drivers. |
+| [`ot-tools/`](../ot-tools/) | Manual diagnostics: `shape` prints glyph output, `view` renders glyph proofs, and `font` inspects tables. Useful for investigation; visual inspection does not replace output assertions. |
+| [`internal/fontload/`](../internal/fontload/) | Shared font-byte/SFNT loading support. It does not select or execute shaping features. |
 
-## Test Driver
+The main dependency path is `otshape` → `otlayout` → `ot`, with `otquery`
+providing mapping and metrics. Script engines plug into `otshape`. Localize
+failures at the lowest relevant layer, then cover them through the public
+shaping API when integration behavior matters.
 
-Test fonts are rarely labelled in a way which would be useful for our testing purposes. A small helper script exists, which traverses a test directory and greps for specific patterns in the font files. This script can be used to identify and extract the relevant test fonts for our testing purposes.
+## Current API and functionality
 
-```shell
-python find_test_fonts.py
+The entry points are methods on an explicitly constructed shaper:
+
+```go
+shaper := otshape.NewShaper(otcore.New(), otarabic.New(), othebrew.New())
+err := shaper.Shape(params, source, sink, options)
+// Advanced input with nested feature scopes:
+err = shaper.ShapeEvents(params, eventSource, sink, options)
 ```
 
-## Implementation Plan (TTX-driven Test Bed)
+See [shape_api.go](../otshape/shape_api.go),
+[shape_events.go](../otshape/shape_events.go),
+[shaper.go](../otshape/shaper.go), and [pipeline.go](../otshape/pipeline.go).
 
-### Inputs
+- `NewShaper` accepts candidate engines; there is no global registration step.
+  Selection uses confidence and name tie-breaking, then calls the engine's `New`.
+- `Params` supplies one font, script, language, direction, and feature ranges.
+  The caller supplies run metadata. Automatic script itemization, font fallback,
+  paragraph bidi processing, and final RTL output reversal are absent.
+- `RuneSource` has `ReadRune`; `strings.Reader` and `bufio.Reader` can supply
+  input. `GlyphSink.WriteGlyph` receives IDs, positions, clusters, masks, and
+  optional unsafe flags. Clusters originate as codepoint indexes, not UTF-8 byte
+  offsets. Position values are in font units.
+- `Shape` compiles a plan, repeatedly reads input, normalizes/maps it, runs
+  script hooks and GSUB/GPOS stages, emits a prefix, and reshapes raw carry on the
+  next cycle. Feature sequencing and stage pauses are implemented.
+- `ShapeEvents` supports nested feature push/pop scopes. `Params.Features` must
+  be global in this mode. Contiguous spans with different plan IDs are shaped
+  separately.
+- `BufferOptions` controls watermarks and the raw input buffer cap. Current
+  high/low/max defaults are 3500 / 1024 / 4096 codepoints. `FlushExplicit` is
+  unsupported. Despite its name, `FlushOnRunBoundary` can emit streaming prefixes
+  before EOF; it does not provide atomic whole-request delivery.
+- A shaping error prevents emission of the current in-progress chunk, but
+  previously emitted prefixes remain. A sink error can leave part of a prefix
+  written. Atomic consumers must collect output and commit only after success.
 
-- Mini-fonts and TTX dumps live in `testdata/fonttools/`.
-- TTX files follow the FontTools naming convention for subset dumps, e.g.
-  `gsub3_1_simple_f1.ttx.GSUB`.
+[engine_api.go](../otshape/engine_api.go) exposes hooks for feature planning,
+validation, composition, reordering, pre-GSUB processing, masks, stage pauses,
+and postprocessing. These interfaces make small test engines straightforward.
 
-### Helper Package
+The core engine supplies common features. Arabic/Syriac adds joining and staged
+features; Hebrew adds composition and reordering. No dedicated Indic or other
+complex-script engines exist. Default per-syllable annotations derive from
+clusters rather than a script syllable recognizer.
 
-Create a reusable helper package (preferred: `internal/ttxtest`) to serve all
-subpackages (`ot`, `otlayout`, `otquery`, `otshape`). It should:
+The older `Buffer`, `ShapedGlyph`, and normalization helpers in
+[buffer.go](../otshape/buffer.go) are separate from the streaming path.
+`Buffer.applySubstitutionFeature` is empty and `TestBufferFunctions` is skipped.
+That stub does not describe the implementation state of `Shaper.Shape`.
 
-- Parse TTX GSUB XML into a normalized "expected" model.
-- Parse a font with `ot.Parse` into an "actual" model.
-- Compare expected vs actual structures with clear diffs.
+## Confirmed gaps and regression targets
 
-### Structural Tests (package `ot`)
+### Failures reproduced through the public API
 
-Goal: validate parsing correctness and detect structural mismatches.
+These were temporary review probes, not additions to the committed suite. The
+following inputs and configurations identify regression cases to add.
 
-- Load the OTF and its paired `*.ttx.GSUB`.
-- Parse TTX into an expected GSUB model.
-- Parse font into actual GSUB structures.
-- Compare:
-  - lookup count and lookup types
-  - subtable formats
-  - coverage glyph IDs
-  - alternate sets (for GSUB-3 format 1)
+| Finding | Reproduction / result | Implementation location |
+| --- | --- | --- |
+| Script-generated masks are overwritten | With `gsub3_1_simple_f1.otf`, feature `test` enabled, and the cmap-backed rune for GID 18, a custom `SetupMasks` hook clearing masks still produces GID 20. Execution reinitializes masks after the hook. Arabic form selection depends on this hook. | `shapeMappedRun` in [shape_api.go](../otshape/shape_api.go), `planExecutor.apply` in [plan.go](../otshape/plan.go) |
+| Feature ranges use chunk-local indexes | Repeat that rune four times and enable `test` for `[2,3)`. Default buffering gives `[18,18,20,18]`; high/low/max `2/1/4` gives `[18,18,18,18]`. Range assignment indexes the current buffer rather than original input clusters. | `ensureRunMasks` and `applyFeatureRangesToMasks` in [lookups.go](../otshape/lookups.go) |
+| Feature values do not select alternates | On the same alternate fixture/rune, `Arg=1`, `2`, and `3` all produce GID 20. Values reach masks, but ordinary execution passes `alt=0`. Lower-level tests can select GIDs 20, 21, and 22. | `applyLookups` in [lookups.go](../otshape/lookups.go); [feature_functional_test.go](../otlayout/feature_functional_test.go) |
+| Streaming loses context | With `gpos3_font1.otf`, input U+0012 U+0013, and `test` enabled, default buffering records a cursive attachment on the second glyph. High/low/max `1/1/2` loses it. | [shape_streaming.go](../otshape/shape_streaming.go) |
+| A nonmatching engine can be selected | Supply only an engine returning `ShaperConfidenceNone`. Shaping succeeds instead of returning `ErrNoMatchingShaper`; selection skips negative scores but accepts zero. | `selectShapingEngine` in [shape_api.go](../otshape/shape_api.go) |
+| Script tags are incomplete | `ScriptTagForScript` returns `DFLT` for `Syrc`, `Taml`, and `Mlym`. Much of the map uses full names instead of ISO script codes. Syriac engine matching does not repair the layout script tag. | [language.go](../otshape/language.go) |
 
-Note: GSUB-only mini-fonts may lack required tables; use `Parse(..., IsTestfont)`
-in structural tests to relax completeness checks while still enforcing table
-validity for present tables.
+### Additional limitations found by inspection
 
-## Current State (Milestone 2)
+- **Attachment positioning is incomplete.** Single/pair value adjustments are
+  applied, but mark/cursive helpers record attachment references without resolving
+  anchor coordinates into final offsets. `GlyphRecord.Pos` is therefore not fully
+  positioned output for these cases. Device adjustments are ignored, and
+  mark-to-ligature component selection has a refinement TODO. See
+  [gpos_helpers.go](../otlayout/gpos_helpers.go) and [gpos.go](../otlayout/gpos.go).
+- **Streaming safety is incomplete.** Cuts consult clusters and optional unsafe
+  flags, but the production pipeline does not populate sufficient contextual
+  safety information. When glyph count changes, partial flushing is deferred
+  until EOF or a forced full-buffer flush. The raw buffer cap guarantees progress,
+  not equivalence to whole-run shaping. See `findFlushCut` and
+  `rawFlushForGlyphPrefix` in [shape_streaming.go](../otshape/shape_streaming.go).
+- **Normalization is partial.** The active path composes adjacent pairs or
+  decomposes individual runes. It does not implement general canonical ordering
+  across combining sequences or the older font-aware representation search.
+  Unicode composition is not conditioned on availability of the composed glyph.
+  See `normalizeRuneStreamWithScratch`, `decomposeRuneStreamInto`, and
+  `composeRuneStreamInto` in [shape_api.go](../otshape/shape_api.go).
+- **Script support is selective.** Arabic joining uses a hand-maintained
+  classification and selected fallback operations. Hebrew implements selected
+  composition/reordering cases. Their presence and unit coverage do not establish
+  full script conformance.
 
-- Structural tests now cover GSUB-1 (SingleSubst) and GSUB-4 (LigatureSubst) for
-  `gsub_chaining2_next_glyph_f1` (lookups 0 and 1 only).
-- SingleSubst comparisons handle both format 1 (delta-based) and format 2
-  (explicit mapping) using parsed lookup subtable data.
-- Added a focused structural test for lookup index 2 (LigatureSubst with
-  `LookupFlag=ignoreMarks`) in the same font.
-- Added a focused structural test for GSUB-5 format 1 (ContextSubst) with
-  `LookupFlag=ignoreMarks` using `gsub_context1_lookupflag_f1` (lookup index 4).
-- Added a focused structural test for GSUB-5 format 1 (ContextSubst) using
-  `gsub_context1_next_glyph_f1` (lookup index 4).
-- Added a focused structural test for GSUB-5 format 2 (ContextSubst) using
-  `classdef2_font4` (lookup index 3).
-- Added structural tests for GPOS:
-  - GPOS-1 (SinglePos format 1), GPOS-2 (PairPos format 1), and GPOS-8
-    (ChainContextPos format 3) using `gpos_chaining3_boundary_f2` (lookup indices
-    0, 1, 4).
-  - GPOS-4 (MarkToBase format 1) using `gpos4_simple_1` (lookup index 0).
-  - GPOS-5 (MarkToLigature format 1) using `gpos5_font1` (lookup index 0).
-  - `internal/ttxtest` now parses MarkToBase and MarkToLigature structures
-    (coverage, mark arrays, base/ligature anchors) for structural comparisons.
+## What the existing tests establish
 
-### Functional Tests (package `otlayout`)
+### Structural parsing
 
-Goal: black-box behavior tests for lookup application.
+The TTX path loads a mini-font with `ot.Parse(data, ot.IsTestfont)`, parses its
+paired XML with `internal/ttxtest`, and compares selected structures.
+`IsTestfont` relaxes font completeness requirements for reduced fixtures while
+retaining validation of present data. Assertions include lookup types/formats,
+coverage, substitution records, classes, and selected positioning/anchor data.
 
-Constraints:
+| Table | Stored TTX comparison scope | Example fixtures |
+| --- | --- | --- |
+| GSUB | Single substitution (delta and explicit mapping), alternate format 1, ligature format 1, contextual formats 1 and 2 | `gsub3_1_simple_f1`, `gsub_chaining2_next_glyph_f1`, `gsub_context1_lookupflag_f1`, `gsub_context1_next_glyph_f1`, `classdef2_font4` |
+| GPOS | SinglePos format 1, PairPos format 1, MarkToBase format 1, MarkToLigature format 1, ChainContextPos format 3 | `gpos_chaining3_boundary_f2`, `gpos4_simple_1`, `gpos5_font1` |
 
-- Current lookup application does not sequence multiple lookups; for now only
-  run functional tests on fonts with a single lookup or where the test can
-  explicitly select one lookup.
+See `ot/ttx_*_compare_test.go` and `ot/parse_concrete_golden_ttx_test.go`.
+Synthetic matrices in `ot/parse_concrete_golden_synth_test.go` and real-font
+checks in `ot/parse_concrete_golden_fonts_test.go` extend structural coverage
+beyond the TTX subset. Structural coverage is distinct from lookup-runtime or
+end-to-end shaping coverage.
 
-Test flow:
+### Lookup behavior and pipeline mechanics
 
-- Select a lookup (by index) and apply it to a glyph buffer.
-- Compare glyph sequence output to expected results.
+`otlayout/feature_functional_test.go` supplies `loadTestFont` and
+`applyGSUBLookup`. The latter selects a concrete lookup by index, seeds a glyph
+and position buffer, and runs the concrete dispatcher. Embedded vectors cover
+alternate selection and contextual substitution with ignored marks. Other
+`otlayout` tests cover synthetic substitutions, positioning, extensions, nested
+errors, bounded recursion/work, and partial edits.
 
-### Functional Tests Plan (GSUB functional tests)
+In `otshape`, `plan_test.go` covers selection, ordering, stages, masks, joiners,
+and syllable isolation. The `shape_*_test.go` files cover entry points, hooks,
+events, normalization probes, flushing, and source/sink behavior.
+`successful_edits_test.go`, `partial_progress_test.go`,
+`output_bounds_test.go`, and run-buffer tests cover metadata correspondence and
+failure semantics.
 
-Purpose: validate lookup application by running one or more GSUB lookups on an
-input glyph sequence and comparing output glyphs to expected results.
+The engine subpackages add public-API and script unit tests. However, Arabic
+streaming parity deliberately uses non-joining digits; Hebrew streaming parity
+uses plain letters. Neither establishes joining/mark behavior across boundaries.
+Comparing small buffers with the same implementation at default buffering also
+allows shared bugs to pass. A whole-input baseline must use thresholds larger
+than the input; default buffering is not always one-shot.
 
-Scope (initial):
+### Independent expected output
 
-- Start with GSUB-3 (Alternate Substitution) using the existing mini-font.
-- Use a single lookup by index; do not rely on feature/script ordering.
+`internal/hbcmp` loads JSON and runs `Shaper.Shape` with all three engines.
+It compares ordered numeric glyph IDs, clusters, X/Y offsets, and X/Y advances.
+The corpus currently contains only `Gentium_AB.json`: useful infrastructure,
+but almost no independent evidence for complex shaping.
 
-Test harness (package `otlayout`):
+Each fixture has `context` (font, ISO script, language, direction, optional
+feature strings and `testfont`), Unicode scalar `input`, and expected `output`
+records with `g`, `cl`, `dx`, `dy`, `ax`, and `ay`. Use the existing JSON
+as the schema example. The declared `normalization` field is not applied by the
+runner. There is no watermark/event configuration, and internal masks, unsafe
+flags, and unresolved attachments are not compared.
 
-- Test file (e.g. `otlayout/feature_functional_test.go`).
-- Helper: `applyGSUBLookup(font *ot.Font, lookupIndex int, input []ot.GlyphIndex) ([]ot.GlyphIndex, error)`
-  - Loads GSUB lookup by index and applies it to a `GlyphBuffer`.
-  - Returns output glyph IDs for comparison.
-- Test case struct:
-  - name
-  - lookupIndex
-  - input glyph IDs
-  - expected glyph IDs
-- Optional helper to map glyph names to IDs for readability, but hardcoding IDs
-  is acceptable for now.
+### Measured snapshot
 
-Constraints (explicit):
+The focused review command was:
 
-- No sequencing of multiple lookups yet.
-- No sidecar files for now; embed vectors in test code.
+```sh
+go test ./otshape/... ./otlayout ./internal/ttxtest -count=1 -coverprofile=/tmp/otshape-review.cover
+```
 
-Incremental path:
+| Package | Passing top-level tests | Skipped | Statement coverage |
+| --- | ---: | ---: | ---: |
+| `otshape` | 83 | 1 | 75.0% |
+| `otshape/otcore` | 11 | 0 | 60.0% |
+| `otshape/otarabic` | 23 | 0 | 87.5% |
+| `otshape/othebrew` | 9 | 0 | 53.6% |
+| `otlayout` | 53 | 0 | 56.5% |
+| `internal/ttxtest` | 1 | 0 | 9.5% |
 
-1) Implement minimal harness and GSUB-3 test cases (apply/not apply).
-2) Reuse harness for GSUB-1/2/4 once stable.
+Counts exclude subtests; the skipped shaping test is `TestBufferFunctions`.
+Coverage is per package in this invocation, without `-coverpkg`. In particular,
+the helper's own coverage does not reflect its use by tests in `ot/`. The active
+decomposition routine had 0% coverage in this run. Executed statements do not
+establish correctness or conformance. The separate full repository run passed,
+including the HarfBuzz fixture test. Race and benchmark results are not part of
+this review snapshot.
 
-### Functional Tests: How They Work
+## Running and extending tests
 
-These tests are black-box checks that run one or more lookups on an input glyph
-sequence and verify the resulting glyph IDs. They live in `otlayout/` and focus
-on behavior (substitution/positioning), not structure.
+Run from the repository root:
 
-Core mechanics:
+```sh
+# Shaping, lookup execution, and stored reference output
+go test ./otshape/... ./otlayout ./internal/hbcmp -count=1
 
-- Load a mini-font from `testdata/fonttools/` and parse it with `ot.Parse`
-  using `IsTestfont` to allow GSUB-only fonts.
-- Select a lookup by index from `otf.Layout.GSub.LookupList`.
-- Seed a `GlyphBuffer` with the input glyph IDs (the tests currently hardcode
-  IDs from the mini-fonts).
-- Apply the lookup with the same dispatch path used in production
-  (`applyLookup`), passing a minimal Feature wrapper and the current layout
-  tables (GSUB + optional GDEF).
-- Compare the resulting glyph sequence to the expected output slice.
+# Parsing, TTX helpers, cmap, and metrics
+go test ./ot ./otquery ./internal/ttxtest -count=1
 
-Current harness:
+# Coverage and full repository checks
+go test ./otshape/... -cover
+go test ./...
 
-- `otlayout/feature_functional_test.go` provides:
-  - `loadTestFont(...)` for loading a mini-font.
-  - `applyGSUBLookup(...)` for applying a single lookup by index to a buffer.
-  - A minimal `Feature` implementation for tagging the lookup application.
+# Optional concurrency and allocation checks
+go test -race ./otshape/... ./otlayout ./internal/hbcmp
+go test ./otshape -run '^$' -bench 'Benchmark(LookupApplication|ShapeOrdinary|PositionReplacement)$' -benchmem
+```
 
-Current coverage:
+Go tests consume checked-in fonts, TTX dumps, and JSON; they require no Python,
+FontTools, or HarfBuzz executables at runtime. Those tools are useful for fixture
+preparation. FontTools and HarfBuzz test-font collections are sources of small
+fixtures. `testdata/scripts/find_test_fonts.py` requires Python FontTools and
+currently calls `main("..")`; adjust its root for the collection being inspected
+rather than assuming it accepts a CLI path argument.
 
-- GSUB-3 (Alternate Substitution) functional test with multiple `alt` selections
-  and a non-covered glyph case.
-- GSUB-5 (Contextual Substitution) format 1 functional test using
-  `gsub_context1_lookupflag_f1` (lookup index 4), verifying match, mismatch,
-  and offset application through nested lookup application.
-- GSUB-6 (Chaining Contextual Substitution) has no functional tests yet; wait for
-  a suitable mini-font.
-- GSUB-8 (Reverse Chaining Contextual Single) has no functional tests yet; wait for
-  a suitable mini-font.
+Prefer small fonts with few glyphs and a deliberately limited lookup set. For a
+new regression:
 
-Next expansions:
+1. Add or reuse a font in `testdata/fonttools/`, retaining provenance/licensing.
+   Keep paired TTX dumps beside it when structural assertions are needed.
+2. Add an `ot` or `otlayout` test isolating parsing or lookup behavior. Specify
+   lookup indexes and input/output glyph IDs explicitly.
+3. Add a public-API `otshape` test for planning, masks, normalization, hooks,
+   streaming, or output materialization. Vary watermarks and assert clusters and
+   positions as well as glyph IDs.
+4. Capture independent output with HarfBuzz and store JSON under
+   `internal/hbcmp/testdata/`. Record the generating command/version and ensure
+   numeric glyph IDs, cluster units, font scale, features, and direction agree
+   with the runner. Keep expected output offline so tests need no new external
+   dependency.
 
-- GSUB-1/2/4 functional tests using the same harness.
-- Add optional glyph-name helpers (if needed) for readability.
-- Once feature sequencing exists, add multi-lookup tests.
+Embedded vectors remain appropriate for isolated lookups. The earlier proposal
+for functional sidecars next to every mini-font is not implemented as a general
+loader: the existing end-to-end loader reads `internal/hbcmp/testdata/`.
+Extend that convention deliberately rather than placing undiscovered JSON beside
+fonts.
 
-### TTX Parsing Scope (initial)
+For manual inspection:
 
-Start with GSUB-3 (Alternate Substitution) format 1 only. Extend incrementally.
-Current scope includes GSUB-1, GSUB-3, GSUB-4, and GSUB-5 (formats 1 and 2) for
-structural comparisons. ContextSubst format 1 includes coverage, rule sets,
-input glyph sequences, and sequence lookup records. ContextSubst format 2
-includes coverage, class definitions, subclass rule sets, and lookup records.
-No structural coverage yet for GSUB-6/7/8; those require suitable mini-fonts.
+```sh
+go run ./ot-tools shape testdata/fonts/GentiumPlus-R.ttf AB
+```
 
-GPOS structural parsing currently covers:
-- GPOS-1 SinglePos format 1
-- GPOS-2 PairPos format 1
-- GPOS-4 MarkToBase format 1
-- GPOS-5 MarkToLigature format 1
-- GPOS-8 ChainContextPos format 3
+The CLI also accepts feature, codepoint, and watermark flags, but its feature
+parser does not accept indexed range syntax. See [OT_TOOLS.md](OT_TOOLS.md) for
+`shape`, `view`, and `font`, and [SHAPING_BENCHMARKS.md](SHAPING_BENCHMARKS.md)
+for benchmark scope and historical results. The ordinary-shaping benchmark is a
+small fixture, not a representative complex-script workload.
 
-### Open Questions
+## Next testing priorities
 
-- Whether functional test vectors should be stored as separate sidecar files
-  (e.g. JSON/YAML) or encoded in test code.
+1. Promote the reproduced mask reset, range, alternate value, engine-selection,
+   and script-tag failures into public-API regression tests.
+2. Add boundary-sensitive ligature, pair-positioning, cursive, Arabic joining,
+   and combining-mark cases. Compare multiple watermarks with independent output,
+   including cuts at and around each context boundary.
+3. Complete attachment positioning and test final coordinates, not only
+   `AttachKind`, `AttachTo`, and anchor references.
+4. Expand HarfBuzz fixtures to Arabic/Syriac, Hebrew marks, normalization/font
+   coverage, feature values/ranges, and RTL output. Extend the runner or use
+   dedicated public-API tests for events and streaming configurations.
+5. Exercise decomposition, canonical ordering, unavailable composed glyphs, and
+   length-changing normalization with cluster/range preservation.
 
-  A: We should place a separate file for input-/output-specification of glyphs besides each
-  mini-font (same base-name), to be able to test the feature-/lookup-application for an array of
-  input-sequences. I will derive the correct output-sequence (i.e. the test-target for functional
-  tests) by running Harfbuzz on the mini-font. I will do this for various input sequences to
-  create test-cases and describe the in the sidecar-file. I'll code the test-cases in the test code.
-  We want to avoid importing new external dependencies.
-
-- How strict structural comparisons should be (only intended lookup type vs all
-  lookups present in the font).
-- Glyph name to glyph ID mapping for TTX-derived data.
-
-## Current State 
-
-- Added `internal/ttxtest` with a GSUB-only TTX parser
-- Added structural comparison tests in `ot/`:
-  - Loads `testdata/fonttools/( font ).otf`
-  - Parses expected structure from `( font ).ttx.GSUB`
-  - Compares lookup type, format, coverage, and alternate sets
-- Parsing options can now relax completeness/consistency checks, allowing GSUB-only
-  mini-fonts to be parsed for structural tests.
+Related design notes: [SHAPER_PLAN.md](SHAPER_PLAN.md),
+[SHAPER_INTERFACES.md](SHAPER_INTERFACES.md),
+[STREAMING_API.md](STREAMING_API.md), and
+[PARTIAL_PROGRESS.md](PARTIAL_PROGRESS.md). Some describe intended behavior or
+historical milestones; use implementation and tests to establish current
+guarantees.

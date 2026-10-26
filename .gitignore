@@ -1,6 +1,8 @@
 .DS_Store
 out.txt
 harfbuzz/
+# Keep the curated upstream fixture snapshot visible to Git.
+!testdata/harfbuzz/
 proofs/
 ot-tools/ot-tools
 *.png

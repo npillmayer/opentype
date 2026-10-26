@@ -33,6 +33,7 @@ within the same Go module.
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
 | [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API and compares glyph IDs, clusters, advances, and offsets with stored HarfBuzz-style JSON output. It does not invoke HarfBuzz during tests. |
 | [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expected-output fixtures. Currently only `Gentium_AB.json`, covering Latin `AB`. |
+| [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Recovered source material for baseline adaptation; not yet executed by the Go harness. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Mini-fonts and paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps for narrowly controlled parsing and lookup tests. |
 | [`testdata/fonts/`](../testdata/fonts/) | Larger fonts, including Calibri, Gentium Plus, and Go fonts, for mapping, metrics, parser, shaping, and diagnostic exercises. |
 | [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` is a preparation utility. These are not Go test drivers. |
@@ -228,11 +229,12 @@ establish absence of lookup-type coverage: other tests construct synthetic
 lookup data.
 
 We have therefore adopted a selected subset of the fonts and written Go tests
-around them, rather than imported the complete upstream test suite. To extend
-this work into independent shaping baselines, recover the corresponding
-HarfBuzz/AOTS input/options/expected-output cases, verify the font versions,
-and adapt relevant cases into `internal/hbcmp`. Keep their upstream provenance
-and distinguish those behavioral expectations from the TTX structure checks.
+around them, rather than imported the complete upstream test suite. The
+corresponding HarfBuzz/AOTS source cases have now been recovered and their font
+versions verified; see [the recovery record](../testdata/harfbuzz/aots/README.md).
+Adapting relevant cases into `internal/hbcmp` remains a separate next step.
+Keep their upstream provenance and distinguish those behavioral expectations
+from the TTX structure checks.
 
 ### Structural parsing
 
@@ -364,6 +366,24 @@ allows shared bugs to pass. A whole-input baseline must use thresholds larger
 than the input; default buffering is not always one-shot.
 
 ### Independent expected output
+
+The upstream recovery step is complete for the 12 existing mini-fonts.
+[`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/README.md) preserves 11
+unchanged test files from HarfBuzz revision
+`29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b`; every local font is byte-identical
+to its upstream counterpart. Of the 31 records, 18 are active cases using our
+fonts, 9 are upstream-disabled cases using our fonts, and 4 reference fonts
+outside our subset. The manifest preserves file/line identities, hashes, and
+these distinctions. Recovery did not execute HarfBuzz or our shaper on these
+records, and disabled upstream records are not findings about our implementation.
+
+The recovered expectations omit clusters; GSUB records also omit positions,
+while GPOS records contain glyph origins with advances suppressed. They cannot
+be treated as complete glyph/cluster/advance/offset JSON. The next adapter step
+must explicitly support partial expectations or obtain richer output from a
+pinned HarfBuzz build. Missing expected fields must not be filled from our own
+shaper. See the recovery README for option semantics, feature ranges, licensing,
+and reproducible recovery commands.
 
 `internal/hbcmp` loads JSON and runs `Shaper.Shape` with all three engines.
 It compares ordered numeric glyph IDs, clusters, X/Y offsets, and X/Y advances.

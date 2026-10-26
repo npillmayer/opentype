@@ -1,0 +1,467 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/harfbuzz/harfbuzz",
+  "upstream_revision": "29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b",
+  "archive_url": "https://codeload.github.com/harfbuzz/harfbuzz/tar.gz/29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b",
+  "summary": {
+    "fonts_verified": 12,
+    "test_files": 11,
+    "records": 31,
+    "candidate": 18,
+    "upstream_disabled": 9,
+    "font_not_in_local_subset": 4
+  },
+  "fonts": [
+    {
+      "local_path": "testdata/fonttools/classdef2_font4.otf",
+      "upstream_path": "test/shape/data/aots/fonts/classdef2_font4.otf",
+      "sha256": "4b854eab81b46355f57abeda60606d3e32828deb79608414af677d03f72abf9d",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gpos3_font1.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gpos3_font1.otf",
+      "sha256": "8faa74b30e7dbd6c5a80a93d3254e04496fbfbda30df5521089a4f2b40ec9991",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gpos3_font2.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gpos3_font2.otf",
+      "sha256": "29b4ab5e0b7457034621e3ed58dab9d1cc1d9f04434c3c9700f9f42fab3192ff",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gpos3_font3.otf",
+      "sha256": "6bf96e9d1287b6139ffce91f7fcb795f5042402763940f4f0df7f367d8ba82be",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gpos4_simple_1.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gpos4_simple_1.otf",
+      "sha256": "b0cfb7e513cdc760f491b8dd350f7d24236276015e583c844277fbd1a0eb1520",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gpos5_font1.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gpos5_font1.otf",
+      "sha256": "bd16f5fddc832b26ab6d9d92142078aa3a94ac4d6f98d38f0b64c34603484136",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gpos_chaining3_boundary_f2.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gpos_chaining3_boundary_f2.otf",
+      "sha256": "20b962fdfbc4046783e21a13a05de5b39335f146be84ee26a21d9a0758a4417e",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gsub3_1_lookupflag_f1.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gsub3_1_lookupflag_f1.otf",
+      "sha256": "e95278ab819ece1188eb4bd643bdc2a5d0aa2a05ae7f151ca2d919eb411b5a0a",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gsub3_1_simple_f1.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gsub3_1_simple_f1.otf",
+      "sha256": "596c9c199930c250e30f942c25bc210a2c12cc85da3c889cc32d4049b343488d",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gsub_chaining2_next_glyph_f1.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gsub_chaining2_next_glyph_f1.otf",
+      "sha256": "2dfe7ae575948d0fade1b881de165c7d9eec79809307bbb70fe61e63a9e731ac",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gsub_context1_lookupflag_f1.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gsub_context1_lookupflag_f1.otf",
+      "sha256": "fbdc53792796beef4cdec488e7659d5c5905cc3d48ae36b8969882b539770825",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gsub_context1_next_glyph_f1.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gsub_context1_next_glyph_f1.otf",
+      "sha256": "95227ad2e8ad3d2f362409b65a6cff59b5bea1ffcbde429661116de38f4d938e",
+      "byte_identical": true
+    }
+  ],
+  "source_files": [
+    {
+      "local_path": "tests/classdef2.tests",
+      "upstream_path": "test/shape/data/aots/tests/classdef2.tests",
+      "sha256": "74b08205f0e0088c00cb7dea8b486a2db770cc5db56df5f10c3d7055321d426a"
+    },
+    {
+      "local_path": "tests/gpos3.tests",
+      "upstream_path": "test/shape/data/aots/tests/gpos3.tests",
+      "sha256": "e9da81655df56b401cc21dd2f95cf2f8538499e07ed5c7760f778009f9021c48"
+    },
+    {
+      "local_path": "tests/gpos3_lookupflag.tests",
+      "upstream_path": "test/shape/data/aots/tests/gpos3_lookupflag.tests",
+      "sha256": "868a2124766ada17a4fd65f227a949ce7f358818d212ea5b655dba5d124fecb4"
+    },
+    {
+      "local_path": "tests/gpos4_simple.tests",
+      "upstream_path": "test/shape/data/aots/tests/gpos4_simple.tests",
+      "sha256": "73bfb7a578ac45c835040475eb566c24ecdb37ab7d1ddf2923facbf5f7f9999a"
+    },
+    {
+      "local_path": "tests/gpos5.tests",
+      "upstream_path": "test/shape/data/aots/tests/gpos5.tests",
+      "sha256": "9fd32fb10e9e5c65a16bde585c4b6078f4778099381f053b4e23c05229e860db"
+    },
+    {
+      "local_path": "tests/gpos_chaining3_boundary.tests",
+      "upstream_path": "test/shape/data/aots/tests/gpos_chaining3_boundary.tests",
+      "sha256": "8b196927d7b362c177a3db00695d58104945bb713c5cd19fd63d91058e95402d"
+    },
+    {
+      "local_path": "tests/gsub3_1_lookupflag.tests",
+      "upstream_path": "test/shape/data/aots/tests/gsub3_1_lookupflag.tests",
+      "sha256": "3b0512a4c5db7f48fba4f2566739471ba51ef57089834b8c4b5a4255f6c618de"
+    },
+    {
+      "local_path": "tests/gsub3_1_simple.tests",
+      "upstream_path": "test/shape/data/aots/tests/gsub3_1_simple.tests",
+      "sha256": "60699442a74d0cd6a646a24dbed9e1f6f9f929cedb253cbd45187284252a5885"
+    },
+    {
+      "local_path": "tests/gsub_chaining2_next_glyph.tests",
+      "upstream_path": "test/shape/data/aots/tests/gsub_chaining2_next_glyph.tests",
+      "sha256": "704f139e9ac4090f321a7cb07d1719e38f8f4f493875db6bb66838c34e4140c4"
+    },
+    {
+      "local_path": "tests/gsub_context1_lookupflag.tests",
+      "upstream_path": "test/shape/data/aots/tests/gsub_context1_lookupflag.tests",
+      "sha256": "446a51d5d38a7d9e0a51b7a97fdc35eb55402610ef61039dee211f6cbb30b4eb"
+    },
+    {
+      "local_path": "tests/gsub_context1_next_glyph.tests",
+      "upstream_path": "test/shape/data/aots/tests/gsub_context1_next_glyph.tests",
+      "sha256": "6c4ae4081d9f7f2d5fd693495dfe409eee4aa70101b3d4066d176790705b0a24"
+    },
+    {
+      "local_path": "COPYING",
+      "upstream_path": "test/shape/data/aots/COPYING",
+      "sha256": "f55f74bf740db07bb032a90aa74af4307adea3d489c1ccba12453cf0c0a764cb"
+    },
+    {
+      "local_path": "COPYING.harfbuzz",
+      "upstream_path": "COPYING",
+      "sha256": "ba8f810f2455c2f08e2d56bb49b72f37fcf68f1f4fade38977cfd7372050ad64"
+    }
+  ],
+  "cases": [
+    {
+      "id": "classdef2.tests:2",
+      "source_file": "tests/classdef2.tests",
+      "source_line": 2,
+      "font": "classdef2_font4.otf",
+      "local_font_path": "testdata/fonttools/classdef2_font4.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids"
+    },
+    {
+      "id": "gpos3.tests:2",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 2,
+      "font": "gpos3_font1.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font1.otf",
+      "upstream_active": false,
+      "recovery_status": "upstream_disabled",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:3",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 3,
+      "font": "gpos3_font1.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:4",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 4,
+      "font": "gpos3_font3.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_active": false,
+      "recovery_status": "upstream_disabled",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:5",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 5,
+      "font": "gpos3_font3.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_active": false,
+      "recovery_status": "upstream_disabled",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:6",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 6,
+      "font": "gpos3_font3.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_active": false,
+      "recovery_status": "upstream_disabled",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:7",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 7,
+      "font": "gpos3_font3.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_active": false,
+      "recovery_status": "upstream_disabled",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:8",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 8,
+      "font": "gpos3_font3.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:9",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 9,
+      "font": "gpos3_font3.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:10",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 10,
+      "font": "gpos3_font3.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:11",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 11,
+      "font": "gpos3_font3.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3.tests:12",
+      "source_file": "tests/gpos3.tests",
+      "source_line": 12,
+      "font": "gpos3_font3.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font3.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3_lookupflag.tests:2",
+      "source_file": "tests/gpos3_lookupflag.tests",
+      "source_line": 2,
+      "font": "gpos3_font2.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font2.otf",
+      "upstream_active": false,
+      "recovery_status": "upstream_disabled",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos3_lookupflag.tests:3",
+      "source_file": "tests/gpos3_lookupflag.tests",
+      "source_line": 3,
+      "font": "gpos3_font2.otf",
+      "local_font_path": "testdata/fonttools/gpos3_font2.otf",
+      "upstream_active": false,
+      "recovery_status": "upstream_disabled",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos4_simple.tests:2",
+      "source_file": "tests/gpos4_simple.tests",
+      "source_line": 2,
+      "font": "gpos4_simple_1.otf",
+      "local_font_path": "testdata/fonttools/gpos4_simple_1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos4_simple.tests:3",
+      "source_file": "tests/gpos4_simple.tests",
+      "source_line": 3,
+      "font": "gpos4_simple_1.otf",
+      "local_font_path": "testdata/fonttools/gpos4_simple_1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos4_simple.tests:4",
+      "source_file": "tests/gpos4_simple.tests",
+      "source_line": 4,
+      "font": "gpos4_simple_1.otf",
+      "local_font_path": "testdata/fonttools/gpos4_simple_1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos4_simple.tests:5",
+      "source_file": "tests/gpos4_simple.tests",
+      "source_line": 5,
+      "font": "gpos4_simple_1.otf",
+      "local_font_path": "testdata/fonttools/gpos4_simple_1.otf",
+      "upstream_active": false,
+      "recovery_status": "upstream_disabled",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos4_simple.tests:6",
+      "source_file": "tests/gpos4_simple.tests",
+      "source_line": 6,
+      "font": "gpos4_simple_1.otf",
+      "local_font_path": "testdata/fonttools/gpos4_simple_1.otf",
+      "upstream_active": false,
+      "recovery_status": "upstream_disabled",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos5.tests:2",
+      "source_file": "tests/gpos5.tests",
+      "source_line": 2,
+      "font": "gpos5_font1.otf",
+      "local_font_path": "testdata/fonttools/gpos5_font1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos5.tests:3",
+      "source_file": "tests/gpos5.tests",
+      "source_line": 3,
+      "font": "gpos5_font1.otf",
+      "local_font_path": "testdata/fonttools/gpos5_font1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos_chaining3_boundary.tests:2",
+      "source_file": "tests/gpos_chaining3_boundary.tests",
+      "source_line": 2,
+      "font": "gpos_chaining3_boundary_f1.otf",
+      "local_font_path": null,
+      "upstream_active": true,
+      "recovery_status": "font_not_in_local_subset",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos_chaining3_boundary.tests:3",
+      "source_file": "tests/gpos_chaining3_boundary.tests",
+      "source_line": 3,
+      "font": "gpos_chaining3_boundary_f2.otf",
+      "local_font_path": "testdata/fonttools/gpos_chaining3_boundary_f2.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos_chaining3_boundary.tests:4",
+      "source_file": "tests/gpos_chaining3_boundary.tests",
+      "source_line": 4,
+      "font": "gpos_chaining3_boundary_f3.otf",
+      "local_font_path": null,
+      "upstream_active": true,
+      "recovery_status": "font_not_in_local_subset",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos_chaining3_boundary.tests:5",
+      "source_file": "tests/gpos_chaining3_boundary.tests",
+      "source_line": 5,
+      "font": "gpos_chaining3_boundary_f4.otf",
+      "local_font_path": null,
+      "upstream_active": true,
+      "recovery_status": "font_not_in_local_subset",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gsub3_1_lookupflag.tests:2",
+      "source_file": "tests/gsub3_1_lookupflag.tests",
+      "source_line": 2,
+      "font": "gsub3_1_lookupflag_f1.otf",
+      "local_font_path": "testdata/fonttools/gsub3_1_lookupflag_f1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids"
+    },
+    {
+      "id": "gsub3_1_simple.tests:2",
+      "source_file": "tests/gsub3_1_simple.tests",
+      "source_line": 2,
+      "font": "gsub3_1_simple_f1.otf",
+      "local_font_path": "testdata/fonttools/gsub3_1_simple_f1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids"
+    },
+    {
+      "id": "gsub_chaining2_next_glyph.tests:2",
+      "source_file": "tests/gsub_chaining2_next_glyph.tests",
+      "source_line": 2,
+      "font": "gsub_chaining2_next_glyph_f1.otf",
+      "local_font_path": "testdata/fonttools/gsub_chaining2_next_glyph_f1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids"
+    },
+    {
+      "id": "gsub_context1_lookupflag.tests:2",
+      "source_file": "tests/gsub_context1_lookupflag.tests",
+      "source_line": 2,
+      "font": "gsub_context1_lookupflag_f1.otf",
+      "local_font_path": "testdata/fonttools/gsub_context1_lookupflag_f1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids"
+    },
+    {
+      "id": "gsub_context1_lookupflag.tests:3",
+      "source_file": "tests/gsub_context1_lookupflag.tests",
+      "source_line": 3,
+      "font": "gsub_context1_lookupflag_f2.otf",
+      "local_font_path": null,
+      "upstream_active": true,
+      "recovery_status": "font_not_in_local_subset",
+      "expected_fields": "glyph_ids"
+    },
+    {
+      "id": "gsub_context1_next_glyph.tests:2",
+      "source_file": "tests/gsub_context1_next_glyph.tests",
+      "source_line": 2,
+      "font": "gsub_context1_next_glyph_f1.otf",
+      "local_font_path": "testdata/fonttools/gsub_context1_next_glyph_f1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids"
+    }
+  ]
+}

@@ -21,9 +21,15 @@ positioning case and five tagged records, exposing unresolved mark origins
 (SHAPE-007), retained mark advances (SHAPE-008), and another SHAPE-005 blocker.
 The pair batch adds two passing pair-positioning cases and a flagged
 advance-changing case blocked by SHAPE-005, using two newly recovered fonts.
+The real-text batch adds eleven complete HarfBuzz captures: six Latin cases
+and the single Hebrew letter pass; four further Hebrew cases remain tagged.
+They reproduce unresolved mark offsets, expose a default-mark-support
+normalization bug (SHAPE-010), and raise explicit output-order and cluster-policy
+questions (SHAPE-009/011).
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md) records their workflow, evidence, and
-open contract questions. These tests expose correctness gaps; they do not fix
-the implementation and are excluded from the ordinary suite.
+open contract questions. Failing discovery tests expose gaps without fixing
+the implementation and are excluded from the ordinary suite; passing baselines
+remain ordinary regressions.
 
 ## Modules, directories, and testing responsibilities
 
@@ -40,12 +46,12 @@ within the same Go module.
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
-| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. The JSON harness compares glyph IDs, clusters, advances, and offsets; the AOTS adapter compares glyph IDs or glyph IDs plus origins according to the stored format. Ten failing records are behind `shaping_knownbugs`. Neither invokes HarfBuzz during tests. |
-| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expected-output fixtures. Currently only `Gentium_AB.json`, covering Latin `AB`. |
+| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. Ten AOTS records and four real-text cases are behind `shaping_knownbugs`. No runner invokes HarfBuzz during tests. |
+| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and eleven independently captured Latin/Hebrew cases in `text/baselines.json`. `text/README.md` records capture semantics, commands, and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Fourteen selected records are executed (five GSUB, nine GPOS; four passing, ten tagged failures, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
-| [`testdata/fonts/`](../testdata/fonts/) | Larger fonts, including Calibri, Gentium Plus, and Go fonts, for mapping, metrics, parser, shaping, and diagnostic exercises. |
-| [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` is a preparation utility. These are not Go test drivers. |
+| [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Also contains Calibri and Go fonts. |
+| [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` prepares fonts; `recover_harfbuzz_aots.py` recovers upstream records; `capture_harfbuzz_text.py` captures/checks complete text output with HarfBuzz 15.0.0. These are not Go test drivers. |
 | [`ot-tools/`](../ot-tools/) | Manual diagnostics: `shape` prints glyph output, `view` renders glyph proofs, and `font` inspects tables. Useful for investigation; visual inspection does not replace output assertions. |
 | [`internal/fontload/`](../internal/fontload/) | Shared font-byte/SFNT loading support. It does not select or execute shaping features. |
 
@@ -409,8 +415,8 @@ be treated as complete glyph/cluster/advance/offset JSON. The current adapter
 supports glyph-only GSUB and glyph-origin GPOS expectations with global and single-index feature
 requests, preserving one-based positive values and mapping HarfBuzz zero to
 disabled. Broader feature syntax remains unimplemented in this adapter;
-richer expectations would require a separate
-capture from a pinned HarfBuzz build. Missing expected fields must not be filled
+richer expectations require a separate
+capture with recorded HarfBuzz provenance (as in the text batch below). Missing expected fields must not be filled
 from our own shaper. See the recovery README for option semantics, feature ranges, licensing,
 and reproducible recovery commands.
 
@@ -444,20 +450,42 @@ fonts with `test` selecting their sole pair lookup (type 2 format 1). Matching
 18/19, nonmatching 18/20, and incomplete end-of-input cases pass. The separate
 advance-changing pair record remains tagged because IgnoreBaseGlyphs wrongly
 filters its unclassified glyphs (SHAPE-005). It retains the upstream −200
-advance effect on trailing origins; passing pair-advance behavior is not yet
-established. Cursive baselines remain deferred.
+advance effect on trailing origins. That AOTS advance-changing case remains
+blocked; the later Latin `AVATAR` captures do pass with adjusted advances.
+Cursive baselines remain deferred.
 
-The separate JSON path in `internal/hbcmp` runs `Shaper.Shape` with all three engines.
-It compares ordered numeric glyph IDs, clusters, X/Y offsets, and X/Y advances.
-That JSON corpus currently contains only `Gentium_AB.json`: useful infrastructure,
-but almost no independent evidence for complex shaping.
+The original JSON path in `internal/hbcmp` runs `Shaper.Shape` with all three
+engines and API-default buffering. It still loads only the top-level
+`Gentium_AB.json`; it does not recurse into the new text corpus.
 
 Each fixture has `context` (font, ISO script, language, direction, optional
 feature strings and `testfont`), Unicode scalar `input`, and expected `output`
 records with `g`, `cl`, `dx`, `dy`, `ax`, and `ay`. Use the existing JSON
 as the schema example. The declared `normalization` field is not applied by the
-runner. There is no watermark/event configuration, and internal masks, unsafe
+original runner. There is no watermark/event configuration in that format, and internal masks, unsafe
 flags, and unresolved attachments are not compared.
+
+The [real-text corpus](../internal/hbcmp/testdata/text/README.md) adds eleven
+independent captures from installed HarfBuzz 15.0.0, with exact commands,
+executable and font hashes, script/language/direction, scalar cluster indexes
+at level 0, and font-unit positions. The test-only runner validates every font
+and complete output record, uses core/Hebrew engines and explicit whole-input
+watermarks `n+1/1/n+2`, and compares the emitted sequence without sorting,
+reversing, resolving attachments, or changing clusters. Neither HarfBuzz nor
+Python is required for Go tests. The capture tool is a preparation dependency
+only; its executable hash records the installed tool, not a reproducible build.
+
+Six Latin cases pass exactly: `office` with ligatures on/off, `AVATAR` with
+kerning on/off, and NFC/NFD `café`. Noto Sans Hebrew's single-letter shin also
+passes. Plain shalom has matching per-glyph metrics but opposite output order
+(SHAPE-009, contract question). Pointed shin exposes unresolved anchor offsets
+(SHAPE-007) and separate mark clusters (SHAPE-011, contract question).
+Vav + holam wrongly uses presentation-form fallback despite default mark
+positioning (SHAPE-010); pointed shalom combines these discrepancies.
+The four failing cases are in three tagged top-level tests, bringing the full
+discovery suite to sixteen failing top-level tests across eleven findings.
+This small set supplies real-text evidence, not full Latin/Hebrew conformance
+or coverage of streaming, feature events, or paragraph bidi processing.
 
 ### Measured snapshot
 
@@ -577,18 +605,24 @@ continue to pass, but expanding their coverage is not a current priority.
    Six GPOS origin records add one passing chained single-positioning baseline
    and five failures for SHAPE-005/007/008. The pair batch adds matching and
    nonmatching format-1 baselines that pass, plus an advance-changing case
-   blocked by SHAPE-005. Next add richer position captures and class-based pair
-   coverage; the current origins omit individual advances.
+   blocked by SHAPE-005. Eleven complete real-text captures now add passing
+   Latin ligatures, kerning with adjusted advances, NFC/NFD accents, and a Hebrew
+   single-letter control. Four Hebrew cases expose SHAPE-007/009/010/011.
+   Next settle the RTL output and mark-cluster contracts, fix documented blockers
+   in separate sessions, and promote the corresponding baselines. Add isolated
+   class-based pair coverage; the AOTS origins omit individual advances.
    Extend the adapter to further recovered cases, explicitly handling their
    feature options and available expected fields. Expand the corpus to
-   Latin ligatures, kerning, feature values/ranges, and accented text;
-   Hebrew letters, combining marks, and RTL glyph/cluster order. Compare glyph
+   additional Latin/Hebrew feature values/ranges, languages, and combining
+   sequences beyond the initial words. Compare glyph
    IDs and order for glyph-only records. For richer independently captured
    baselines, also compare clusters, advances, and offsets.
 3. **Normalization and cluster preservation.** Exercise composed/decomposed
    Latin accents and Hebrew combining sequences, canonical ordering, unavailable
    composed glyphs, and length-changing normalization. Assert original input
-   correspondence and feature-range behavior alongside glyph output.
+   correspondence and feature-range behavior alongside glyph output. NFC/NFD
+   `café` now passes; default Hebrew mark-support detection is SHAPE-010 and
+   the mark-cluster contract remains SHAPE-011.
 4. **Final mark positioning.** Complete attachment positioning needed by Latin
    accents and Hebrew marks, including mark-to-base and mark-to-mark cases and
    marks on ligatures where applicable. Test final coordinates and advances,

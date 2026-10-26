@@ -69,7 +69,7 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: thirteen failing top-level tests across the two packages.
+# Discovery suite: sixteen failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Inspect one finding (replace 001 with 002, 003, or 004).
@@ -97,6 +97,9 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-006](#shape-006--contextual-lookup-revisits-matched-input) | reproduced | Contextual lookup progression applies overlapping matches |
 | [SHAPE-007](#shape-007--mark-attachments-do-not-resolve-to-origins) | reproduced | Mark attachment metadata does not become final anchor offsets |
 | [SHAPE-008](#shape-008--marks-retain-nominal-advances) | reproduced | Mark advances shift following glyph origins |
+| [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | needs decision | Hebrew output remains in logical order; baseline uses visual order |
+| [SHAPE-010](#shape-010--default-mark-positioning-is-missed-during-normalization) | reproduced | Hebrew presentation-form fallback ignores default-enabled GPOS mark support |
+| [SHAPE-011](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0) | needs decision | Hebrew marks retain individual scalar clusters; baseline groups them with the base |
 
 The AOTS baseline batch adds SHAPE-005/006 in
 [`internal/hbcmp/aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go).
@@ -118,6 +121,14 @@ The [pair-positioning batch](../testdata/harfbuzz/aots/PAIR.md) at revision
 `a16f51a27adce48fcd0346f96de0bb8b0231faa6` adds another SHAPE-005 regression,
 bringing the tagged suite to thirteen failing tests for the same eight findings.
 Its two ordinary pair cases and the full ordinary suite pass.
+
+The [real-text batch](../internal/hbcmp/testdata/text/README.md), verified on
+2026-10-26 at source revision `f1deff457223a87754f86d8e17ab133682566787` plus
+the new tests, adds eleven complete HarfBuzz captures: six Latin cases and five
+Hebrew cases. Seven pass; four fail in three tagged top-level tests. The full
+ordinary suite passes; the combined tagged suite has sixteen failing top-level
+tests for eleven findings, including the two unresolved contract choices.
+Expected outputs come directly from HarfBuzz 15.0.0; the Go suite runs offline.
 
 ## SHAPE-001 — SetupMasks changes are overwritten
 
@@ -480,6 +491,18 @@ the two cases here do not establish those other behaviors.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE007' -count=1 -v
 ```
 
+**Real Hebrew extension (2026-10-26):**
+`TestKnownBugSHAPE007HebrewMarkOffsets` uses Noto Sans Hebrew and input
+U+05E9 U+05B8 U+05C1 (shin, qamats, shin dot), Hebr/he/RTL, default features,
+buffers `4/1/5`. HarfBuzz emits marks GID 79 and 100 with X offsets 227 and 539
+and zero advances, followed by base GID 96 with advance 730. Our output is in
+logical order and retains separate mark clusters; both marks have zero offsets
+despite `AttachTo:0`, classes 4/5, and anchor references. The full assertion
+also exposes SHAPE-009/011; it does not reverse or merge records to conceal
+those differences. This font already has zero nominal mark advances, so it
+does not reproduce SHAPE-008. Exact output and provenance are in the
+[real-text report](../internal/hbcmp/testdata/text/README.md).
+
 ## SHAPE-008 — Marks retain nominal advances
 
 **Status:** reproduced. **Test:** `TestKnownBugSHAPE008AOTSUnattachedMarkAdvances`.
@@ -515,6 +538,111 @@ This finding does not prescribe zero advances for every mark in every script.
 
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE008' -count=1 -v
+```
+
+## SHAPE-009 — RTL output order differs from HarfBuzz
+
+**Status:** needs decision; mismatch reproduced.
+**Test:** `TestKnownBugSHAPE009HebrewRTLOrder`.
+**Verified:** real-text batch revision/date above.
+
+**Baseline and reproduction:** Noto Sans Hebrew, `שלום` (U+05E9 U+05DC U+05D5
+U+05DD), Hebr/he/RTL, default features, buffers `5/1/6`. HarfBuzz's visual
+output GIDs/clusters are `[23/3,124/2,55/1,96/0]`. Our output is
+`[96/0,55/1,124/2,23/3]`. Every per-glyph advance/offset matches when identified
+by its cluster; the assertion deliberately compares the unmodified sequences.
+The single-letter `hebrew_shin` control passes all fields.
+
+**Implementation evidence:** `writeRunBufferRangeWithFont` in
+[shape_api.go](../otshape/shape_api.go) emits increasing buffer indexes.
+The Hebrew engine supplies composition/reordering hooks but no final reversal.
+The existing design documents already list final RTL reversal as absent.
+
+**Decision needed:** should `GlyphSink` receive final visual order for an RTL
+run, or logical shaping order with final ordering delegated to the caller?
+The public `Shape` comment says “output order” without settling this distinction.
+The current baseline chooses HarfBuzz's visual order; this is not paragraph
+bidi itemization. Define the ownership and streaming behavior before treating
+the missing reversal as an unconditional API defect. Reversing each streamed
+chunk independently would not establish whole-run parity. If logical output
+is intentional, document that contract and any justified comparison adapter
+explicitly; retain the original HarfBuzz oracle.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE009' -count=1 -v
+```
+
+## SHAPE-010 — Default mark positioning is missed during normalization
+
+**Status:** reproduced. **Test:** `TestKnownBugSHAPE010HebrewComposition`
+(`hebrew_vav_holam` and `hebrew_shalom_pointed`).
+**Verified:** real-text batch revision/date above.
+
+**Expected behavior and basis:** the Hebrew engine's own fallback policy
+rejects presentation-form composition when GPOS mark support is present.
+HarfBuzz likewise retains separate vav and holam glyphs for this font. Existing
+`TestComposeFallbackDisabledWhenGposMarkPresent` tests that policy with a mock
+context, but does not test the context supplied by the public shaping pipeline.
+
+**Reproduction:** Noto Sans Hebrew, U+05D5 U+05B9, Hebr/he/RTL, default
+features, buffers `3/1/4`. Expected GIDs are `[46,124]`, both cluster 0;
+the holam has X offset 92 and advance 0, the vav advance 301. Actual output
+is one GID 126, cluster 0, offset 0, advance 301, with nil error. GID 126
+maps from the presentation form U+FB4B. The same contraction occurs at input
+positions 4/5 of pointed shalom, whose complete baseline expects seven glyphs
+but receives six. All exact records are in the
+[real-text report](../internal/hbcmp/testdata/text/README.md).
+
+**Implementation evidence:** `planHasGposMark` in
+[shape_api.go](../otshape/shape_api.go) tests `plan.Masks.ByFeature` for a nonzero
+`mark`/`mkmk` mask. `compileUserFeatureMasks` in [plan.go](../otshape/plan.go)
+allocates those masks only for explicit user features. Default GPOS features
+can execute with mask zero and therefore do not satisfy this check. The
+result reaches `NormalizeContext.HasGposMark`, permitting `hebrewCompose` in
+[othebrew.go](../otshape/othebrew/othebrew.go) to map vav + holam to U+FB4B.
+The pointed-shin case independently demonstrates active default mark lookups
+through its attachment metadata, despite the absence of user feature masks.
+
+**Fix scope:** derive mark-support information from the appropriate resolved
+font/plan state, and test default-enabled, explicitly enabled/disabled, and
+absent mark features. An allocated user mask alone also does not prove that
+the font has usable mark positioning. Those additional variants remain future
+coverage. Resolving composition will not by itself fix output order, mark
+offsets, or cluster policy; the tagged tests retain all those expectations.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE010' -count=1 -v
+```
+
+## SHAPE-011 — Combining-mark clusters differ from HarfBuzz level 0
+
+**Status:** needs decision; mismatch reproduced by
+`TestKnownBugSHAPE007HebrewMarkOffsets` and the pointed-word subtest of
+`TestKnownBugSHAPE010HebrewComposition`. No additional top-level test is counted.
+**Verified:** real-text batch revision/date above.
+
+**Baseline and reproduction:** pointed shin U+05E9 U+05B8 U+05C1 in Noto Sans
+Hebrew, same context as SHAPE-007's extension. HarfBuzz cluster level 0 assigns
+the base and both marks cluster 0. Our glyphs 96, 79, 100 retain clusters
+0, 1, 2 respectively. Pointed shalom has the same difference for its initial
+three scalars. This discrepancy is independent of RTL sequence order.
+
+**Implementation evidence:** input clusters start as scalar indexes; normalization
+merges clusters when composing, and selected reordering hooks merge their
+changed spans. The ordinary mapping/output path preserves the remaining
+individual indexes. No general base/combining-mark cluster grouping is applied
+to these inputs. These observations do not imply lost Unicode input: they show
+a different grouping convention.
+
+**Decision needed:** should `GlyphRecord.Cluster` group base-plus-mark sequences
+like HarfBuzz level 0, retain finer scalar correspondence, or expose a selectable
+policy? The current public API has no cluster-level option. Document the policy
+and its implications for caret mapping, feature ranges, and streaming boundaries.
+The captured level-0 oracle must remain unchanged; any future alternative
+comparison mode needs its own explicit independently captured expectation.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE007Hebrew' -count=1 -v
 ```
 
 ## Remaining discovery work

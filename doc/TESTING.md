@@ -142,6 +142,98 @@ review probes outside that first regression batch.
 
 ## What the existing tests establish
 
+### Font discovery, provenance, and actual fixture use
+
+[`tests-found.txt`](../testdata/scripts/tests-found.txt) is a saved discovery
+report from [`find_test_fonts.py`](../testdata/scripts/find_test_fonts.py), not
+a test manifest or a list of executed tests. The script opens fonts with
+FontTools, indexes their GSUB/GPOS lookup types, and prints counts and example
+filenames. Its "Coverage" heading describes available lookup data, not this
+repository's test coverage. No Go test reads this report to discover cases;
+the tests select fixtures explicitly.
+
+The original local FontTools checkout was found at
+`/Users/npi/prg/python/fonttools`, with fixtures under
+`Tests/ttLib/tables/data/aots`. On 2026-10-26, its HEAD was
+`9cec77d49bdb1a1ca346ac5fefdc5e7c30929026` and its origin was
+<https://github.com/fonttools/fonttools>. All 24 files in our
+[`testdata/fonttools/`](../testdata/fonttools/) directory were byte-for-byte
+identical to their counterparts there: 12 fonts and 12 TTX files. This is a
+verified local provenance reference, not a runtime dependency or proof of the
+exact historical download command.
+
+The upstream fixture README identifies
+[Adobe's Annotated OpenType Specification (AOTS)](https://github.com/adobe-type-tools/aots)
+revision `1c41fd20d2b020177625541a228c4c7c934879ef` as the source of the `.otf`
+fonts. It says they were built with `make` and copied from `tests/*.otf`;
+the original AOTS XML was not copied. The FontTools checkout contains 206 AOTS
+fonts, with TTX references including 94 GSUB, 93 GPOS, and 148 GDEF files.
+
+The Python driver is FontTools' `Tests/ttLib/tables/tables_test.py`, using
+pytest. It checks binary-to-TTX output and XML round-tripping against stored
+TTX. Those are font-table reading/serialization tests, not Unicode-to-glyph
+shaping tests. No HarfBuzz-style `*.tests` shaping case files were found under
+that checkout's `Tests/` directory.
+
+The repository inventory as of 2026-10-26 is:
+
+| Item | Count |
+| --- | ---: |
+| Distinct font filenames in `tests-found.txt` | 31 |
+| Listed fonts copied into `testdata/fonttools/` | 12 |
+| Copied fonts referenced by Go tests | 12 |
+| Copied TTX files consumed by structural comparisons | 9 of 12 |
+| Listed fonts not copied into this repository | 19 |
+
+The following map accounts for all 12 copied fonts. Names below omit `.otf`;
+each has a paired `.ttx.GSUB` or `.ttx.GPOS` file. The consumers listed are
+representative; additional tests reuse some fonts for errors, bounds, masks,
+and streaming.
+
+| Font(s) | Structural TTX comparisons | Lookup execution / public shaping examples |
+| --- | --- | --- |
+| `gsub3_1_simple_f1` | GSUB structural and concrete comparisons | Alternate selection in `otlayout/feature_functional_test.go`; public GSUB in `otshape/otcore/otcore_test.go`; tagged shared-API regressions |
+| `gsub3_1_lookupflag_f1` | GSUB structural and concrete comparisons | No corresponding execution case in `feature_functional_test.go` |
+| `gsub_chaining2_next_glyph_f1` | Selected single/ligature lookups in both GSUB comparison suites | No corresponding execution case in `feature_functional_test.go` |
+| `gsub_context1_lookupflag_f1` | Selected contextual lookup in both GSUB comparison suites | Contextual substitution with ignored marks in `otlayout/feature_functional_test.go`; pipeline/edit tests |
+| `gsub_context1_next_glyph_f1`, `classdef2_font4` | Selected contextual lookups in both GSUB comparison suites | No corresponding execution cases in `feature_functional_test.go` |
+| `gpos_chaining3_boundary_f2` | Selected single, pair, and chained-context lookups in both GPOS comparison suites | Single/pair execution in `otlayout/gpos_runtime_golden_test.go` |
+| `gpos4_simple_1`, `gpos5_font1` | Mark-to-base and mark-to-ligature comparisons | Attachment execution in `otlayout/gpos_runtime_golden_test.go` |
+| `gpos3_font1`, `gpos3_font2`, `gpos3_font3` | Their TTX files are currently unused by the comparison tests | Cursive attachment cases in `otshape/otcore/gpos_test.go` |
+
+The test entry points are:
+
+| File | Responsibility |
+| --- | --- |
+| [`internal/ttxtest/parse_ttx_gsub_test.go`](../internal/ttxtest/parse_ttx_gsub_test.go) | One self-test of the TTX-reading helper. It reads the alternate fixture's XML; it does not load its binary font or shape text. |
+| [`ot/ttx_gsub_compare_test.go`](../ot/ttx_gsub_compare_test.go) | Seven structural GSUB tests comparing binary parsing with TTX-derived expectations. |
+| [`ot/ttx_gpos_compare_test.go`](../ot/ttx_gpos_compare_test.go) | Five structural GPOS tests comparing binary parsing with TTX-derived expectations. |
+| [`ot/parse_concrete_golden_ttx_test.go`](../ot/parse_concrete_golden_ttx_test.go) | Two table-driven tests with seven GSUB and five GPOS subcases, covering the concrete lookup representation. These overlap the structural cases, rather than adding twelve distinct scenarios. |
+| [`otlayout/feature_functional_test.go`](../otlayout/feature_functional_test.go) | Applies GSUB lookups to glyph buffers; tests alternate selection and contextual substitution with ignored marks. |
+| [`otlayout/gpos_runtime_golden_test.go`](../otlayout/gpos_runtime_golden_test.go) | Applies positioning lookups and checks single/pair adjustments and attachment metadata. |
+| [`otshape/otcore/otcore_test.go`](../otshape/otcore/otcore_test.go), [`gpos_test.go`](../otshape/otcore/gpos_test.go) | Exercises the public shaping API, including the alternate and cursive mini-fonts; other cases use larger fonts. |
+
+For example, `gsub3_1_simple_f1` is used to test the XML helper, binary GSUB
+parsing, lookup execution on glyph IDs, and public shaping from Unicode input.
+The helper's single test therefore does not represent the extent of fixture
+testing elsewhere in the repository.
+
+The 19 listed but uncopied fonts include `gsub3_1_multiple_f1`,
+`gsub_context1_lookupflag_f2`, `gsub7_font1/2`, `gpos6_font1`, `gpos9_font1`,
+and all five listed `gpos_context*` fonts. The remaining entries are
+`gpos4_multiple_anchors_1`, `gpos4_lookupflag_f1/f2`, `Lobster.subset.otf`,
+`TestVGID-Regular.otf`, `I.otf`, `NotoSans-VF-cubic.subset.ttf`, and
+`Amstelvar-avar2.subset.ttf`. Absence of these particular fixtures does not
+establish absence of lookup-type coverage: other tests construct synthetic
+lookup data.
+
+We have therefore adopted a selected subset of the fonts and written Go tests
+around them, rather than imported the complete upstream test suite. To extend
+this work into independent shaping baselines, recover the corresponding
+HarfBuzz/AOTS input/options/expected-output cases, verify the font versions,
+and adapt relevant cases into `internal/hbcmp`. Keep their upstream provenance
+and distinguish those behavioral expectations from the TTX structure checks.
+
 ### Structural parsing
 
 The TTX path loads a mini-font with `ot.Parse(data, ot.IsTestfont)`, parses its
@@ -150,16 +242,103 @@ paired XML with `internal/ttxtest`, and compares selected structures.
 retaining validation of present data. Assertions include lookup types/formats,
 coverage, substitution records, classes, and selected positioning/anchor data.
 
-| Table | Stored TTX comparison scope | Example fixtures |
-| --- | --- | --- |
-| GSUB | Single substitution (delta and explicit mapping), alternate format 1, ligature format 1, contextual formats 1 and 2 | `gsub3_1_simple_f1`, `gsub_chaining2_next_glyph_f1`, `gsub_context1_lookupflag_f1`, `gsub_context1_next_glyph_f1`, `classdef2_font4` |
-| GPOS | SinglePos format 1, PairPos format 1, MarkToBase format 1, MarkToLigature format 1, ChainContextPos format 3 | `gpos_chaining3_boundary_f2`, `gpos4_simple_1`, `gpos5_font1` |
-
 See `ot/ttx_*_compare_test.go` and `ot/parse_concrete_golden_ttx_test.go`.
 Synthetic matrices in `ot/parse_concrete_golden_synth_test.go` and real-font
 checks in `ot/parse_concrete_golden_fonts_test.go` extend structural coverage
 beyond the TTX subset. Structural coverage is distinct from lookup-runtime or
 end-to-end shaping coverage.
+
+#### TTX coverage by lookup type and format
+
+This inventory was checked against the selected lookup indexes, comparison
+functions, and binary fixture subtable formats on **2026-10-26**. "Covered"
+means an active test compares that lookup's type-specific data with a TTX-derived
+expectation. It does not mean every variation or field is covered. Lookup types
+are distinct from feature tags such as `liga`, `kern`, or the fixtures' `test`;
+these are structural tests of lookup data, not feature-planning tests.
+
+Both the structural and concrete comparison suites exercise the same type/format
+subset. Merely containing a lookup in a loaded font, or having a comparison
+helper capable of handling it, does not count as a TTX assertion.
+
+| GSUB type | Operation | Formats with active TTX assertions | Formats still missing | Selected fixture and lookup index (zero-based) |
+| --- | --- | --- | --- | --- |
+| 1 | Single substitution | 1 | 2 | `gsub_chaining2_next_glyph_f1`, lookup 0 |
+| 2 | Multiple substitution | None | 1 | Lookup 3 exists in several copied GSUB fonts, but is not selected for comparison |
+| 3 | Alternate substitution | 1 | — | `gsub3_1_simple_f1` and `gsub3_1_lookupflag_f1`, lookup 0 |
+| 4 | Ligature substitution | 1 | — | `gsub_chaining2_next_glyph_f1`, lookups 1 and 2 |
+| 5 | Contextual substitution | 1, 2 | 3 | Format 1: `gsub_context1_lookupflag_f1` / `gsub_context1_next_glyph_f1`, lookup 4; format 2: `classdef2_font4`, lookup 3 |
+| 6 | Chained contextual substitution | None | 1, 2, 3 | Format 2 is present at lookup 4 of `gsub_chaining2_next_glyph_f1`, but is not selected |
+| 7 | Extension substitution | None | 1, including wrapped lookup data | No selected fixture |
+| 8 | Reverse chained single substitution | None | 1 | No selected fixture |
+
+An earlier summary said single substitution covered both delta and explicit-map
+formats. That overstated the TTX coverage: the selected binary lookup is format
+1 only. The helper has a format-2 comparison branch, but no active TTX case
+exercises it. TTX `SingleSubst` represents mappings without necessarily retaining
+the binary format; `normalizeSingleSubst` currently infers format from the
+mapping. A new format-2 case must verify the intended binary encoding as well.
+
+| GPOS type | Operation | Formats with active TTX assertions | Formats still missing | Selected fixture and lookup index (zero-based) |
+| --- | --- | --- | --- | --- |
+| 1 | Single adjustment | 1 | 2 | `gpos_chaining3_boundary_f2`, lookup 0 |
+| 2 | Pair adjustment | 1 | 2 (class pairs) | `gpos_chaining3_boundary_f2`, lookup 1 |
+| 3 | Cursive attachment | None | 1 | `gpos3_font1/2/3` and paired TTX are already copied, but the TTX files are unused |
+| 4 | Mark-to-base attachment | 1 | — | `gpos4_simple_1`, lookup 0 |
+| 5 | Mark-to-ligature attachment | 1 | — | `gpos5_font1`, lookup 0 |
+| 6 | Mark-to-mark attachment | None | 1 | No selected fixture |
+| 7 | Contextual positioning | None | 1, 2, 3 | No selected fixture |
+| 8 | Chained contextual positioning | 3 | 1, 2 | `gpos_chaining3_boundary_f2`, lookup 4 |
+| 9 | Extension positioning | None | 1, including wrapped lookup data | No selected fixture |
+
+Thus **4 of 8 GSUB lookup types** and **5 of 9 GPOS lookup types** have some
+TTX-backed assertions. These counts are not measures of overall parser or
+shaper correctness. In particular, runtime cursive tests and synthetic tests
+for additional formats do not fill the TTX-specific gaps above.
+
+#### Work left open in the TTX test infrastructure
+
+Adding font files alone will not close these gaps. The XML expectation readers
+and the Go comparison dispatchers also need extension:
+
+- [`ParseTTXGSUB`](../internal/ttxtest/parse_ttx_gsub.go) currently models single,
+  alternate, ligature, and contextual formats 1/2. Multiple, chained contextual,
+  extension, reverse chained, and contextual format 3 need expectation support
+  and matching assertions. Its introductory comment claiming only alternate
+  support is stale; the implementation is broader.
+- [`ParseTTXGPOS`](../internal/ttxtest/parse_ttx_gpos.go) currently models single
+  format 1, pair format 1, mark-to-base, mark-to-ligature, and chained-context
+  format 3. Each missing type/format in the GPOS table requires reader and
+  comparison support. Its introductory support list also omits implemented
+  mark-to-base and mark-to-ligature handling.
+- Make unsupported selected cases fail explicitly. The XML readers can omit
+  unmodeled subtable elements, and the comparison switches have no default
+  rejection for unsupported lookup types. A newly added case must assert its
+  expected subtable count and payload, not merely pass through a dispatcher.
+- Audit common assertions while extending the suite: lookup flags are currently
+  compared only when the expected flag is nonzero. A zero expectation should
+  also be checked. Existing tests do not constitute an exhaustive matrix of
+  coverage/class encodings, lookup flags, anchor formats, or device data.
+
+For Latin/Hebrew needs, useful next TTX additions are GPOS single format 2,
+class-pair format 2, and mark-to-mark; GSUB single format 2, multiple substitution,
+and missing contextual/chained formats; and extension wrappers for both tables.
+The local AOTS collection has candidate pairs such as `gsub1_2_simple_f1`,
+`gsub2_1_simple_f1`, `gpos1_2_font1`, `gpos2_2_font1`, `gpos6_font1`,
+`gsub7_font1`, and `gpos9_font1`. Confirm each candidate's actual lookup format
+before importing it. No GSUB-8 TTX case was found in that local AOTS directory;
+it needs another fixture source or a deliberately prepared font and TTX pair.
+Cursive TTX comparisons can reuse the three already-copied pairs, but remain
+lower priority under the current script focus.
+
+Run the existing TTX comparisons and helper self-test with:
+
+```sh
+go test ./ot ./internal/ttxtest -run 'Test(TTX|ParseTTX)' -count=1 -v
+```
+
+This command passed at the inventory date. It validates the selected cases,
+not the missing rows. This documentation update adds no new tests or fixes.
 
 ### Lookup behavior and pipeline mechanics
 

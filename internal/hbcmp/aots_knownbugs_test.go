@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/npillmayer/opentype/ot"
+	"github.com/npillmayer/opentype/otshape"
 )
 
 // These assert unchanged upstream expectations. Move passing baselines into
@@ -54,4 +55,19 @@ func TestKnownBugSHAPE005AOTSIgnoreMarks(t *testing.T) {
 
 func TestKnownBugSHAPE006AOTSContextProgression(t *testing.T) {
 	runAOTSGSUBCase(t, "gsub_context1_next_glyph.tests:2")
+}
+
+// This combines ranges and values; it complements the isolated API tests.
+func TestKnownBugSHAPE003AOTSAlternates(t *testing.T) {
+	runAOTSGSUBCase(t, "gsub3_1_simple.tests:2")
+}
+
+func TestKnownBugSHAPE002AOTSAlternateRangesStreaming(t *testing.T) {
+	runAOTSGSUBCaseWithBuffers(t, "gsub3_1_simple.tests:2", otshape.BufferOptions{HighWatermark: 2, LowWatermark: 1, MaxBuffer: 4})
+}
+
+// Unclassified GID 19 must not be filtered by IgnoreBaseGlyphs. Currently raw
+// class zero equals ot.BaseGlyph, so filtering hides alternate-value behavior.
+func TestKnownBugSHAPE005AOTSIgnoreBaseGlyphs(t *testing.T) {
+	runAOTSGSUBCase(t, "gsub3_1_lookupflag.tests:2")
 }

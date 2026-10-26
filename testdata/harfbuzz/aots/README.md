@@ -4,8 +4,8 @@ Recovered on 2026-10-26 from [HarfBuzz commit
 29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b](https://github.com/harfbuzz/harfbuzz/tree/29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b/test/shape/data/aots).
 These files preserve the upstream source material. HarfBuzz was not built or
 run during the initial recovery, and recovery itself established no shaping
-pass/fail results. The subsequent [first adapter batch](ADAPTER.md) now exercises
-three active GSUB records: one passes in the ordinary suite, and two reproduce
+pass/fail results. The subsequent [adapter batches](ADAPTER.md) now exercise
+five active GSUB records: one passes in the ordinary suite, and four reproduce
 documented failures in the tagged suite.
 
 ## Scope and provenance
@@ -99,9 +99,10 @@ or run a pinned HarfBuzz build to obtain richer output and preserve that output
 as a separate, documented derivation. Full cluster/advance/offset expectations
 must never be inferred from our own shaper's output.
 
-The [initial adapter](ADAPTER.md) implements glyph-only comparison for three
-GSUB records and verifies their explicit context against HarfBuzz. GPOS origins
-and ranged feature options remain later adapter work.
+The [adapter](ADAPTER.md) implements glyph-only comparison for five GSUB records
+and verifies their explicit context against HarfBuzz. It supports global and
+single-index feature requests, including alternate values and explicit
+disabling. GPOS origins and broader feature syntax remain later adapter work.
 
 Cursive cases are recovered for completeness of the existing-font inventory;
 they remain lower priority under the Latin/Hebrew scope. This synthetic AOTS

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,13 +20,15 @@ import (
 
 const aotsRevision = "29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b"
 
-// This adapter intentionally accepts only global-test, glyph-only AOTS cases.
+// This adapter accepts glyph-only AOTS cases with global or single-index test
+// features. It is not a general HarfBuzz command-line parser.
 // Missing positions and clusters never become zero-valued expectations.
 type aotsGSUBCase struct {
 	id       string
 	fontPath string
 	fontData []byte
 	options  string
+	features []otshape.FeatureRange
 	input    []rune
 	want     []ot.GlyphIndex
 }
@@ -148,10 +151,25 @@ func parseAOTSGSUBRecord(line string) (aotsGSUBCase, error) {
 	}
 	c.fontPath, c.options = fields[0], fields[1]
 	required := map[string]bool{
-		`--features="test"`: false, "--single-par": false, "--no-clusters": false,
+		"--features": false, "--single-par": false, "--no-clusters": false,
 		"--no-glyph-names": false, "--no-positions": false,
 	}
 	for _, option := range strings.Fields(c.options) {
+		if option == "--features" {
+			return c, fmt.Errorf("missing feature value")
+		}
+		if value, ok := strings.CutPrefix(option, "--features="); ok {
+			if required["--features"] || len(value) < 2 || value[0] != '"' || value[len(value)-1] != '"' {
+				return c, fmt.Errorf("unsupported or duplicate feature option %q", option)
+			}
+			var err error
+			c.features, err = parseAOTSFeatures(value[1 : len(value)-1])
+			if err != nil {
+				return c, err
+			}
+			required["--features"] = true
+			continue
+		}
 		seen, supported := required[option]
 		if !supported || seen {
 			return c, fmt.Errorf("unsupported or duplicate option %q", option)
@@ -173,6 +191,11 @@ func parseAOTSGSUBRecord(line string) (aotsGSUBCase, error) {
 		}
 		c.input = append(c.input, rune(n))
 	}
+	for _, feature := range c.features {
+		if feature.End > len(c.input) {
+			return c, fmt.Errorf("feature range [%d,%d) exceeds input length %d", feature.Start, feature.End, len(c.input))
+		}
+	}
 	output := fields[3]
 	if !strings.HasPrefix(output, "[") || !strings.HasSuffix(output, "]") {
 		return c, fmt.Errorf("expected a bracketed glyph sequence, got %q", output)
@@ -189,7 +212,46 @@ func parseAOTSGSUBRecord(line string) (aotsGSUBCase, error) {
 	return c, nil
 }
 
+var aotsFeaturePattern = regexp.MustCompile(`^(-?)test(?:\[([0-9]+)\])?(?:=([0-9]+))?$`)
+
+func parseAOTSFeatures(spec string) ([]otshape.FeatureRange, error) {
+	var features []otshape.FeatureRange
+	for _, item := range strings.Split(spec, ",") {
+		m := aotsFeaturePattern.FindStringSubmatch(item)
+		if m == nil || (m[1] != "" && m[3] != "") {
+			return nil, fmt.Errorf("unsupported AOTS feature %q", item)
+		}
+		f := otshape.FeatureRange{Feature: ot.T("test"), On: m[1] == "", Arg: 1}
+		if !f.On {
+			f.Arg = 0
+		}
+		if m[2] != "" {
+			// Bound indexes so the exclusive end cannot overflow on 32-bit Go.
+			n, err := strconv.ParseUint(m[2], 10, 31)
+			if err != nil || n == 1<<31-1 {
+				return nil, fmt.Errorf("unsupported AOTS feature index %q", m[2])
+			}
+			f.Start, f.End = int(n), int(n)+1
+		}
+		if m[3] != "" {
+			n, err := strconv.ParseUint(m[3], 10, 31)
+			if err != nil {
+				return nil, fmt.Errorf("unsupported AOTS feature value %q", m[3])
+			}
+			// HB zero disables; it does not mean our enabled Arg=0 default.
+			f.Arg, f.On = int(n), n != 0
+		}
+		features = append(features, f)
+	}
+	return features, nil
+}
+
 func runAOTSGSUBCase(t *testing.T, id string) {
+	t.Helper()
+	runAOTSGSUBCaseWithBuffers(t, id, otshape.BufferOptions{})
+}
+
+func runAOTSGSUBCaseWithBuffers(t *testing.T, id string, opts otshape.BufferOptions) {
 	t.Helper()
 	c, err := loadAOTSGSUBCase(id)
 	if err != nil {
@@ -201,14 +263,16 @@ func runAOTSGSUBCase(t *testing.T, id string) {
 	}
 	// AOTS generator context, independently checked against the recorded output.
 	// See testdata/harfbuzz/aots/ADAPTER.md; no host locale or script guessing.
-	f := fixture{Context: fixtureContext{Script: "Latn", Language: "en", Dir: "ltr", Features: []string{"test"}}}
+	f := fixture{Context: fixtureContext{Script: "Latn", Language: "en", Dir: "ltr"}}
 	params, err := f.params(font)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Keep this first baseline batch in one shaping window, independently of
-	// default watermarks. Streaming parity is a separate test dimension.
-	opts := otshape.BufferOptions{HighWatermark: len(c.input) + 1, LowWatermark: 1, MaxBuffer: len(c.input) + 2}
+	params.Features = c.features
+	// Zero options here select an explicit whole-input window, not API defaults.
+	if opts == (otshape.BufferOptions{}) {
+		opts = otshape.BufferOptions{HighWatermark: len(c.input) + 1, LowWatermark: 1, MaxBuffer: len(c.input) + 2}
+	}
 	sink := &glyphCollector{}
 	err = otshape.NewShaper(otcore.New()).Shape(params, strings.NewReader(string(c.input)), sink, opts)
 	got := make([]ot.GlyphIndex, len(sink.glyphs))
@@ -216,8 +280,8 @@ func runAOTSGSUBCase(t *testing.T, id string) {
 		got[i] = glyph.GID
 	}
 	if err != nil || !slices.Equal(got, c.want) {
-		t.Fatalf("upstream=%s@%s font=%s\noptions=%s\ncontext=Latn/en/ltr/core, buffers=%+v input=%U\nerror=%v\ngot=%v\nwant=%v",
-			c.id, aotsRevision, c.fontPath, c.options, opts, c.input, err, got, c.want)
+		t.Fatalf("upstream=%s@%s font=%s\noptions=%s\nfeatures=%+v\ncontext=Latn/en/ltr/core, buffers=%+v input=%U\nerror=%v\ngot=%v\nwant=%v",
+			c.id, aotsRevision, c.fontPath, c.options, c.features, opts, c.input, err, got, c.want)
 	}
 }
 
@@ -239,7 +303,8 @@ func TestAOTSAdapterRejectsUnsupportedRecords(t *testing.T) {
 	for name, line := range map[string]string{
 		"disabled":       "#" + record,
 		"unknown_option": strings.Replace(record, "--single-par", "--single-par --normalize-glyphs", 1),
-		"ranged_feature": strings.Replace(record, `--features="test"`, `--features="test[1]=2"`, 1),
+		"span_feature":   strings.Replace(record, `--features="test"`, `--features="test[0:2]=2"`, 1),
+		"range_bounds":   strings.Replace(record, `--features="test"`, `--features="test[2]=2"`, 1),
 		"positions":      strings.Replace(record, "[0|90]", "[0|90@10,0]", 1),
 		"clusters":       strings.Replace(record, "[0|90]", "[0=0|90=1]", 1),
 		"no_oracle":      strings.Replace(record, "[0|90]", "*", 1),
@@ -266,5 +331,46 @@ func TestAOTSAdapterRejectsUnavailableCases(t *testing.T) {
 				t.Fatalf("error=%v, want %q", err, tc.reason)
 			}
 		})
+	}
+}
+
+// These are adapter-contract assertions, not additional upstream shaping cases.
+func TestAOTSFeatureMapping(t *testing.T) {
+	feature := ot.T("test")
+	for _, tc := range []struct {
+		spec string
+		want []otshape.FeatureRange
+	}{
+		{"test", []otshape.FeatureRange{{Feature: feature, On: true, Arg: 1}}},
+		{"test[0],-test[1],test[2]=2,test[3]=3", []otshape.FeatureRange{
+			{Feature: feature, On: true, Arg: 1, Start: 0, End: 1},
+			{Feature: feature, On: false, Start: 1, End: 2},
+			{Feature: feature, On: true, Arg: 2, Start: 2, End: 3},
+			{Feature: feature, On: true, Arg: 3, Start: 3, End: 4},
+		}},
+		{"test[0]=0,test[0]=4", []otshape.FeatureRange{
+			{Feature: feature, On: false, Start: 0, End: 1},
+			{Feature: feature, On: true, Arg: 4, Start: 0, End: 1},
+		}},
+	} {
+		t.Run(tc.spec, func(t *testing.T) {
+			got, err := parseAOTSFeatures(tc.spec)
+			if err != nil || !slices.Equal(got, tc.want) {
+				t.Fatalf("features=%+v, error=%v; want %+v", got, err, tc.want)
+			}
+		})
+	}
+	for _, spec := range []string{"", "test,", "liga", "test[-1]", "test[0:2]", "test[]", "test=", "test=-1", "-test=2", "test[2147483647]", "test=2147483648"} {
+		t.Run("reject_"+spec, func(t *testing.T) {
+			if _, err := parseAOTSFeatures(spec); err == nil {
+				t.Fatalf("unsupported feature accepted: %q", spec)
+			}
+		})
+	}
+	const options = `;--features="test[0],test[1]=2" --single-par --no-clusters --no-glyph-names --no-positions;`
+	// First and last indexes refer to scalars, even for multibyte UTF-8 text.
+	c, err := parseAOTSGSUBRecord("../fonts/example.otf" + options + "U+00E9,U+05D0;[1|2]")
+	if err != nil || len(c.features) != 2 || c.features[1].Start != 1 || c.features[1].End != 2 {
+		t.Fatalf("scalar range mapping: %+v, %v", c, err)
 	}
 }

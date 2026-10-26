@@ -69,7 +69,7 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: six failing top-level tests across the two packages.
+# Discovery suite: nine failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Inspect one finding (replace 001 with 002, 003, or 004).
@@ -93,7 +93,7 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | reproduced | Ranged feature behavior changes with buffer size |
 | [SHAPE-003](#shape-003--feature-values-do-not-select-alternates) | reproduced | Ignored values; contract agreed: one-based positives, zero default, negatives random |
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
-| [SHAPE-005](#shape-005--gdef-classification-prevents-ignoremarks) | reproduced | GDEF range endpoints and class constants prevent ignoring marks |
+| [SHAPE-005](#shape-005--gdef-classification-prevents-ignoremarks) | reproduced | GDEF range endpoints and class constants break IgnoreMarks/IgnoreBaseGlyphs filtering |
 | [SHAPE-006](#shape-006--contextual-lookup-revisits-matched-input) | reproduced | Contextual lookup progression applies overlapping matches |
 
 The AOTS baseline batch adds SHAPE-005/006 in
@@ -103,6 +103,10 @@ It reads unchanged upstream records through a test-only adapter. See the
 independent HarfBuzz verification, passing case, and output limitations.
 At the AOTS batch revision, the ordinary full suite passes and the combined
 tagged command above fails on exactly SHAPE-001 through SHAPE-006.
+The alternate-substitution extension at revision
+`88627506dae374b163968c67cf97601a4ada18c1` adds three tagged tests for existing
+findings SHAPE-002/003/005, bringing the total to nine failing top-level tests
+for six findings. The ordinary full suite still passes.
 
 ## SHAPE-001 — SetupMasks changes are overwritten
 
@@ -151,10 +155,27 @@ mapping; normalization and length-changing substitution require further cases.
 
 **Reproduce:** use the individual command above with `SHAPE002`.
 
+**Independent AOTS extension (2026-10-26):**
+`TestKnownBugSHAPE002AOTSAlternateRangesStreaming` runs the unchanged active
+[`gsub3_1_simple.tests:2`](../testdata/harfbuzz/aots/tests/gsub3_1_simple.tests)
+with high/low/max watermarks `2/1/4`, using Latin/English/LTR and the core engine.
+Expected GIDs are `[17,18,17,20,17,21,17,22,17,18,17,20,17]`; actual GIDs are
+`[17,18,17,18,17,18,17,18,17,18,17,18,17]`, with nil error. Positions 3 and 11
+request the first alternate and work in the whole-input run, but fail here.
+This supports the range-coordinate finding independently of alternate values
+2/3, which are also broken (SHAPE-003). The upstream record combines both
+concerns; the original four-rune test remains the isolated range reproduction.
+See [ADAPTER.md](../testdata/harfbuzz/aots/ADAPTER.md#alternate-substitution-batch)
+for revision, exact option translation, and independent HarfBuzz verification.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE002AOTS' -count=1 -v
+```
+
 ## SHAPE-003 — Feature values do not select alternates
 
-**Status:** reproduced; selection contract agreed on 2026-10-26. Implementation
-and test changes are reserved for a separate session.
+**Status:** reproduced; selection contract agreed on 2026-10-26. Production
+fixes and the full contract-test expansion are reserved for a separate session.
 **Test:** `TestKnownBugSHAPE003FeatureValueSelectsAlternate`.
 
 **Agreed contract:**
@@ -214,6 +235,31 @@ current implementation and must change with the agreed contract. See also
 and out-of-range handling.
 
 **Reproduce:** use the individual command above with `SHAPE003`.
+
+**Independent AOTS extension (2026-10-26):**
+`TestKnownBugSHAPE003AOTSAlternates` uses active upstream
+[`gsub3_1_simple.tests:2`](../testdata/harfbuzz/aots/tests/gsub3_1_simple.tests),
+whose input alternates U+0011 and U+0012 over 13 scalars. Features are exactly
+`-test[1],test[3],test[5]=2,test[7]=3,-test[9],test[11]`: zero-based scalar
+indexes, one-based positive alternate values, no global enable request.
+The public API receives each `[i]` as `[i,i+1)`, with `On:false` for a minus
+prefix and `Arg:1/2/3` for enabled requests. With Latin/English/LTR, the core
+engine, and whole-input watermarks `14/1/15`, expected GIDs are
+`[17,18,17,20,17,21,17,22,17,18,17,20,17]`; actual GIDs are
+`[17,18,17,20,17,20,17,20,17,18,17,20,17]`, with nil error. Ranges select the
+correct positions, but values 2 and 3 still produce the first alternate.
+
+This upstream case adds independent evidence for the positive-value contract;
+it does not cover enabled zero/default, out-of-range positives, random selection,
+or the lower-level API. Adapter mapping tests are separate from shaping-contract
+tests. The other recovered alternate record is currently blocked by SHAPE-005's
+classification defect and is tracked there rather than treated as an isolated
+alternate-value failure. Exact provenance and results are in
+[ADAPTER.md](../testdata/harfbuzz/aots/ADAPTER.md#alternate-substitution-batch).
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE003AOTS' -count=1 -v
+```
 
 ## SHAPE-004 — Zero-confidence engines are selected
 
@@ -280,7 +326,27 @@ The tagged test asserts the unchanged upstream output, the three class lookups,
 and the four class constant values. Existing
 `TestGSUBContextSubstFmt1IgnoreMarks` vectors contain no interleaved marks, so
 they do not expose this case despite the test name. The broader effects of these
-classification defects on other GSUB/GPOS operations remain to be tested.
+classification defects on other GSUB/GPOS operations remain to be tested,
+beyond the additional alternate-lookup case below.
+
+**IgnoreBaseGlyphs extension (2026-10-26):**
+`TestKnownBugSHAPE005AOTSIgnoreBaseGlyphs` uses active upstream
+[`gsub3_1_lookupflag.tests:2`](../testdata/harfbuzz/aots/tests/gsub3_1_lookupflag.tests).
+Input is `U+0011 U+0012 U+0012 U+0012 U+0013 U+0013 U+0013 U+0013 U+0011`;
+features are `-test[4],test[5],test[6]=2,-test[7]`. With Latin/English/LTR,
+the core engine, and whole-input watermarks `10/1/11`, expected GIDs are
+`[17,18,18,18,19,22,23,19,17]`; actual GIDs are
+`[17,18,18,18,19,19,19,19,17]`, with nil error.
+
+The font's GDEF ClassDef format 2 has just `[18,18]` with class 1; GID 19 is
+unclassified (zero). Lookup 0 has `IgnoreBaseGlyphs`. Because `ot.BaseGlyph`
+incorrectly equals zero, `skipGlyph` filters the unclassified GID 19, preventing
+both requested substitutions. The singleton defect also affects GID 18, but
+the record never enables substitution at its positions, so it cannot establish
+correct base filtering. Once classification is fixed, this case will also
+exercise SHAPE-003's second-alternate selection; do not assume a single fix
+will make it pass. See the [adapter report](../testdata/harfbuzz/aots/ADAPTER.md#alternate-substitution-batch)
+for the verification revision and unchanged upstream oracle.
 
 **Reproduce:**
 

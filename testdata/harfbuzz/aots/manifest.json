@@ -4,18 +4,30 @@
   "upstream_revision": "29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b",
   "archive_url": "https://codeload.github.com/harfbuzz/harfbuzz/tar.gz/29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b",
   "summary": {
-    "fonts_verified": 12,
-    "test_files": 11,
-    "records": 31,
-    "candidate": 18,
+    "fonts_verified": 14,
+    "test_files": 13,
+    "records": 35,
+    "candidate": 21,
     "upstream_disabled": 9,
-    "font_not_in_local_subset": 4
+    "font_not_in_local_subset": 5
   },
   "fonts": [
     {
       "local_path": "testdata/fonttools/classdef2_font4.otf",
       "upstream_path": "test/shape/data/aots/fonts/classdef2_font4.otf",
       "sha256": "4b854eab81b46355f57abeda60606d3e32828deb79608414af677d03f72abf9d",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gpos2_1_lookupflag_f2.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gpos2_1_lookupflag_f2.otf",
+      "sha256": "c004a56fc04bcfdc84dc9109558d9cd24412f5693a1472dcc001d0e3bafbfb42",
+      "byte_identical": true
+    },
+    {
+      "local_path": "testdata/fonttools/gpos2_1_simple_f1.otf",
+      "upstream_path": "test/shape/data/aots/fonts/gpos2_1_simple_f1.otf",
+      "sha256": "9a6b5b7520757e1482e93d7b04f1ceb346fd44d203bcf5b20efad0b3a6d36b5c",
       "byte_identical": true
     },
     {
@@ -92,6 +104,16 @@
       "sha256": "74b08205f0e0088c00cb7dea8b486a2db770cc5db56df5f10c3d7055321d426a"
     },
     {
+      "local_path": "tests/gpos2_1_lookupflag.tests",
+      "upstream_path": "test/shape/data/aots/tests/gpos2_1_lookupflag.tests",
+      "sha256": "e08423b5f077b4952b077e240b00fd136f3ba6bbfc9b4f0d59a9b497bc6e7540"
+    },
+    {
+      "local_path": "tests/gpos2_1_simple.tests",
+      "upstream_path": "test/shape/data/aots/tests/gpos2_1_simple.tests",
+      "sha256": "8e8253db878fcfc7136d1c9b2d958b8ef735fc9d6842900e8f39c1360187d13d"
+    },
+    {
       "local_path": "tests/gpos3.tests",
       "upstream_path": "test/shape/data/aots/tests/gpos3.tests",
       "sha256": "e9da81655df56b401cc21dd2f95cf2f8538499e07ed5c7760f778009f9021c48"
@@ -162,6 +184,46 @@
       "upstream_active": true,
       "recovery_status": "candidate",
       "expected_fields": "glyph_ids"
+    },
+    {
+      "id": "gpos2_1_lookupflag.tests:2",
+      "source_file": "tests/gpos2_1_lookupflag.tests",
+      "source_line": 2,
+      "font": "gpos2_1_lookupflag_f1.otf",
+      "local_font_path": null,
+      "upstream_active": true,
+      "recovery_status": "font_not_in_local_subset",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos2_1_lookupflag.tests:3",
+      "source_file": "tests/gpos2_1_lookupflag.tests",
+      "source_line": 3,
+      "font": "gpos2_1_lookupflag_f2.otf",
+      "local_font_path": "testdata/fonttools/gpos2_1_lookupflag_f2.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos2_1_simple.tests:2",
+      "source_file": "tests/gpos2_1_simple.tests",
+      "source_line": 2,
+      "font": "gpos2_1_simple_f1.otf",
+      "local_font_path": "testdata/fonttools/gpos2_1_simple_f1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
+    },
+    {
+      "id": "gpos2_1_simple.tests:3",
+      "source_file": "tests/gpos2_1_simple.tests",
+      "source_line": 3,
+      "font": "gpos2_1_simple_f1.otf",
+      "local_font_path": "testdata/fonttools/gpos2_1_simple_f1.otf",
+      "upstream_active": true,
+      "recovery_status": "candidate",
+      "expected_fields": "glyph_ids_and_origins"
     },
     {
       "id": "gpos3.tests:2",

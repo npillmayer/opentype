@@ -4,7 +4,8 @@ The test-only adapter in
 [`internal/hbcmp/aots_gsub_test.go`](../../../internal/hbcmp/aots_gsub_test.go)
 reads explicitly selected records from the recovered files. It checks the
 pinned manifest revision and the source/font SHA-256 hashes before shaping.
-Upstream files and the recovery manifest remain unchanged.
+Existing upstream files remain unchanged. The later [pair batch](PAIR.md)
+adds two fonts, two complete source files, and their manifest provenance.
 The shared adapter now also supports GPOS glyph-origin records through
 [`aots_gpos_test.go`](../../../internal/hbcmp/aots_gpos_test.go).
 The [GPOS batch report](GPOS.md) documents its coordinate contract, six records,
@@ -152,7 +153,7 @@ PY
 # Passing baseline and adapter validation; no HarfBuzz/Python required.
 go test ./internal/hbcmp -run '^TestAOTS' -count=1 -v
 
-# All AOTS findings, including GPOS: eight failing top-level tests.
+# All AOTS findings, including GPOS: nine failing top-level tests.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE' -count=1 -v
 ```
 
@@ -160,5 +161,6 @@ The full ordinary `go test ./... -count=1` suite passed. Once a defect is fixed,
 move its record ID into the ordinary baseline list and remove its tagged test;
 promote useful diagnostic regressions as well. No production fixes are included
 in these batches. GPOS origin comparisons are now covered in [GPOS.md](GPOS.md);
-pair positioning, richer position captures, and broader feature syntax remain
+pair format 1 is covered in [PAIR.md](PAIR.md). Class-based pairs,
+richer position captures, and broader feature syntax remain
 later work. Promote each streaming configuration only when it too passes.

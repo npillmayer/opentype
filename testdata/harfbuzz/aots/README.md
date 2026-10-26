@@ -5,23 +5,26 @@ Recovered on 2026-10-26 from [HarfBuzz commit
 These files preserve the upstream source material. HarfBuzz was not built or
 run during the initial recovery, and recovery itself established no shaping
 pass/fail results. The subsequent [adapter batches](ADAPTER.md) now exercise
-five active GSUB and six active GPOS records: two pass in the ordinary suite,
-and nine reproduce documented failures in the tagged suite. The GSUB simple
+five active GSUB and nine active GPOS records: four pass in the ordinary suite,
+and ten reproduce documented failures in the tagged suite. The GSUB simple
 alternate record also has a failing streaming execution. See the
-[GPOS report](GPOS.md) for origin comparisons and remaining pair-positioning scope.
+[GPOS report](GPOS.md) for origin comparisons and the [pair report](PAIR.md)
+for matching/nonmatching pair coverage and the flagged advance-changing case.
 
 ## Scope and provenance
 
-All 12 fonts already in [`testdata/fonttools`](../../fonttools/) have records
-in the pinned upstream AOTS suite. All 12 local binaries are byte-for-byte
+The original 12 fonts and two subsequently imported pair fonts in
+[`testdata/fonttools`](../../fonttools/) have records in the pinned upstream
+AOTS suite. All 14 local binaries are byte-for-byte
 identical to the upstream fonts. The selected source files and fonts were also
 checked against the blob hashes in GitHub's tree for the pinned commit.
 
-The 11 files in [`tests/`](tests/) are complete, byte-for-byte upstream copies.
+The 13 files in [`tests/`](tests/) are complete, byte-for-byte upstream copies.
 They retain comments, the `@shaper=ot` directive, original font paths, options,
 inputs, expected output, and line numbers. They are registered in upstream
 [`meson.build`](https://github.com/harfbuzz/harfbuzz/blob/29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b/test/shape/data/aots/meson.build).
-Fonts were not duplicated or changed. Consequently, the original `../fonts/`
+Existing fonts were not duplicated or changed; the two additions are documented
+in [PAIR.md](PAIR.md). The original `../fonts/`
 paths do not resolve within this snapshot; the adapter uses the
 local paths recorded in the manifest.
 
@@ -29,15 +32,16 @@ local paths recorded in the manifest.
 font identity, and one entry per record, identified by source filename and
 one-based line number. Its statuses distinguish:
 
-- **candidate:** an active upstream record with an existing local font: 18.
+- **candidate:** an active upstream record with an existing local font: 21.
 - **upstream_disabled:** a commented record with an existing local font: 9.
   These are retained as evidence, not accepted expectations or known failures
   of our shaper. In particular, `gpos3_font2` has no active upstream record here.
-- **font_not_in_local_subset:** 4 records retained because their source files
+- **font_not_in_local_subset:** 5 records retained because their source files
   also contain matching cases. Their fonts are not imported: three sibling
-  `gpos_chaining3_boundary` fonts and `gsub_context1_lookupflag_f2`.
+  `gpos_chaining3_boundary` fonts, `gsub_context1_lookupflag_f2`, and
+  `gpos2_1_lookupflag_f1`.
 
-There are 31 records in total, of which 27 reference our fonts. The `candidate`
+There are 35 records in total, of which 30 reference our fonts. The `candidate`
 status says nothing about whether the case is implemented, currently passes
 HarfBuzz, or belongs in our first Latin/Hebrew test batch.
 
@@ -55,6 +59,8 @@ HarfBuzz, or belongs in our first Latin/Hebrew test batch.
 | `gpos3_font3` | [gpos3.tests](tests/gpos3.tests) | 5 | 4 |
 | `gpos4_simple_1` | [gpos4_simple.tests](tests/gpos4_simple.tests) | 3 | 2 |
 | `gpos5_font1` | [gpos5.tests](tests/gpos5.tests) | 2 | 0 |
+| `gpos2_1_simple_f1` | [gpos2_1_simple.tests](tests/gpos2_1_simple.tests) | 2 | 0 |
+| `gpos2_1_lookupflag_f2` | [gpos2_1_lookupflag.tests](tests/gpos2_1_lookupflag.tests) | 1 | 0 |
 
 ## Meaning and limits of the expectations
 
@@ -102,11 +108,12 @@ as a separate, documented derivation. Full cluster/advance/offset expectations
 must never be inferred from our own shaper's output.
 
 The [adapter](ADAPTER.md) implements glyph-only comparison for five GSUB records
-and glyph-origin comparison for six GPOS records, verifying their explicit
+and glyph-origin comparison for nine GPOS records, verifying their explicit
 context against HarfBuzz. It supports global and
 single-index feature requests, including alternate values and explicit
-disabling. Broader feature syntax and independent pair-positioning coverage
-remain later work; the current chained-positioning case invokes a single lookup.
+disabling. Pair format 1 now has independent matching and nonmatching coverage;
+the flagged advance-changing case remains blocked by SHAPE-005. Broader feature
+syntax and class-based pair positioning remain later work.
 
 Cursive cases are recovered for completeness of the existing-font inventory;
 they remain lower priority under the Latin/Hebrew scope. This synthetic AOTS

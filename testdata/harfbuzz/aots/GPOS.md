@@ -4,7 +4,9 @@ Verified on 2026-10-26 at repository revision
 `f560698c2ecf09ed0c317a78327862707e5d8f46` plus the new tests and adapter changes.
 The six active records below use existing, hash-verified fonts and unchanged
 upstream output at revision `29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b`.
-No fonts, source records, or manifest entries were added or changed.
+No fonts, source records, or manifest entries were added or changed in that
+initial positioning batch. The subsequent [pair batch](PAIR.md) imports two
+fonts and two test files, with two passing pair cases and one tagged failure.
 
 ## Comparison contract
 
@@ -63,8 +65,8 @@ The passing case exercises chained contextual GPOS type 8 format 3 invoking
 single positioning type 1 format 1: GID 21 moves +20 horizontally. Although
 the font also contains pair lookups 1 and 2, its `test` feature reaches lookup 4
 and then lookup 0. This record is **not a pair-positioning baseline**. Pair
-execution already has local tests, but an independent public-API pair baseline
-still requires a suitable upstream case/font or a separately documented capture.
+execution already had local tests; the subsequent [pair batch](PAIR.md) now
+supplies genuine independent public-API pair baselines using different fonts.
 
 The mark-to-base case attaches GID 19 to output index 1; the second
 mark-to-ligature case first forms GID 18 and also records an attachment to index
@@ -125,10 +127,12 @@ go test ./internal/hbcmp -run '^TestAOTS(GPOS|Origin)' -count=1 -v
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE(007|008|005AOTSLigature)' -count=1 -v
 ```
 
-The full ordinary suite passes. The combined tagged suite has twelve failing
+At the end of this initial GPOS batch, the full ordinary suite passed and the
+combined tagged suite had twelve failing
 top-level tests for eight findings, with no production fixes in this batch.
-Across the adapter batches, eleven upstream records are selected: two pass,
-nine fail, and one failing GSUB record also has a streaming execution.
+Across the adapter batches at that point, eleven upstream records were selected: two passed,
+nine failed, and one failing GSUB record also had a streaming execution.
 Cursive cases remain deferred. Upstream-disabled records remain excluded.
-Pair positioning, mark-to-mark, complete per-glyph position captures, and
-Latin/Hebrew text and streaming baselines remain follow-up work.
+Pair format 1 is now covered in [PAIR.md](PAIR.md). Class-based pair positioning,
+mark-to-mark, complete per-glyph position captures, and Latin/Hebrew text and
+streaming baselines remain follow-up work.

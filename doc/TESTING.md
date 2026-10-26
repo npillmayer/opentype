@@ -19,6 +19,8 @@ for existing range/value and GDEF findings; both remain tagged. The full
 ordinary suite still passes. The GPOS batch adds one passing chained single-
 positioning case and five tagged records, exposing unresolved mark origins
 (SHAPE-007), retained mark advances (SHAPE-008), and another SHAPE-005 blocker.
+The pair batch adds two passing pair-positioning cases and a flagged
+advance-changing case blocked by SHAPE-005, using two newly recovered fonts.
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md) records their workflow, evidence, and
 open contract questions. These tests expose correctness gaps; they do not fix
 the implementation and are excluded from the ordinary suite.
@@ -38,10 +40,10 @@ within the same Go module.
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
-| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. The JSON harness compares glyph IDs, clusters, advances, and offsets; the AOTS adapter compares glyph IDs or glyph IDs plus origins according to the stored format. Nine failing records are behind `shaping_knownbugs`. Neither invokes HarfBuzz during tests. |
+| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. The JSON harness compares glyph IDs, clusters, advances, and offsets; the AOTS adapter compares glyph IDs or glyph IDs plus origins according to the stored format. Ten failing records are behind `shaping_knownbugs`. Neither invokes HarfBuzz during tests. |
 | [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expected-output fixtures. Currently only `Gentium_AB.json`, covering Latin `AB`. |
-| [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Eleven selected records are executed (five GSUB, six GPOS; two passing, nine tagged failures, plus a GSUB streaming execution). `ADAPTER.md` and `GPOS.md` record semantics and results. |
-| [`testdata/fonttools/`](../testdata/fonttools/) | Mini-fonts and paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps for narrowly controlled parsing and lookup tests. |
+| [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Fourteen selected records are executed (five GSUB, nine GPOS; four passing, ten tagged failures, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
+| [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
 | [`testdata/fonts/`](../testdata/fonts/) | Larger fonts, including Calibri, Gentium Plus, and Go fonts, for mapping, metrics, parser, shaping, and diagnostic exercises. |
 | [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` is a preparation utility. These are not Go test drivers. |
 | [`ot-tools/`](../ot-tools/) | Manual diagnostics: `shape` prints glyph output, `view` renders glyph proofs, and `font` inspects tables. Useful for investigation; visual inspection does not replace output assertions. |
@@ -164,11 +166,14 @@ The original local FontTools checkout was found at
 `/Users/npi/prg/python/fonttools`, with fixtures under
 `Tests/ttLib/tables/data/aots`. On 2026-10-26, its HEAD was
 `9cec77d49bdb1a1ca346ac5fefdc5e7c30929026` and its origin was
-<https://github.com/fonttools/fonttools>. All 24 files in our
+<https://github.com/fonttools/fonttools>. The original 24 files in our
 [`testdata/fonttools/`](../testdata/fonttools/) directory were byte-for-byte
 identical to their counterparts there: 12 fonts and 12 TTX files. This is a
 verified local provenance reference, not a runtime dependency or proof of the
 exact historical download command.
+The later [pair batch](../testdata/harfbuzz/aots/PAIR.md) imports two additional
+fonts directly from the pinned HarfBuzz archive. Neither is listed in the
+historical `tests-found.txt`; neither adds a TTX comparison file.
 
 The upstream fixture README identifies
 [Adobe's Annotated OpenType Specification (AOTS)](https://github.com/adobe-type-tools/aots)
@@ -183,7 +188,7 @@ TTX. Those are font-table reading/serialization tests, not Unicode-to-glyph
 shaping tests. No HarfBuzz-style `*.tests` shaping case files were found under
 that checkout's `Tests/` directory.
 
-The repository inventory as of 2026-10-26 is:
+The original TTX inventory from 2026-10-26 (before the pair-font additions) is:
 
 | Item | Count |
 | --- | ---: |
@@ -193,7 +198,7 @@ The repository inventory as of 2026-10-26 is:
 | Copied TTX files consumed by structural comparisons | 9 of 12 |
 | Listed fonts not copied into this repository | 19 |
 
-The following map accounts for all 12 copied fonts. Names below omit `.otf`;
+The following map accounts for the 12 original copied fonts. Names below omit `.otf`;
 each has a paired `.ttx.GSUB` or `.ttx.GPOS` file. The consumers listed are
 representative; additional tests reuse some fonts for errors, bounds, masks,
 and streaming.
@@ -209,6 +214,11 @@ and streaming.
 | `gpos4_simple_1`, `gpos5_font1` | Mark-to-base and mark-to-ligature comparisons | Attachment execution in `otlayout/gpos_runtime_golden_test.go`; five tagged AOTS origin cases for SHAPE-005/007/008 |
 | `gpos3_font1`, `gpos3_font2`, `gpos3_font3` | Their TTX files are currently unused by the comparison tests | Cursive attachment cases in `otshape/otcore/gpos_test.go` |
 
+The later additions `gpos2_1_simple_f1` and `gpos2_1_lookupflag_f2` bring the
+current mini-font total to 14. They have no structural TTX comparisons: the
+first supplies two passing AOTS pair cases, and the second a tagged pair-advance
+case for SHAPE-005. The missing-type/format TTX inventory below is unchanged.
+
 The test entry points are:
 
 | File | Responsibility |
@@ -219,7 +229,7 @@ The test entry points are:
 | [`ot/parse_concrete_golden_ttx_test.go`](../ot/parse_concrete_golden_ttx_test.go) | Two table-driven tests with seven GSUB and five GPOS subcases, covering the concrete lookup representation. These overlap the structural cases, rather than adding twelve distinct scenarios. |
 | [`otlayout/feature_functional_test.go`](../otlayout/feature_functional_test.go) | Applies GSUB lookups to glyph buffers; tests alternate selection and contextual substitution with the IgnoreMarks flag, but without interleaved marks. |
 | [`internal/hbcmp/aots_gsub_test.go`](../internal/hbcmp/aots_gsub_test.go), [`aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go) | Adapts five upstream GSUB records through public shaping; verifies source/font hashes, maps global/single-index features, and compares recorded glyph IDs. Four failing records and one additional streaming execution are opt-in. |
-| [`internal/hbcmp/aots_gpos_test.go`](../internal/hbcmp/aots_gpos_test.go) | Adds origin parsing/comparison to the shared AOTS loader/runner. Compares six upstream GPOS records with public emitted origins; five failures are in `aots_knownbugs_test.go`. Arithmetic/schema tests validate the adapter separately. |
+| [`internal/hbcmp/aots_gpos_test.go`](../internal/hbcmp/aots_gpos_test.go) | Adds origin parsing/comparison to the shared AOTS loader/runner. Compares nine upstream GPOS records with public emitted origins; six failures are in `aots_knownbugs_test.go`. Includes matching and nonmatching pair cases. Arithmetic/schema tests validate the adapter separately. |
 | [`otlayout/gpos_runtime_golden_test.go`](../otlayout/gpos_runtime_golden_test.go) | Applies positioning lookups and checks single/pair adjustments and attachment metadata. |
 | [`otshape/otcore/otcore_test.go`](../otshape/otcore/otcore_test.go), [`gpos_test.go`](../otshape/otcore/gpos_test.go) | Exercises the public shaping API, including the alternate and cursive mini-fonts; other cases use larger fonts. |
 
@@ -242,7 +252,7 @@ around them, rather than imported the complete upstream test suite. The
 corresponding HarfBuzz/AOTS source cases have now been recovered and their font
 versions verified; see [the recovery record](../testdata/harfbuzz/aots/README.md).
 The [adapter](../testdata/harfbuzz/aots/ADAPTER.md) now executes five GSUB and
-six GPOS records through `internal/hbcmp`; the remaining records await adaptation.
+nine GPOS records through `internal/hbcmp`; the remaining records await adaptation.
 Keep their upstream provenance and distinguish those behavioral expectations
 from the TTX structure checks.
 
@@ -383,12 +393,12 @@ than the input; default buffering is not always one-shot.
 
 ### Independent expected output
 
-The upstream recovery step is complete for the 12 existing mini-fonts.
-[`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/README.md) preserves 11
+The upstream recovery step covers the original 12 mini-fonts and two added pair fonts.
+[`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/README.md) preserves 13
 unchanged test files from HarfBuzz revision
 `29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b`; every local font is byte-identical
-to its upstream counterpart. Of the 31 records, 18 are active cases using our
-fonts, 9 are upstream-disabled cases using our fonts, and 4 reference fonts
+to its upstream counterpart. Of the 35 records, 21 are active cases using our
+fonts, 9 are upstream-disabled cases using our fonts, and 5 reference fonts
 outside our subset. The manifest preserves file/line identities, hashes, and
 these distinctions. Recovery did not execute HarfBuzz or our shaper on these
 records, and disabled upstream records are not findings about our implementation.
@@ -429,8 +439,13 @@ classification). Origins are compared as preceding emitted advances plus the
 current offset, in font units; the adapter does not resolve attachments itself.
 These assertions do not independently validate every advance/offset or the
 final run advance. The fixture's pair lookups are not reached by its public
-feature, so independent pair positioning remains uncovered. Cursive baselines
-remain deferred.
+feature. The later [pair batch](../testdata/harfbuzz/aots/PAIR.md) uses two new
+fonts with `test` selecting their sole pair lookup (type 2 format 1). Matching
+18/19, nonmatching 18/20, and incomplete end-of-input cases pass. The separate
+advance-changing pair record remains tagged because IgnoreBaseGlyphs wrongly
+filters its unclassified glyphs (SHAPE-005). It retains the upstream −200
+advance effect on trailing origins; passing pair-advance behavior is not yet
+established. Cursive baselines remain deferred.
 
 The separate JSON path in `internal/hbcmp` runs `Shaper.Shape` with all three engines.
 It compares ordered numeric glyph IDs, clusters, X/Y offsets, and X/Y advances.
@@ -560,8 +575,10 @@ continue to pass, but expanding their coverage is not a current priority.
    Two alternate records now also reproduce existing SHAPE-002/003/005, with
    single-index features supported and one streaming comparison added.
    Six GPOS origin records add one passing chained single-positioning baseline
-   and five failures for SHAPE-005/007/008. Add a true pair-positioning baseline
-   and richer position captures; the current origins omit individual advances.
+   and five failures for SHAPE-005/007/008. The pair batch adds matching and
+   nonmatching format-1 baselines that pass, plus an advance-changing case
+   blocked by SHAPE-005. Next add richer position captures and class-based pair
+   coverage; the current origins omit individual advances.
    Extend the adapter to further recovered cases, explicitly handling their
    feature options and available expected fields. Expand the corpus to
    Latin ligatures, kerning, feature values/ranges, and accented text;

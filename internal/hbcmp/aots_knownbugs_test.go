@@ -78,6 +78,12 @@ func TestKnownBugSHAPE005AOTSLigatureAcrossMark(t *testing.T) {
 	runAOTSGPOSCase(t, "gpos5.tests:2")
 }
 
+// Pair lookup 0 changes the first glyph's advance. Incorrect BaseGlyph=0
+// filtering skips the unclassified first glyph before the pair can execute.
+func TestKnownBugSHAPE005AOTSPairAdvance(t *testing.T) {
+	runAOTSGPOSCase(t, "gpos2_1_lookupflag.tests:3")
+}
+
 func TestKnownBugSHAPE007AOTSMarkAttachmentOrigins(t *testing.T) {
 	for _, id := range []string{"gpos4_simple.tests:2", "gpos5.tests:3"} {
 		t.Run(id, func(t *testing.T) { runAOTSGPOSCase(t, id) })

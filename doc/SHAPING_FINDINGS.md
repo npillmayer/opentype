@@ -69,7 +69,7 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: twelve failing top-level tests across the two packages.
+# Discovery suite: thirteen failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Inspect one finding (replace 001 with 002, 003, or 004).
@@ -114,6 +114,10 @@ The [GPOS batch](../testdata/harfbuzz/aots/GPOS.md) at revision
 SHAPE-007/008 and a further SHAPE-005 reproduction. The combined tagged suite
 now has twelve failing top-level tests for eight findings; the ordinary suite
 still passes. All batch revisions refer to source plus the tests added at that step.
+The [pair-positioning batch](../testdata/harfbuzz/aots/PAIR.md) at revision
+`a16f51a27adce48fcd0346f96de0bb8b0231faa6` adds another SHAPE-005 regression,
+bringing the tagged suite to thirteen failing tests for the same eight findings.
+Its two ordinary pair cases and the full ordinary suite pass.
 
 ## SHAPE-001 — SetupMasks changes are overwritten
 
@@ -372,6 +376,26 @@ Classification is the first blocker here. Source inspection also shows
 last ligature component by default. Preservation of skipped marks and component
 association will need separate verification after this blocker is fixed;
 this run does not establish those later behaviors.
+
+**Pair-advance extension (2026-10-26):**
+`TestKnownBugSHAPE005AOTSPairAdvance` uses active upstream
+[`gpos2_1_lookupflag.tests:3`](../testdata/harfbuzz/aots/tests/gpos2_1_lookupflag.tests)
+with newly recovered `gpos2_1_lookupflag_f2.otf`. Input is
+`U+0011 U+0013 U+0014 U+0011 U+0013 U+0012 U+0014 U+0011`, core engine,
+Latin/English/LTR, global `test`, buffers `9/1/10`. The only lookup is GPOS
+type 2 format 1, with IgnoreBaseGlyphs. Pair 19/20 changes the first advance by
+−200 and the second Y offset by −100. GDEF assigns only singleton `[18,18]`
+class 1; GIDs 19/20 are unclassified (zero), so the incorrect `BaseGlyph=0`
+constant skips them and no pair executes.
+
+`Shape` returns nil and nominal positions. The first trailing GID 17 starts
+at X=4500 rather than 4300; the last starts at 10500 rather than 10100. The
+complete exact expectations, actual origins, hashes, import procedure, and
+HarfBuzz verification are in [PAIR.md](../testdata/harfbuzz/aots/PAIR.md).
+The companion unflagged pair font passes matching and nonmatching public-API
+cases. This failure is therefore tracked under classification; it does not
+isolate an advance-arithmetic defect. Both class constants and range endpoints
+must be considered before claiming that the flagged case is fixed.
 
 **Reproduce:**
 

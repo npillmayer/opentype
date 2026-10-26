@@ -832,6 +832,774 @@
           }
         ]
       }
+    },
+    {
+      "id": "latin_marks_canonical",
+      "text": "ạ́",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0061,U+0323,U+0301",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          97,
+          803,
+          769
+        ],
+        "output": [
+          {
+            "g": 277,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 940,
+            "ay": 0
+          },
+          {
+            "g": 2173,
+            "cl": 0,
+            "dx": 83,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_marks_reordered",
+      "text": "ạ́",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0061,U+0301,U+0323",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          97,
+          769,
+          803
+        ],
+        "output": [
+          {
+            "g": 277,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 940,
+            "ay": 0
+          },
+          {
+            "g": 2173,
+            "cl": 0,
+            "dx": 83,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_uncomposable_mark",
+      "text": "x́",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0078,U+0301",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          120,
+          769
+        ],
+        "output": [
+          {
+            "g": 91,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 2173,
+            "cl": 0,
+            "dx": 31,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_missing_composite_nfc",
+      "text": "éX",
+      "font_path": "testdata/fonts/ShaperTestLatin-NoEacute.ttf",
+      "font_sha256": "a31c0d92101751fcd0643803bfb004060db47bdb5d77018cdf659526ed92be9b",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestLatin-NoEacute.ttf",
+        "--unicodes=U+00E9,U+0058",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=fr",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestLatin-NoEacute.ttf",
+          "script": "Latn",
+          "language": "fr",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          233,
+          88
+        ],
+        "output": [
+          {
+            "g": 72,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 2173,
+            "cl": 0,
+            "dx": 107,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 59,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1260,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_missing_composite_nfd",
+      "text": "éX",
+      "font_path": "testdata/fonts/ShaperTestLatin-NoEacute.ttf",
+      "font_sha256": "a31c0d92101751fcd0643803bfb004060db47bdb5d77018cdf659526ed92be9b",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestLatin-NoEacute.ttf",
+        "--unicodes=U+0065,U+0301,U+0058",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=fr",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestLatin-NoEacute.ttf",
+          "script": "Latn",
+          "language": "fr",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          101,
+          769,
+          88
+        ],
+        "output": [
+          {
+            "g": 72,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 2173,
+            "cl": 0,
+            "dx": 107,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 59,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1260,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_range_after_nfc",
+      "text": "éoffice",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+00E9,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=fr",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=0,liga[2:5]=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "fr",
+          "dir": "ltr",
+          "features": [
+            "liga=0",
+            "liga[2:5]=1"
+          ]
+        },
+        "input": [
+          233,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101
+        ],
+        "output": [
+          {
+            "g": 112,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_range_after_nfd",
+      "text": "éoffice",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0065,U+0301,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=fr",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=0,liga[3:6]=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "fr",
+          "dir": "ltr",
+          "features": [
+            "liga=0",
+            "liga[3:6]=1"
+          ]
+        },
+        "input": [
+          101,
+          769,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101
+        ],
+        "output": [
+          {
+            "g": 112,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 7,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hebrew_vav_holam_mark_on",
+      "text": "וֹ",
+      "font_path": "testdata/fonts/NotoSansHebrew-Regular.ttf",
+      "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/NotoSansHebrew-Regular.ttf",
+        "--unicodes=U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark=1,mkmk=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "NotoSansHebrew-Regular.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": [
+            "mark=1",
+            "mkmk=1"
+          ]
+        },
+        "input": [
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 46,
+            "cl": 0,
+            "dx": 92,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hebrew_vav_holam_mark_off",
+      "text": "וֹ",
+      "font_path": "testdata/fonts/NotoSansHebrew-Regular.ttf",
+      "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/NotoSansHebrew-Regular.ttf",
+        "--unicodes=U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark=0,mkmk=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "NotoSansHebrew-Regular.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": [
+            "mark=0",
+            "mkmk=0"
+          ]
+        },
+        "input": [
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 126,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hebrew_vav_holam_no_gpos",
+      "text": "וֹ",
+      "font_path": "testdata/fonts/ShaperTestHebrew-NoGPOS.ttf",
+      "font_sha256": "96b074f6a494d8b29b6d3204b47807e21034645a72b17d89868596fb4a351df6",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestHebrew-NoGPOS.ttf",
+        "--unicodes=U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestHebrew-NoGPOS.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": []
+        },
+        "input": [
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 126,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hebrew_vav_holam_no_mark",
+      "text": "וֹ",
+      "font_path": "testdata/fonts/ShaperTestHebrew-NoMark.ttf",
+      "font_sha256": "176a79c8800368f4e2f6daa289e49fb35e9e1ae515bf42d4b840d981cfb231ae",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestHebrew-NoMark.ttf",
+        "--unicodes=U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestHebrew-NoMark.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": []
+        },
+        "input": [
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 126,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hebrew_vav_holam_no_mark_requested",
+      "text": "וֹ",
+      "font_path": "testdata/fonts/ShaperTestHebrew-NoMark.ttf",
+      "font_sha256": "176a79c8800368f4e2f6daa289e49fb35e9e1ae515bf42d4b840d981cfb231ae",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestHebrew-NoMark.ttf",
+        "--unicodes=U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark=1,mkmk=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestHebrew-NoMark.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": [
+            "mark=1",
+            "mkmk=1"
+          ]
+        },
+        "input": [
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 126,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hebrew_shin_reordered",
+      "text": "שָׁ",
+      "font_path": "testdata/fonts/NotoSansHebrew-Regular.ttf",
+      "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/NotoSansHebrew-Regular.ttf",
+        "--unicodes=U+05E9,U+05C1,U+05B8",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark=1,mkmk=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "NotoSansHebrew-Regular.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": [
+            "mark=1",
+            "mkmk=1"
+          ]
+        },
+        "input": [
+          1513,
+          1473,
+          1464
+        ],
+        "output": [
+          {
+            "g": 79,
+            "cl": 0,
+            "dx": 227,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 100,
+            "cl": 0,
+            "dx": 539,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 96,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 730,
+            "ay": 0
+          }
+        ]
+      }
     }
   ]
 }

@@ -128,6 +128,13 @@ combining sequences can require context across that boundary.
 
 ## Flush modes and output
 
+The sink's agreed order is logical shaping order, also for RTL; the caller owns
+visual ordering. Cluster anchors refer to zero-based original input scalars,
+with HarfBuzz level-0 grouping/merging. General base/mark cluster formation is
+still incomplete (SHAPE-011), and the conservative compaction rules above have
+not been redesigned to accommodate it. Logical ordering does not mean retaining
+original scalar order within a cluster after normalization/script reordering.
+
 - `FlushOnRunBoundary` writes the selected prefix in glyph order. The name does
   not imply waiting for EOF or emitting an atomic whole run.
 - `FlushOnClusterBoundary` iterates cluster spans within that same prefix and

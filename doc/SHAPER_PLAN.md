@@ -162,8 +162,9 @@ Important limits:
   fallback positioning only records an attachment. Mark-zeroing helpers operate
   before nominal horizontal advances are added at output; their unit tests do
   not establish final zero advances through the public API.
-- There is no final RTL reversal, vertical-metrics pipeline, or variation
-  application in plan execution.
+- The sink contract is logical shaping order, including RTL. Final visual
+  ordering belongs to the caller (SHAPE-009 resolved). A vertical-metrics
+  pipeline and variation application remain absent from plan execution.
 
 ## Arabic fallback policy
 

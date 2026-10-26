@@ -50,7 +50,7 @@ func NewShaper(engines ...ShapingEngine) *Shaper {
 // Parameters:
 //   - params selects font, segment metadata and feature ranges.
 //   - src is read incrementally until EOF.
-//   - sink receives shaped glyph records in output order.
+//   - sink receives shaped glyph records in logical shaping order, also for RTL.
 //   - bufOpts selects flush behavior and streaming thresholds.
 //
 // Returns nil on success, or an error for invalid inputs, source/sink failures,

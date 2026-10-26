@@ -17,8 +17,10 @@ registry or package-level `Shape(req)` API.
 input and `GlyphSink.WriteGlyph` receives `GlyphRecord` values.
 
 Each request assumes fixed font/script/language/direction. Automatic itemization,
-font fallback, paragraph bidi layout, final RTL reversal, and vertical-metrics
-shaping are absent. Variation fields in internal plans do not implement variable
+font fallback, paragraph bidi layout, and vertical-metrics shaping are absent.
+The sink contract is logical shaping order; visual ordering belongs to the
+caller. HarfBuzz level-0 cluster grouping is agreed but not yet complete
+(SHAPE-011). Variation fields in internal plans do not implement variable
 font shaping. Layout execution uses GSUB/GPOS; there is no legacy kern fallback.
 
 ## Source navigation

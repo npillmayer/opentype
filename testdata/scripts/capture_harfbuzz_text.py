@@ -28,6 +28,19 @@ CASES = [
     ("hebrew_vav_holam", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", []),
     ("hebrew_shalom", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05e9\u05dc\u05d5\u05dd", []),
     ("hebrew_shalom_pointed", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05e9\u05b8\u05c1\u05dc\u05d5\u05b9\u05dd", []),
+    ("latin_marks_canonical", "GentiumPlus-R.ttf", "Latn", "en", "ltr", "a\u0323\u0301", []),
+    ("latin_marks_reordered", "GentiumPlus-R.ttf", "Latn", "en", "ltr", "a\u0301\u0323", []),
+    ("latin_uncomposable_mark", "GentiumPlus-R.ttf", "Latn", "en", "ltr", "x\u0301", []),
+    ("latin_missing_composite_nfc", "ShaperTestLatin-NoEacute.ttf", "Latn", "fr", "ltr", "\u00e9X", []),
+    ("latin_missing_composite_nfd", "ShaperTestLatin-NoEacute.ttf", "Latn", "fr", "ltr", "e\u0301X", []),
+    ("latin_range_after_nfc", "GentiumPlus-R.ttf", "Latn", "fr", "ltr", "\u00e9office", ["liga=0", "liga[2:5]=1"]),
+    ("latin_range_after_nfd", "GentiumPlus-R.ttf", "Latn", "fr", "ltr", "e\u0301office", ["liga=0", "liga[3:6]=1"]),
+    ("hebrew_vav_holam_mark_on", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", ["mark=1", "mkmk=1"]),
+    ("hebrew_vav_holam_mark_off", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", ["mark=0", "mkmk=0"]),
+    ("hebrew_vav_holam_no_gpos", "ShaperTestHebrew-NoGPOS.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", []),
+    ("hebrew_vav_holam_no_mark", "ShaperTestHebrew-NoMark.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", []),
+    ("hebrew_vav_holam_no_mark_requested", "ShaperTestHebrew-NoMark.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", ["mark=1", "mkmk=1"]),
+    ("hebrew_shin_reordered", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05e9\u05c1\u05b8", ["mark=1", "mkmk=1"]),
 ]
 
 

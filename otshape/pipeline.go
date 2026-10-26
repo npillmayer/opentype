@@ -16,6 +16,11 @@ type RuneSource interface {
 }
 
 // GlyphRecord is one shaped output glyph in array-of-struct form.
+//
+// Cluster's contract is HarfBuzz level-0 grouping, anchored at zero-based input
+// Unicode scalar indexes (not byte offsets). Base/mark groups share an anchor;
+// composition and substitution may merge groups. Combining-mark grouping is
+// currently incomplete; see SHAPE-011 in doc/SHAPING_FINDINGS.md.
 type GlyphRecord struct {
 	GID         ot.GlyphIndex    // GID is the shaped glyph ID in the selected font.
 	Pos         otlayout.PosItem // Pos holds final output positioning and attachment data.
@@ -24,7 +29,10 @@ type GlyphRecord struct {
 	UnsafeFlags uint16           // UnsafeFlags carries break/concat safety hints for boundaries.
 }
 
-// GlyphSink is the output side of the shaping pipeline.
+// GlyphSink receives glyphs in logical shaping order, including RTL runs.
+// Logical order is after normalization and script-specific mark reordering,
+// not necessarily original scalar order within a cluster. Visual ordering is
+// the caller's responsibility; a cluster boundary alone is not a safe break.
 //
 // WriteGlyph is called once per emitted glyph record; returning a non-nil error
 // aborts shaping and returns that error to the caller.

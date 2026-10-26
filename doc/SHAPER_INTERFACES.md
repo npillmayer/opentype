@@ -36,6 +36,19 @@ These are method-based calls, not package-level `Shape(req)` functions.
 `ShapeEventsRequest` remains as a deprecated type but is not accepted by these
 methods. See [STREAMING_API.md](STREAMING_API.md) for sources, sinks, and events.
 
+## Output order and clusters
+
+The agreed public output contract (2026-10-26) is **logical shaping order**,
+including RTL runs. Normalization and script-specific reordering may change
+order within a source cluster; visual ordering belongs to the caller.
+`GlyphRecord.Cluster` uses HarfBuzz level-0 grouping/merging semantics, with
+zero-based original Unicode scalar indexes as anchors. This is the required
+contract, not a claim that current combining-mark grouping is complete:
+[SHAPE-011](SHAPING_FINDINGS.md#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0)
+records the implementation gap. Feature ranges address original source scalars,
+not normalized buffer positions (SHAPE-002). A cluster boundary alone does not
+establish a safe streaming cut.
+
 ## Engine selection and lifetime
 
 ```go

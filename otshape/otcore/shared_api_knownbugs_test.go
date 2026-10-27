@@ -17,25 +17,6 @@ import (
 // doc/SHAPING_FINDINGS.md for evidence and promotion into the default suite.
 // Shared fixture and assertion helpers live in shared_api_test.go.
 
-func TestKnownBugSHAPE002FeatureRangeUsesInputCoordinates(t *testing.T) {
-	params, cp := alternateAPIInput(t)
-	params.Features[0].Start, params.Features[0].End = 2, 3
-	input := strings.Repeat(cp, 4)
-	for _, tc := range []struct {
-		name string
-		opts otshape.BufferOptions
-	}{
-		{"whole_input", otshape.BufferOptions{HighWatermark: 8, LowWatermark: 4, MaxBuffer: 8}},
-		{"streaming", otshape.BufferOptions{HighWatermark: 2, LowWatermark: 1, MaxBuffer: 4}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got := shapeAPIRecords(t, params, input, tc.opts, otcore.New())
-			// A codepoint range refers to the original input in both configurations.
-			assertAPIGlyphs(t, got, []ot.GlyphIndex{18, 18, 20, 18})
-		})
-	}
-}
-
 func TestKnownBugSHAPE003FeatureValueSelectsAlternate(t *testing.T) {
 	params, cp := alternateAPIInput(t)
 	// The paired TTX lists g20, g21, g22 as g18's alternatives.

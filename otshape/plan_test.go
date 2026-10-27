@@ -631,7 +631,7 @@ func TestApplyFeatureRangesToMasks(t *testing.T) {
 		{Feature: ot.T("liga"), On: true, Arg: 1, Start: 1, End: 4},
 		{Feature: ot.T("liga"), On: false, Start: 2, End: 3},
 	}
-	applyFeatureRangesToMasks(masks, specs, ranges)
+	applyFeatureRangesToMasks(masks, []uint32{0, 1, 2, 3, 4}, specs, ranges)
 	want := []uint32{
 		1, // untouched
 		3, // global(1) + liga(1<<1)
@@ -757,6 +757,7 @@ func TestCompileTableProgramRangeOnKeepsFeatureActive(t *testing.T) {
 func TestEnsureRunMasksUsesGlobalAndRanges(t *testing.T) {
 	run := newRunBuffer(0)
 	run.Glyphs = append(run.Glyphs, 10, 11, 12, 13)
+	run.Clusters = []uint32{0, 1, 2, 3}
 	exec := &planExecutor{run: run}
 	pl := &plan{
 		Masks: maskLayout{
@@ -778,6 +779,46 @@ func TestEnsureRunMasksUsesGlobalAndRanges(t *testing.T) {
 		if run.Masks[i] != want[i] {
 			t.Fatalf("mask[%d] = 0x%x, want 0x%x", i, run.Masks[i], want[i])
 		}
+	}
+}
+
+func TestFeatureRangesFollowSourceAnchors(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		clusters []uint32
+		start    int
+		end      int
+		want     []uint32
+	}{
+		{"compacted", []uint32{100, 101, 102, 103}, 101, 103, []uint32{1, 3, 3, 1}},
+		{"after_composition", []uint32{0, 2, 3, 4, 5, 6, 7}, 3, 6, []uint32{1, 1, 3, 3, 3, 1, 1}},
+		{"after_decomposition", []uint32{0, 0, 1, 2}, 1, 2, []uint32{1, 1, 3, 1}},
+		{"decomposed_scalar", []uint32{0, 0, 1, 2}, 0, 1, []uint32{3, 3, 1, 1}},
+		{"reordered", []uint32{2, 0, 1}, 1, 2, []uint32{1, 1, 3}},
+		{"open_end", []uint32{100, 101, 102, 103}, 102, 0, []uint32{1, 1, 3, 3}},
+		{"nonpositive_start", []uint32{100, 101, 102, 103}, -1, 102, []uint32{3, 3, 1, 1}},
+		{"earlier_range", []uint32{100, 101, 102, 103}, 0, 3, []uint32{1, 1, 1, 1}},
+		{"later_range", []uint32{100, 101, 102, 103}, 200, 0, []uint32{1, 1, 1, 1}},
+		{"reversed_range", []uint32{100, 101, 102, 103}, 103, 101, []uint32{1, 1, 1, 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run := newRunBuffer(0)
+			run.Glyphs = make(otlayout.GlyphBuffer, len(tc.clusters))
+			run.Clusters = tc.clusters
+			exec := &planExecutor{run: run}
+			pl := &plan{
+				Masks: maskLayout{GlobalMask: 1, ByFeature: map[ot.Tag]maskSpec{
+					ot.T("liga"): {Mask: 2, Shift: 1},
+				}},
+				featureRanges: []FeatureRange{{Feature: ot.T("liga"), On: true, Start: tc.start, End: tc.end}},
+			}
+			exec.ensureRunMasks(pl)
+			for i, want := range tc.want {
+				if got := run.Masks[i]; got != want {
+					t.Errorf("source %d at slot %d: mask = %#x, want %#x", tc.clusters[i], i, got, want)
+				}
+			}
+		})
 	}
 }
 

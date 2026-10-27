@@ -55,6 +55,12 @@ At the end of the GSUB batches there were five selected upstream records: one or
 and four failing records, with an additional streaming execution of the simple
 alternate case. No new finding IDs are needed for this batch.
 
+**SHAPE-002 update (2026-10-27):** the streaming simple-alternate case now
+selects the same source positions as the whole-input case, including the first
+alternates at positions 3 and 11. Its complete upstream expectation still fails
+for values 2 and 3 (SHAPE-003), so it remains tagged as
+`TestKnownBugSHAPE003AOTSAlternatesStreaming`. No expected glyphs were changed.
+
 ## Explicit adapter contract
 
 - The quoted `--features` list supports the `test` tag, an optional `-` prefix,

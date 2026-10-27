@@ -109,8 +109,9 @@ streaming mechanics, error/partial-progress tests, and benchmarks.
 
 Known limitations include:
 
-- Mask initialization overwrites `SetupMasks`; indexed ranges use local chunk
-  coordinates; feature values do not select alternate glyphs correctly.
+- Feature values do not select alternate glyphs correctly. Mask preservation
+  and source-coordinate range assignment are covered by SHAPE-001/002 ordinary
+  regressions; ranges splitting merged source sequences remain unresolved.
 - Streaming can discard needed shaping context; forced flushing does not prove
   equivalence to a complete run.
 - GPOS attachments lack final coordinate resolution; direction handling and

@@ -247,8 +247,10 @@ The review reproduced:
 
 - A cursive attachment lost with high/low/max `1/1/2`, compared with default
   buffering on `gpos3_font1.otf`, input U+0012 U+0013, feature `test`.
-- An indexed feature range missed after compaction because masks use local
-  buffer indexes. See [TESTING.md](TESTING.md) for the exact fixture.
+
+SHAPE-002's indexed-range reproduction now passes: mask assignment uses retained
+original scalar anchors after compaction and normalization. Ordinary tests cover
+that correspondence; ranges splitting merged source sequences remain out of scope.
 
 Current tests include configuration/fill/compaction/cut helpers in
 `shape_streaming_test.go`, loop exercises in `shape_streaming_loop_test.go`,
@@ -264,8 +266,9 @@ still requires:
 
 1. A context-retention/boundary policy covering joining, lookback/lookahead,
    normalization, substitutions, and attachments, including max-buffer handling.
-2. Global input-coordinate feature ranges and reliable provenance after
-   length-changing transformations.
+2. Defined range behavior inside merged source sequences and reliable provenance
+   through future cluster grouping. Source-anchor range assignment across
+   compaction and normalization is covered by the SHAPE-002 fix.
 3. Final attachment resolution and consistent attachment-index semantics across
    spans and emitted prefixes.
 4. Per-plan state isolation and defined context behavior for feature events.

@@ -49,12 +49,12 @@ findings, without production fixes or new external test dependencies.
 
 ## Test location and execution
 
-The remaining shared-API reproductions (SHAPE-002/003/004) live in
+The remaining shared-API reproductions (SHAPE-003/004) live in
 [`otshape/otcore/shared_api_knownbugs_test.go`](../otshape/otcore/shared_api_knownbugs_test.go),
 in external package `otcore_test`. They exercise exported `NewShaper`/`Shape`
 and engine hooks. This keeps the base `otshape` tests independent of concrete
 engine imports. The ordinary [`shared_api_test.go`](../otshape/otcore/shared_api_test.go) now
-contains SHAPE-001 and the shared fixture/assertion helpers. They reuse
+contains SHAPE-001/002 and the shared fixture/assertion helpers. They reuse
 `loadMiniOTFont` from `gpos_test.go` and `glyphCollector` from `otcore_test.go`.
 
 Those four cases use
@@ -72,14 +72,14 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: twenty-five failing top-level tests across the two packages.
+# Discovery suite: twenty-two failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Fixed mask regression, covering both public entry points.
 go test ./otshape/otcore -run '^TestSHAPE001' -count=1 -v
 
-# Inspect an unresolved shared-API finding (002, 003, or 004).
-go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE002' -count=1 -v
+# Inspect an unresolved shared-API finding (003 or 004).
+go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE003' -count=1 -v
 ```
 
 Original shared-API batch verification baseline: production source at
@@ -95,7 +95,7 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 
 | ID | Status | Finding |
 | --- | --- | --- |
-| [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | reproduced | Ranged feature behavior changes with buffer size |
+| [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | fixed (agreed scope) | Ranges use original scalar anchors across compaction and normalization |
 | [SHAPE-003](#shape-003--feature-values-do-not-select-alternates) | reproduced | Ignored values; contract agreed: one-based positives, zero default, negatives random |
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
 | [SHAPE-005](#shape-005--gdef-classification-prevents-ignoremarks) | reproduced | GDEF range endpoints and class constants break IgnoreMarks/IgnoreBaseGlyphs filtering |
@@ -166,71 +166,6 @@ top-level tests**. The full ordinary suite passes; all new failures are output
 assertions, with complete input consumption, nil shaping errors, and no panic
 or timeout. No production behavior changed. Each new finding below uses this
 verification baseline.
-
-## SHAPE-002 — Feature ranges use chunk-local coordinates
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE002FeatureRangeUsesInputCoordinates`.
-
-**Expected behavior and basis:** `FeatureRange.Start/End` select input
-codepoints, so an unchanged input and range should have the same result across
-buffer configurations. Range `[2,3)` should enable only the third input rune.
-
-**Reproduction:** repeat the fixture rune four times, with `test` enabled for
-`[2,3)`. Compare explicit whole-input watermarks `8/4/8` with streaming
-watermarks `2/1/4`. Each subtest asserts the independently specified output
-`[18,18,20,18]` and clusters `[0,1,2,3]`.
-
-**Observed:** `whole_input` passes; `streaming` emits `[18,18,18,18]`.
-Clusters remain correct, but the requested substitution is lost.
-
-**Implementation evidence:** `ensureRunMasks` and `applyFeatureRangesToMasks`
-in [lookups.go](../otshape/lookups.go) apply ranges to current-buffer indexes
-instead of original input coordinates. This reproduction covers a one-to-one
-mapping; normalization and length-changing substitution require further cases.
-
-**Reproduce:** use the individual command above with `SHAPE002`.
-
-**Independent AOTS extension (2026-10-26):**
-`TestKnownBugSHAPE002AOTSAlternateRangesStreaming` runs the unchanged active
-[`gsub3_1_simple.tests:2`](../testdata/harfbuzz/aots/tests/gsub3_1_simple.tests)
-with high/low/max watermarks `2/1/4`, using Latin/English/LTR and the core engine.
-Expected GIDs are `[17,18,17,20,17,21,17,22,17,18,17,20,17]`; actual GIDs are
-`[17,18,17,18,17,18,17,18,17,18,17,18,17]`, with nil error. Positions 3 and 11
-request the first alternate and work in the whole-input run, but fail here.
-This supports the range-coordinate finding independently of alternate values
-2/3, which are also broken (SHAPE-003). The upstream record combines both
-concerns; the original four-rune test remains the isolated range reproduction.
-See [ADAPTER.md](../testdata/harfbuzz/aots/ADAPTER.md#alternate-substitution-batch)
-for revision, exact option translation, and independent HarfBuzz verification.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE002AOTS' -count=1 -v
-```
-
-**Normalization extension (2026-10-26):**
-`TestKnownBugSHAPE002RangeAfterComposition` uses Gentium input
-`e + U+0301 + office`, Latn/fr/LTR, buffers `9/1/10`, with global `liga=0`
-then `liga[3:6]=1`. HarfBuzz expects GIDs/clusters
-`[112/0,82/2,741/3,70/6,72/7]`; actual is
-`[112/0,82/2,73/3,737/4,70/6,72/7]`. The first `f` misses the requested feature,
-leaving `f` plus `fi` instead of `ffi`. Source clusters survive composition, but
-`applyFeatureRangesToMasks` still addresses normalized buffer indexes.
-The equivalent NFC input with range `[2,5)` passes all fields. This extends
-SHAPE-002 to normalization within a single window: no streaming cut is needed.
-The ranges begin after the normalized prefix, so no policy for ranges splitting
-a merged cluster is presumed. See the
-[normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.md).
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE002RangeAfterComposition' -count=1 -v
-```
-
-**Streaming matrix extension:** `TestKnownBugSHAPE002StreamingBaselines` applies
-`liga=0,liga[8:11]=1` to three `office` words. Whole-input `Shape` passes;
-all four smaller profiles fail. The equivalent push/pop schedule passes with
-whole/lookahead/carry buffers; tiny/forced event runs also lose context
-(SHAPE-015). This independently exercises source ranges after compaction;
-see the [matrix report](../internal/hbcmp/testdata/text/STREAMING.md).
 
 ## SHAPE-003 — Feature values do not select alternates
 
@@ -308,6 +243,14 @@ engine, and whole-input watermarks `14/1/15`, expected GIDs are
 `[17,18,17,20,17,21,17,22,17,18,17,20,17]`; actual GIDs are
 `[17,18,17,20,17,20,17,20,17,18,17,20,17]`, with nil error. Ranges select the
 correct positions, but values 2 and 3 still produce the first alternate.
+
+**Streaming regression after SHAPE-002 (2026-10-27):**
+`TestKnownBugSHAPE003AOTSAlternatesStreaming` retains the full upstream output
+with buffers `2/1/4`. It now reaches the same selected source positions as the
+whole-input run, including first-alternate positions 3 and 11. Only values 2/3
+still mismatch: actual GIDs are `[17,18,17,20,17,20,17,20,17,18,17,20,17]`.
+This was formerly `TestKnownBugSHAPE002AOTSAlternateRangesStreaming`; its oracle
+is unchanged and it stays tagged until alternate selection is fixed.
 
 This upstream case adds independent evidence for the positive-value contract;
 it does not cover enabled zero/default, out-of-range positives, random selection,
@@ -699,8 +642,9 @@ retain individual mark clusters and fail final positioning (SHAPE-007).
 not ignore positioning to report partial success. See the
 [normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.md) for exact
 clusters/offsets. Source correspondence must remain available to feature-mask
-assignment even when output clusters merge; current feature ranges are already
-wrong after length-changing normalization (SHAPE-002).
+assignment even when output clusters merge. SHAPE-002 now resolves ranges
+against retained scalar anchors; ranges splitting merged source sequences remain
+outside that fix's agreed scope.
 
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE011' -count=1 -v
@@ -939,6 +883,12 @@ calls lower-level `ApplyFeature`. `gsubLookupType4Fmt1` in
 without checking its API feature mask. The enabled starting index therefore
 does not guarantee the eventual match is enabled.
 
+**SHAPE-002 promotion (2026-10-27):** the nested-scope `lookahead` and `carry`
+rune-input profiles now pass every field in both flush modes and moved to the
+ordinary matrix. Correct source coordinates repair those particular buffer
+alignments. The whole-input, tiny, and forced nested profiles still fail;
+the accented case still fails every rune-input profile. SHAPE-018 remains open.
+
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE018' -count=1 -timeout=30s -v
 ```
@@ -952,7 +902,7 @@ Latin/Hebrew script and language selection, ranges/scopes inside merged
 clusters, additional feature values, and broader buffer sweeps. The initial
 streaming/event/progress setup is complete; successful all-deletion progress
 remains blocked by SHAPE-017. Whole-input range drift after normalization is
-reproduced under SHAPE-002. Add stable findings here as those
+covered by an ordinary SHAPE-002 regression. Add stable findings here as those
 cases are investigated; do not silently equate missing coverage with a bug.
 
 ## Resolved findings
@@ -983,4 +933,52 @@ including substitution-mask inheritance and Arabic streaming parity, passes.
 ```sh
 go test ./otshape/otcore -run '^TestSHAPE001' -count=1 -v
 go test ./otshape -run '^TestEngineFeatureMaskAllocationStable$' -count=1 -v
+```
+
+### SHAPE-002 — Feature ranges use chunk-local coordinates
+
+**Fixed:** 2026-10-27, within the agreed scope of ranges that do not split merged
+source sequences.
+
+**Cause and fix:** `applyFeatureRangesToMasks` indexed current buffer slots, so
+compaction or normalization shifted a requested range onto the wrong glyphs.
+It now compares unchanged `FeatureRange` bounds against each glyph's retained
+original Unicode-scalar anchor in `run.Clusters`. Nonpositive bounds retain their
+start/end-of-input meaning. Masks are assigned before `SetupMasks` and inherited
+through lookup edits; no ranges are reinterpreted after substitutions. The
+input-coordinate contract is explicit in [FeatureRange](../otshape/shaper.go).
+
+**Permanent regressions:**
+[TestSHAPE002FeatureRangeUsesInputCoordinates](../otshape/otcore/shared_api_test.go)
+checks `[18,18,20,18]` at clusters `[0,1,2,3]` in whole-input and streaming runs.
+[TestHarfBuzzTextBaselines/latin_range_after_nfd](../internal/hbcmp/text_baselines_test.go)
+now matches the full unchanged HarfBuzz output for `e + acute + office` with
+`liga[3:6]=1`: GIDs/clusters `[112/0,82/2,741/3,70/6,72/7]`.
+[TestFeatureRangesFollowSourceAnchors](../otshape/plan_test.go) covers compaction,
+composition/decomposition correspondence, reordered anchors, and open/empty bounds;
+existing tests retain overlap precedence and substitution-mask inheritance.
+
+Eight streaming-matrix cells moved to the ordinary suite: the `lookahead` and
+`carry` rune profiles for both `stream_range` and `scope_nested`, in both flush
+modes. All compare complete independent output. The tiny/forced `stream_range`
+cases still split ligature context (SHAPE-015); their complete assertions now
+live in that tagged group. The AOTS streaming alternate case remains fully
+asserted under SHAPE-003. No production fix for either blocker is included.
+
+**Limitations and provisional preference:** ranges splitting a composed character
+or merged source cluster are not part of this resolution. The user's tentative
+preference is to exclude a combined character when the range starts inside it
+and begin with the next eligible character. Anchor comparison naturally does
+that for a composite anchored before `Start`, but this is not a settled general
+policy for all merged clusters, range ends, or reordering. SHAPE-011 must preserve
+source correspondence when introducing broader level-0 grouping.
+
+**Verification:** focused shaping/lookup/HarfBuzz tests and `go test ./... -count=1`
+pass. The tagged suite has 22 remaining top-level failures, with no unexpected
+top-level passes; the matrix has 142 passing and 178 failing executions. Captures
+are unchanged and no assertions were weakened.
+
+```sh
+go test ./otshape/otcore -run '^TestSHAPE002' -count=1 -v
+go test ./internal/hbcmp -run '^TestHarfBuzzTextBaselines/latin_range_after_nfd$' -count=1 -v
 ```

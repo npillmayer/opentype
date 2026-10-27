@@ -35,10 +35,6 @@ func TestKnownBugSHAPE013UnavailableComposition(t *testing.T) {
 	}
 }
 
-func TestKnownBugSHAPE002RangeAfterComposition(t *testing.T) {
-	runTextBaselineID(t, "latin_range_after_nfd")
-}
-
 // The normal parser deliberately requires GPOS. This baseline records that
 // capability boundary, not an accidental parser regression; see SHAPE-014.
 func TestKnownBugSHAPE014AbsentGPOS(t *testing.T) {

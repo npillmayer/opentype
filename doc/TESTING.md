@@ -57,7 +57,7 @@ within the same Go module.
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
-| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. Ten AOTS records and fourteen real-text cases are behind `shaping_knownbugs`. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. No runner invokes HarfBuzz during tests. |
+| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. Ten AOTS records and thirteen real-text cases are behind `shaping_knownbugs`. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. No runner invokes HarfBuzz during tests. |
 | [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and 24 independently captured Latin/Hebrew cases in `text/baselines.json`. Twelve additional records in `text/streaming.json` supply streaming/scope/progress oracles. `text/README.md`, `text/NORMALIZATION.md`, and `text/STREAMING.md` record semantics, commands, and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Fourteen selected records are executed (five GSUB, nine GPOS; four passing, ten tagged failures, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
@@ -128,16 +128,15 @@ That stub does not describe the implementation state of `Shaper.Shape`.
 
 ### Failures reproduced through the public API
 
-These began as temporary review probes. Feature ranges, alternate values,
-and engine selection have tagged public-API regressions;
+These began as temporary review probes. Alternate values and engine selection
+have tagged public-API regressions;
 see [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md) for stable IDs, exact commands,
 and current status. Streaming-context and script-tag observations below remain
 review probes outside that first regression batch.
 
 | Finding | Reproduction / result | Implementation location |
 | --- | --- | --- |
-| Feature ranges use chunk-local indexes | Repeat the cmap-backed rune for GID 18 in `gsub3_1_simple_f1.otf` four times and enable `test` for `[2,3)`. Default buffering gives `[18,18,20,18]`; high/low/max `2/1/4` gives `[18,18,18,18]`. Range assignment indexes the current buffer rather than original input clusters. | `ensureRunMasks` and `applyFeatureRangesToMasks` in [lookups.go](../otshape/lookups.go) |
-| Feature values do not select alternates | On the same alternate fixture/rune, `Arg=1`, `2`, and `3` all produce GID 20. Values reach masks, but ordinary execution passes `alt=0`. Lower-level tests can select GIDs 20, 21, and 22. | `applyLookups` in [lookups.go](../otshape/lookups.go); [feature_functional_test.go](../otlayout/feature_functional_test.go) |
+| Feature values do not select alternates | On `gsub3_1_simple_f1.otf` and the cmap-backed rune for GID 18, `Arg=1`, `2`, and `3` all produce GID 20. Values reach masks, but ordinary execution passes `alt=0`. Lower-level tests can select GIDs 20, 21, and 22. | `applyLookups` in [lookups.go](../otshape/lookups.go); [feature_functional_test.go](../otlayout/feature_functional_test.go) |
 | Streaming loses context | With `gpos3_font1.otf`, input U+0012 U+0013, and `test` enabled, default buffering records a cursive attachment on the second glyph. High/low/max `1/1/2` loses it. | [shape_streaming.go](../otshape/shape_streaming.go) |
 | A nonmatching engine can be selected | Supply only an engine returning `ShaperConfidenceNone`. Shaping succeeds instead of returning `ErrNoMatchingShaper`; selection skips negative scores but accepts zero. | `selectShapingEngine` in [shape_api.go](../otshape/shape_api.go) |
 | Script tags are incomplete | `ScriptTagForScript` returns `DFLT` for `Syrc`, `Taml`, and `Mlym`. Much of the map uses full names instead of ISO script codes. Syriac engine matching does not repair the layout script tag. | [language.go](../otshape/language.go) |
@@ -494,25 +493,32 @@ and HarfBuzz level-0 grouping are the agreed contracts. See the
 [normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.md) for the
 conversion's rendering convention and exact cases.
 
-Ten cases pass: the original six Latin cases, single shin, plain shalom,
-ranged ligatures after an NFC prefix, and Hebrew fallback with absent mark
-features in a font retaining GPOS. Fourteen remain tagged for source-range drift,
-mark offsets/grouping, effective mark-support detection, canonical ordering,
-font-aware normalization, or the explicit no-GPOS parser restriction. This adds
-seven text tests to the thirteen shared/AOTS tests. The streaming extension
-adds six more tagged groups: the combined discovery suite now has **twenty-six
-failing top-level tests**. Twenty-five fail on shaping assertions; one fails
-before shaping at the parser's documented scope boundary (SHAPE-014).
+Eleven cases pass: the original six Latin cases, single shin, plain shalom,
+ranged ligatures after NFC and NFD prefixes, and Hebrew fallback with absent
+mark features in a font retaining GPOS. Thirteen remain tagged for mark
+offsets/grouping, effective mark-support detection, canonical ordering,
+font-aware normalization, or the explicit no-GPOS parser restriction. The
+combined discovery suite has **twenty-two failing top-level tests**: twenty-one
+shaping assertion groups and the deferred SHAPE-014 parser case.
+
+SHAPE-002's ordinary public-API regression verifies source ranges after streaming
+compaction; `latin_range_after_nfd` verifies them after composition against the
+complete HarfBuzz capture. Unit coverage also checks decomposition correspondence,
+reordered anchors, range bounds, and existing mask inheritance through glyph edits.
+Ranges splitting merged source sequences remain outside the agreed fix scope.
 
 The [streaming/scope matrix](../internal/hbcmp/testdata/text/STREAMING.md) adds
 twelve independent captures and reuses four original text cases. Five buffer
 profiles × both public entry points × both flush modes yield 320 executions:
-134 pass, 186 remain tagged. The runner validates actual push/pop schedules
+142 pass, 178 remain tagged. The runner validates actual push/pop schedules
 against the equivalent HB ranges at every scalar and checks complete output,
 EOF consumption, early emission, and bounded source/sink activity. Ten additional
 empty-input and balanced empty-scope checks pass. Four new findings cover
 streaming context (SHAPE-015), scope context (SHAPE-016), deletion (SHAPE-017),
-and masked forward scans (SHAPE-018); existing SHAPE-002/007/011 remain visible.
+and masked forward scans (SHAPE-018); existing SHAPE-007/011 remain visible.
+SHAPE-002 promoted eight matrix cells; remaining tiny/forced range failures
+retain full expectations under SHAPE-015, while the AOTS streaming range case
+remains under SHAPE-003 for its second/third alternate values.
 Run with `-timeout=30s` to bound loops without source/sink activity. Actual
 zero-output progress remains blocked because deletion currently does nothing.
 
@@ -628,8 +634,8 @@ where they affect Latin or Hebrew; use fixtures from those scripts or small
 synthetic cases to isolate them. Existing tests for deferred scripts should
 continue to pass, but expanding their coverage is not a current priority.
 
-1. **Shared API correctness.** Feature ranges, alternate values, and engine
-   selection remain tagged; track their resolution in
+1. **Shared API correctness.** Alternate values and engine selection remain
+   tagged; track their resolution in
    [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md). Implement the
    agreed alternate-value contract in a separate fix session and promote
    regressions to the ordinary suite as fixes land. Continue discovery with
@@ -637,7 +643,7 @@ continue to pass, but expanding their coverage is not a current priority.
    and regressions specific to other scripts.
 2. **Independent Latin/Hebrew baselines.** The first AOTS GSUB adapter batch
    contributes one passing no-change case and two tagged findings (SHAPE-005/006).
-   Two alternate records now also reproduce existing SHAPE-002/003/005, with
+   Two alternate records reproduce SHAPE-003/005, with
    single-index features supported and one streaming comparison added.
    Six GPOS origin records add one passing chained single-positioning baseline
    and five failures for SHAPE-005/007/008. The pair batch adds matching and
@@ -671,7 +677,7 @@ continue to pass, but expanding their coverage is not a current priority.
    ligatures, pairs, normalization, mark failures, nested push/pop restoration,
    compaction, EOF tails, expansion, contraction, and deletion. Five buffer
    profiles, both APIs, and both flush modes distinguish passing cells from
-   recorded failures (SHAPE-002/007/011/015–018). Fixes are a separate batch;
+   recorded failures (SHAPE-007/011/015–018). Fixes are a separate batch;
    deletion must work before actual zero-output progress can be verified.
    The [agreed buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented)
    permits a generous required minimum and practical sequence/context limits.

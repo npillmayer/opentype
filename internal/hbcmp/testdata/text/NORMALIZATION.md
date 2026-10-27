@@ -5,6 +5,10 @@ Verified on 2026-10-26 against source revision
 Production behavior is unchanged; public API comments now record the agreed
 logical-order and HarfBuzz level-0 cluster contracts.
 
+**SHAPE-002 update (2026-10-27):** `latin_range_after_nfd` now passes its full
+unchanged capture and runs in the ordinary suite. The corpus has 11 passing and
+13 tagged cases. Original discovery diagnostics below retain their dated context.
+
 ## Contract and comparison
 
 The sink receives **logical shaping order**, after normalization and script
@@ -30,8 +34,8 @@ production reversal. This is deliberately not paragraph bidi implementation.
 
 ## New cases and results
 
-Thirteen captures extend the original eleven to **24 cases: 10 passing and
-14 tagged**. The original captures are byte-for-byte unchanged as JSON values.
+Thirteen captures extend the original eleven to **24 cases: 11 passing and
+13 tagged** after the SHAPE-002 promotion. The original captures are byte-for-byte unchanged as JSON values.
 All tests keep one shaping window with high/low/max `n+1/1/n+2`. Feature ranges
 are half-open original scalar indexes. The test-only adapter accepts explicit
 `tag=value` and `tag[start:end]=value`; zero disables. Unsupported ranges fail
@@ -45,7 +49,7 @@ instead of being ignored. The legacy JSON runner's parser is unchanged.
 | `latin_missing_composite_nfc` | NoEacute font, U+00E9 + `X`, Latn/fr/LTR | SHAPE-013: emits missing glyph instead of decomposing |
 | `latin_missing_composite_nfd` | NoEacute font, `e` + U+0301 + `X`, Latn/fr/LTR | SHAPE-013: composes into an unmapped character |
 | `latin_range_after_nfc` | Gentium, U+00E9 + `office`, `liga=0,liga[2:5]=1`, Latn/fr/LTR | Pass: `ffi` at original cluster 2 |
-| `latin_range_after_nfd` | Gentium, `e` + U+0301 + `office`, `liga=0,liga[3:6]=1`, Latn/fr/LTR | SHAPE-002: gets `f` + `fi` instead of `ffi` at original cluster 3 |
+| `latin_range_after_nfd` | Gentium, `e` + U+0301 + `office`, `liga=0,liga[3:6]=1`, Latn/fr/LTR | Pass after SHAPE-002: `ffi` at original cluster 3; all fields match |
 | `hebrew_vav_holam_mark_on` | Noto, U+05D5 U+05B9, `mark=1,mkmk=1`, Hebr/he/RTL | Composition now matches; offsets/clusters fail SHAPE-007/011 |
 | `hebrew_vav_holam_mark_off` | Same, `mark=0,mkmk=0` | SHAPE-010: keeps separate glyphs where HB uses presentation-form fallback |
 | `hebrew_vav_holam_no_mark` | NoMark font, U+05D5 U+05B9, default features | Pass: fallback GID 126, cluster 0, advance 301 |
@@ -77,9 +81,10 @@ Our outputs are `[0,59]`, clusters `[0,1]` / `[0,2]`, advances `[1400,1260]`.
 The loss is font-aware normalization, not lack of the decomposed glyphs.
 
 For the NFD ranged-ligature case, expected GIDs/clusters are
-`[112/0,82/2,741/3,70/6,72/7]`; actual is
+`[112/0,82/2,741/3,70/6,72/7]`; before SHAPE-002 the actual output was
 `[112/0,82/2,73/3,737/4,70/6,72/7]`. Original cluster anchors survive, but
-the feature mask is assigned by normalized buffer position. The NFC control
+the feature mask was assigned by normalized buffer position. Mask assignment
+now uses those retained source anchors and the complete comparison passes. The NFC control
 passes with the equivalent original-coordinate range. No streaming cut is
 involved, extending SHAPE-002 beyond chunk-local indexing.
 
@@ -90,7 +95,7 @@ clusters `[0,1,2]` instead of `[0,0,0]` and zero offsets instead of `[0,539,227]
 Neither agreement on logical output order nor a cluster merge alone establishes
 correct script-specific mark ordering.
 
-## Verification and next steps
+## Original batch verification and next steps
 
 `go test ./... -count=1` passes. The combined tagged suite has **20 failing
 top-level tests**: thirteen earlier shared/AOTS tests and seven text tests

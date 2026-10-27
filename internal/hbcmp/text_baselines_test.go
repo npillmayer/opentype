@@ -39,7 +39,7 @@ var textBaselineFindings = map[string]string{
 	"latin_marks_canonical": "SHAPE-007/011", "latin_marks_reordered": "SHAPE-012/007/011",
 	"latin_uncomposable_mark":     "SHAPE-007/011",
 	"latin_missing_composite_nfc": "SHAPE-013", "latin_missing_composite_nfd": "SHAPE-013",
-	"latin_range_after_nfc": "", "latin_range_after_nfd": "SHAPE-002",
+	"latin_range_after_nfc": "", "latin_range_after_nfd": "",
 	"hebrew_vav_holam_mark_on": "SHAPE-007/011", "hebrew_vav_holam_mark_off": "SHAPE-010",
 	"hebrew_vav_holam_no_gpos": "SHAPE-014",
 	"hebrew_vav_holam_no_mark": "", "hebrew_vav_holam_no_mark_requested": "SHAPE-010",

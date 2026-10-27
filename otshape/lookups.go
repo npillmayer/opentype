@@ -46,7 +46,7 @@ func (e *planExecutor) ensureRunMasks(pl *plan) {
 	for i := range e.run.Masks {
 		e.run.Masks[i] = pl.Masks.GlobalMask
 	}
-	applyFeatureRangesToMasks(e.run.Masks, pl.Masks.ByFeature, pl.featureRanges)
+	applyFeatureRangesToMasks(e.run.Masks, e.run.Clusters, pl.Masks.ByFeature, pl.featureRanges)
 }
 
 func (e *planExecutor) realignSideArrays(pl *plan, st *otlayout.BufferState) {
@@ -349,18 +349,18 @@ func (e *planExecutor) lookupSpanEnd(start, n int) int {
 	return n
 }
 
-func applyFeatureRangesToMasks(dst []uint32, specs map[ot.Tag]maskSpec, ranges []FeatureRange) {
+// applyFeatureRangesToMasks resolves ranges against original scalar anchors,
+// before lookup edits inherit masks. Buffer slots can move during compaction,
+// normalization, and reordering; range endpoints must not move with them.
+func applyFeatureRangesToMasks(dst, clusters []uint32, specs map[ot.Tag]maskSpec, ranges []FeatureRange) {
 	n := len(dst)
 	if n == 0 || len(ranges) == 0 || len(specs) == 0 {
 		return
 	}
+	assert(len(clusters) == n, "feature ranges require source cluster anchors")
 	for _, r := range ranges {
 		spec, ok := specs[r.Feature]
 		if !ok {
-			continue
-		}
-		start, end := normalizeMaskRange(r.Start, r.End, n)
-		if end <= start {
 			continue
 		}
 		val := uint32(0)
@@ -372,27 +372,17 @@ func applyFeatureRangesToMasks(dst []uint32, specs map[ot.Tag]maskSpec, ranges [
 			}
 		}
 		valueBits := (val << spec.Shift) & spec.Mask
-		for i := start; i < end; i++ {
+		for i, cluster := range clusters {
+			// Nonpositive bounds mean the start/end of the original input.
+			// Widen both operands so large indexes cannot wrap on conversion.
+			if r.Start > 0 && uint64(cluster) < uint64(r.Start) ||
+				r.End > 0 && uint64(cluster) >= uint64(r.End) {
+				continue
+			}
 			dst[i] &^= spec.Mask
 			dst[i] |= valueBits
 		}
 	}
-}
-
-func normalizeMaskRange(start, end, n int) (int, int) {
-	if start < 0 {
-		start = 0
-	}
-	if start > n {
-		start = n
-	}
-	if end <= 0 || end > n {
-		end = n
-	}
-	if end < start {
-		end = start
-	}
-	return start, end
 }
 
 // applyLayoutEdit updates metadata only. Layout already owns glyph/position edits.

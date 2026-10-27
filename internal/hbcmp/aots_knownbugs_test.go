@@ -62,7 +62,9 @@ func TestKnownBugSHAPE003AOTSAlternates(t *testing.T) {
 	runAOTSGSUBCase(t, "gsub3_1_simple.tests:2")
 }
 
-func TestKnownBugSHAPE002AOTSAlternateRangesStreaming(t *testing.T) {
+// Source ranges now reach the correct glyphs (SHAPE-002 fixed). The complete
+// upstream expectation still requires second/third alternate selection (SHAPE-003).
+func TestKnownBugSHAPE003AOTSAlternatesStreaming(t *testing.T) {
 	runAOTSGSUBCaseWithBuffers(t, "gsub3_1_simple.tests:2", otshape.BufferOptions{HighWatermark: 2, LowWatermark: 1, MaxBuffer: 4})
 }
 

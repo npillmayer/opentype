@@ -27,7 +27,7 @@ to `baselines.json` and its whole-input runner.
   font hashes, including the tagged cases, and runs ten passing comparisons.
   It reuses `fixture` parameter conversion, `glyphCollector`, and the exact
   positioned-glyph comparison from `hb_compare.go`.
-- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs fourteen failing cases
+- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs thirteen failing cases
   in seven top-level tests under `shaping_knownbugs`. Raw expectations remain the
   original HarfBuzz output; comparison explicitly converts RTL to logical order; promote cases as their blockers are resolved.
 - [Noto font provenance](../../../../testdata/fonts/NotoSansHebrew-README.md)
@@ -85,7 +85,8 @@ bidi layout, streaming cuts, events, or general Latin/Hebrew conformance.
 
 ## Results
 
-Ten cases pass every output field; fourteen remain tagged. All calls reaching
+Eleven cases pass every output field; thirteen remain tagged. The NFD ranged
+ligature case was promoted after the SHAPE-002 fix on 2026-10-27. All calls reaching
 `Shape` return nil. The NoGPOS font is rejected by the normal parser before
 shaping (a documented library scope restriction). The original eleven cases
 are listed below; [NORMALIZATION.md](NORMALIZATION.md) lists the thirteen additions.

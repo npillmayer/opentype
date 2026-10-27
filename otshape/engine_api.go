@@ -193,7 +193,9 @@ type ShapingEngineReorderHook interface {
 	ReorderMarks(run RunContext, start, end int)
 }
 
-// ShapingEngineMaskHook exposes a hook to customize runtime mask values.
+// ShapingEngineMaskHook exposes a hook to customize runtime mask values after
+// plan masks are initialized and before GSUB/GPOS execution. Execution preserves
+// the customized masks, subject to mask inheritance when glyphs are substituted.
 type ShapingEngineMaskHook interface {
 	SetupMasks(run RunContext)
 }

@@ -30,6 +30,8 @@ func (f planLookupFeature) LookupIndex(i int) int {
 	return f.lookupInx
 }
 
+// ensureRunMasks initializes every mask from the plan, replacing existing values.
+// Prepare masks before SetupMasks; do not call this again during execution.
 func (e *planExecutor) ensureRunMasks(pl *plan) {
 	assert(e != nil, "executor is nil")
 	assert(e.run != nil, "run buffer is nil")

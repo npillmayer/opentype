@@ -29,8 +29,11 @@ Work proceeds in small batches:
 5. Handle fixes separately from discovery. Once fixed, move each regression
    into the default suite (and move any needed helpers with it), rerun the
    relevant tests and ordinary suite, and mark the finding fixed. Retain the ID
-   and a short resolution history. A tagged test unexpectedly passing is a
-   reason to investigate and promote it, not evidence to leave it hidden.
+   and original heading anchor in a compact entry under **Resolved findings**,
+   with the cause, fix, and permanent regression links. Remove resolved issues
+   from active-gap discussions in `TESTING.md`, retaining coverage descriptions.
+   Git preserves the detailed investigation history. A tagged test unexpectedly
+   passing is a reason to investigate and promote it, not evidence to leave it hidden.
 
 Statuses are **reproduced**, **needs decision**, **fixed**, or **deferred**.
 Use **needs decision** when the required behavior is not settled, even if the
@@ -46,13 +49,13 @@ findings, without production fixes or new external test dependencies.
 
 ## Test location and execution
 
-The first four reproductions live in
+The remaining shared-API reproductions (SHAPE-002/003/004) live in
 [`otshape/otcore/shared_api_knownbugs_test.go`](../otshape/otcore/shared_api_knownbugs_test.go),
 in external package `otcore_test`. They exercise exported `NewShaper`/`Shape`
 and engine hooks. This keeps the base `otshape` tests independent of concrete
-engine imports. The file reuses `loadMiniOTFont` from `gpos_test.go` and
-`glyphCollector` from `otcore_test.go`, adding only small fixture/assertion
-helpers and two test engines.
+engine imports. The ordinary [`shared_api_test.go`](../otshape/otcore/shared_api_test.go) now
+contains SHAPE-001 and the shared fixture/assertion helpers. They reuse
+`loadMiniOTFont` from `gpos_test.go` and `glyphCollector` from `otcore_test.go`.
 
 Those four cases use
 [`gsub3_1_simple_f1.otf`](../testdata/fonttools/gsub3_1_simple_f1.otf).
@@ -69,11 +72,14 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: twenty-six failing top-level tests across the two packages.
+# Discovery suite: twenty-five failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
-# Inspect one finding (replace 001 with 002, 003, or 004).
-go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE001' -count=1 -v
+# Fixed mask regression, covering both public entry points.
+go test ./otshape/otcore -run '^TestSHAPE001' -count=1 -v
+
+# Inspect an unresolved shared-API finding (002, 003, or 004).
+go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE002' -count=1 -v
 ```
 
 Original shared-API batch verification baseline: production source at
@@ -89,7 +95,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 
 | ID | Status | Finding |
 | --- | --- | --- |
-| [SHAPE-001](#shape-001--setupmasks-changes-are-overwritten) | reproduced | `SetupMasks` changes are overwritten before lookup execution |
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | reproduced | Ranged feature behavior changes with buffer size |
 | [SHAPE-003](#shape-003--feature-values-do-not-select-alternates) | reproduced | Ignored values; contract agreed: one-based positives, zero default, negatives random |
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
@@ -107,6 +112,9 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-016](#shape-016--feature-scopes-sever-unrelated-lookup-context) | reproduced | Feature-event spans break kerning across scope boundaries |
 | [SHAPE-017](#shape-017--gsub-deletion-is-ignored) | reproduced | Empty GSUB multiple-substitution sequences leave glyphs unchanged |
 | [SHAPE-018](#shape-018--forward-lookup-scans-bypass-feature-masks) | reproduced | A lookup enabled at its starting index can match a later disabled glyph |
+
+Archived fix: [SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
+in [Resolved findings](#resolved-findings).
 
 The AOTS baseline batch adds SHAPE-005/006 in
 [`internal/hbcmp/aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go).
@@ -158,30 +166,6 @@ top-level tests**. The full ordinary suite passes; all new failures are output
 assertions, with complete input consumption, nil shaping errors, and no panic
 or timeout. No production behavior changed. Each new finding below uses this
 verification baseline.
-
-## SHAPE-001 — SetupMasks changes are overwritten
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE001SetupMasksPreserved`.
-
-**Expected behavior and basis:** `SetupMasks` is the engine hook for assigning
-per-glyph feature masks before GSUB. Clearing the first glyph's mask should
-disable the enabled lookup for that glyph while preserving it for the second.
-
-**Reproduction:** repeat the fixture rune twice; high/low/max watermarks
-`8/4/8` keep the input together. A test engine embeds the core engine and clears
-the first glyph's mask through `RunContext.SetMask(0, 0)`. A separate core-engine
-control expects `[20,20]`, and the test checks that the hook was called.
-
-**Observed:** the control passes. The hook case also emits `[20,20]`, with
-first-glyph mask `1`; expected `[18,20]` with first-glyph mask `0`. Both retain
-clusters `[0,1]`. Engine-specific mask decisions have no effect in this case.
-
-**Implementation evidence:** `shapeMappedRun` initializes masks, calls the
-hook, and invokes the executor in [shape_api.go](../otshape/shape_api.go).
-`planExecutor.apply` calls `ensureRunMasks` again in [plan.go](../otshape/plan.go),
-resetting them via [lookups.go](../otshape/lookups.go).
-
-**Reproduce:** use the individual command above with `SHAPE001`.
 
 ## SHAPE-002 — Feature ranges use chunk-local coordinates
 
@@ -970,3 +954,33 @@ streaming/event/progress setup is complete; successful all-deletion progress
 remains blocked by SHAPE-017. Whole-input range drift after normalization is
 reproduced under SHAPE-002. Add stable findings here as those
 cases are investigated; do not silently equate missing coverage with a bug.
+
+## Resolved findings
+
+Resolved entries retain stable IDs and heading anchors for reference. Their
+regression tests remain in the ordinary suite; detailed investigation history
+is available in Git.
+
+### SHAPE-001 — SetupMasks changes are overwritten
+
+**Fixed:** 2026-10-27.
+
+**Cause and fix:** `planExecutor.apply` initialized masks a second time, erasing
+`SetupMasks` decisions. Masks are now initialized once in
+[shapeMappedRun](../otshape/shape_api.go) before the hook;
+[the executor](../otshape/plan.go) consumes the prepared masks. Preserving them
+also exposed nondeterministic engine feature-bit allocation. Engine-only
+requests are now sorted by tag, retaining user order/precedence.
+
+**Permanent regressions:**
+[TestSHAPE001SetupMasksPreserved](../otshape/otcore/shared_api_test.go) checks
+GIDs, clusters, and disabled/enabled masks through both `Shape` and `ShapeEvents`.
+[TestEngineFeatureMaskAllocationStable](../otshape/plan_test.go) checks allocation
+stability, user precedence, and disabled features. Review confirmed that restoring
+the old executor makes both public-API subtests fail; the full ordinary suite,
+including substitution-mask inheritance and Arabic streaming parity, passes.
+
+```sh
+go test ./otshape/otcore -run '^TestSHAPE001' -count=1 -v
+go test ./otshape -run '^TestEngineFeatureMaskAllocationStable$' -count=1 -v
+```

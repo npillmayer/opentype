@@ -96,7 +96,7 @@ on an engine.
 | `ShapingEngineComposeHook` | `Compose(NormalizeContext, rune, rune) (rune, bool)`, during pair composition. |
 | `ShapingEngineReorderHook` | `ReorderMarks(RunContext, int, int)`, currently invoked once over the mapped run. |
 | `ShapingEnginePreGSUBHook` | `PrepareGSUB(RunContext)`, after reorder. |
-| `ShapingEngineMaskHook` | `SetupMasks(RunContext)`, after initial mask setup; its changes are currently overwritten by executor mask initialization. |
+| `ShapingEngineMaskHook` | `SetupMasks(RunContext)`, after initial mask setup; execution preserves its changes, with mask inheritance through substitutions. |
 | `ShapingEnginePostprocessHook` | `PostprocessRun(RunContext)`, after lookup/position-policy execution. |
 
 There is no custom decomposition hook, `MarksBehavior`, `GposTag`, or
@@ -156,7 +156,7 @@ For each current raw carry buffer, or each contiguous event-plan span:
 5. `PrepareGSUB`.
 6. Initialize feature masks and apply indexed ranges.
 7. `SetupMasks`.
-8. Enter `planExecutor.apply`, which **initializes masks again**.
+8. Enter `planExecutor.apply` with the prepared, engine-customized masks.
 9. Annotate GSUB joiners/syllables and execute GSUB stages and pauses.
 10. Execute GPOS when the compiled policy enables it.
 11. Apply internal position policies.
@@ -185,7 +185,8 @@ Arabic stores masks/fallback data on the engine in `InitPlan`, computes joining
 forms in `PrepareGSUB`, and uses them in `SetupMasks` and postprocessing.
 Its pause callbacks are currently no-ops. Postprocessing includes simplified
 tatweel expansion and narrow `.notdef` repair, not a general fallback shaper.
-The mask reset prevents assuming correct public-pipeline joining behavior.
+SHAPE-001 now preserves these mask decisions. This alone does not establish
+correct joining behavior or context-safe streaming.
 
 In event mode, compiling a later plan mutates this engine-local state.
 Processing an older stored plan or popping a feature scope does not restore it.
@@ -198,7 +199,7 @@ the engine subpackages. Existing tests cover composition/reorder hooks,
 validation, pauses, masks, and script helpers. The public-API probes and coverage
 limits are recorded in [TESTING.md](TESTING.md).
 
-Before treating these interfaces as stable behavioral contracts, resolve mask
-preservation, validation-hook gating, preprocessing order, GPOS opt-out,
-direct-pause placement, and per-plan engine state. Source comments and a
+Mask preservation is covered by the ordinary SHAPE-001 regression for both public
+entry points. Remaining interface concerns include validation-hook gating,
+preprocessing order, GPOS opt-out, direct-pause placement, and per-plan engine state. Source comments and a
 declared interface alone do not demonstrate that every policy is honored.

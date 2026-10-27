@@ -127,7 +127,8 @@ reading. It then:
 1. Fills raw carry up to the high watermark or EOF.
 2. Copies carry into scratch, normalizes, and maps codepoints through cmap.
 3. Runs preprocess/reorder/pre-GSUB hooks, masks, GSUB/GPOS stages, and
-   postprocessing. The exact hook order and mask-reset defect are described in
+   postprocessing. Masks are initialized before `SetupMasks`, and its changes
+   are preserved during execution (SHAPE-001 fixed). The exact hook order is described in
    [SHAPER_INTERFACES.md](SHAPER_INTERFACES.md).
 4. Calls `findFlushCut`.
 5. If no cut is ready, fills up to max and reshapes.

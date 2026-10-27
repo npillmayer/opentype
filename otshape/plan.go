@@ -994,9 +994,11 @@ func (e *planExecutor) owns() bool {
 	return e.run != nil && e.run.owner == e
 }
 
+// apply executes a run whose masks have already been initialized and customized
+// by SetupMasks, if present. Execution must preserve those mask decisions.
 func (e *planExecutor) apply(pl *plan) error {
 	assert(e.owns(), "plan executor does not own run buffer")
-	e.ensureRunMasks(pl)
+	assert(len(e.run.Masks) == e.run.Len(), "plan executor requires prepared masks")
 	if err := e.applyGSUB(pl); err != nil {
 		return err
 	}

@@ -1,5 +1,10 @@
 # Shaping Engine and Test Strategy
 
+Current coverage and open findings are described below; resolved issues have
+compact reference entries in
+[SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
+and batch counts describe their original discovery snapshots.
+
 ## Assessment as of 2026-10-26
 
 The shaping pipeline is substantially implemented and easy to exercise through
@@ -123,16 +128,15 @@ That stub does not describe the implementation state of `Shaper.Shape`.
 
 ### Failures reproduced through the public API
 
-These began as temporary review probes. Mask preservation, feature ranges,
-alternate values, and engine selection now have tagged public-API regressions;
+These began as temporary review probes. Feature ranges, alternate values,
+and engine selection have tagged public-API regressions;
 see [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md) for stable IDs, exact commands,
 and current status. Streaming-context and script-tag observations below remain
 review probes outside that first regression batch.
 
 | Finding | Reproduction / result | Implementation location |
 | --- | --- | --- |
-| Script-generated masks are overwritten | With `gsub3_1_simple_f1.otf`, feature `test` enabled, and the cmap-backed rune for GID 18, a custom `SetupMasks` hook clearing masks still produces GID 20. Execution reinitializes masks after the hook. Arabic form selection depends on this hook. | `shapeMappedRun` in [shape_api.go](../otshape/shape_api.go), `planExecutor.apply` in [plan.go](../otshape/plan.go) |
-| Feature ranges use chunk-local indexes | Repeat that rune four times and enable `test` for `[2,3)`. Default buffering gives `[18,18,20,18]`; high/low/max `2/1/4` gives `[18,18,18,18]`. Range assignment indexes the current buffer rather than original input clusters. | `ensureRunMasks` and `applyFeatureRangesToMasks` in [lookups.go](../otshape/lookups.go) |
+| Feature ranges use chunk-local indexes | Repeat the cmap-backed rune for GID 18 in `gsub3_1_simple_f1.otf` four times and enable `test` for `[2,3)`. Default buffering gives `[18,18,20,18]`; high/low/max `2/1/4` gives `[18,18,18,18]`. Range assignment indexes the current buffer rather than original input clusters. | `ensureRunMasks` and `applyFeatureRangesToMasks` in [lookups.go](../otshape/lookups.go) |
 | Feature values do not select alternates | On the same alternate fixture/rune, `Arg=1`, `2`, and `3` all produce GID 20. Values reach masks, but ordinary execution passes `alt=0`. Lower-level tests can select GIDs 20, 21, and 22. | `applyLookups` in [lookups.go](../otshape/lookups.go); [feature_functional_test.go](../otlayout/feature_functional_test.go) |
 | Streaming loses context | With `gpos3_font1.otf`, input U+0012 U+0013, and `test` enabled, default buffering records a cursive attachment on the second glyph. High/low/max `1/1/2` loses it. | [shape_streaming.go](../otshape/shape_streaming.go) |
 | A nonmatching engine can be selected | Supply only an engine returning `ShaperConfidenceNone`. Shaping succeeds instead of returning `ErrNoMatchingShaper`; selection skips negative scores but accepts zero. | `selectShapingEngine` in [shape_api.go](../otshape/shape_api.go) |
@@ -397,6 +401,12 @@ events, normalization probes, flushing, and source/sink behavior.
 `output_bounds_test.go`, and run-buffer tests cover metadata correspondence and
 failure semantics.
 
+Ordinary regressions in
+[`otcore/shared_api_test.go`](../otshape/otcore/shared_api_test.go) verify that
+engine-customized masks survive execution through both public APIs, checking
+GIDs, clusters, and disabled/enabled masks. `plan_test.go` also verifies stable
+engine feature-bit allocation with user precedence and disabled features.
+
 The engine subpackages add public-API and script unit tests. However, Arabic
 streaming parity deliberately uses non-joining digits; Hebrew streaming parity
 uses plain letters. Neither establishes joining/mark behavior across boundaries.
@@ -618,9 +628,9 @@ where they affect Latin or Hebrew; use fixtures from those scripts or small
 synthetic cases to isolate them. Existing tests for deferred scripts should
 continue to pass, but expanding their coverage is not a current priority.
 
-1. **Shared API correctness.** The first four tagged regressions cover mask
-   preservation, feature ranges, alternate values, and engine selection; track
-   their resolution in [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md). Implement the
+1. **Shared API correctness.** Feature ranges, alternate values, and engine
+   selection remain tagged; track their resolution in
+   [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md). Implement the
    agreed alternate-value contract in a separate fix session and promote
    regressions to the ordinary suite as fixes land. Continue discovery with
    Latin/Hebrew script and language selection; defer expanding the script map

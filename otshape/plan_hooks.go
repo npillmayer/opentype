@@ -167,6 +167,9 @@ func (p *planFeaturePlanner) maskFeatures() []FeatureRange {
 			Arg:     int(v),
 		})
 	}
+	// Mask bits are allocated in slice order. Keep engine-requested assignments
+	// stable across plans rather than exposing map iteration order in output masks.
+	sort.Slice(features, func(i, j int) bool { return features[i].Feature < features[j].Feature })
 	return features
 }
 

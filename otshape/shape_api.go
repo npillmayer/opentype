@@ -162,6 +162,7 @@ func shapeMappedRun(run *runBuffer, engine ShapingEngine, pl *plan) error {
 	exec.acquireBuffer(run)
 	defer exec.releaseBuffer()
 
+	// Prepare this fresh run once, before the engine customizes its masks.
 	exec.ensureRunMasks(pl)
 	if hook, ok := engine.(ShapingEngineMaskHook); ok {
 		hook.SetupMasks(rc)

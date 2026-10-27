@@ -414,6 +414,7 @@ func TestPlanExecutorStagePauseOrder(t *testing.T) {
 			},
 		},
 	}
+	exec.ensureRunMasks(p)
 	if err := exec.apply(p); err != nil {
 		t.Fatalf("executor apply failed: %v", err)
 	}
@@ -444,6 +445,7 @@ func TestPlanExecutorZeroMarksByAttachment(t *testing.T) {
 			ZeroMarks: true,
 		},
 	}
+	exec.ensureRunMasks(p)
 	if err := exec.apply(p); err != nil {
 		t.Fatalf("executor apply failed: %v", err)
 	}
@@ -493,6 +495,7 @@ func TestPlanExecutorFallbackMarkPositionAndZeroing(t *testing.T) {
 			FallbackMarkPos: true,
 		},
 	}
+	exec.ensureRunMasks(p)
 	if err := exec.apply(p); err != nil {
 		t.Fatalf("executor apply failed: %v", err)
 	}
@@ -665,6 +668,34 @@ func TestCollectUserFeatureTogglesSeparatesGlobalAndRange(t *testing.T) {
 	}
 	if !liga.hasGlobal || liga.on {
 		t.Fatalf("expected global liga off toggle, got %+v", liga)
+	}
+}
+
+func TestEngineFeatureMaskAllocationStable(t *testing.T) {
+	user := []FeatureRange{{Feature: ot.T("zzzz"), On: true}}
+	tags := []ot.Tag{ot.T("liga"), ot.T("zzzz"), ot.T("kern"), ot.T("aalt")}
+	want := map[ot.Tag]uint32{ot.T("zzzz"): 1, ot.T("aalt"): 2, ot.T("liga"): 4}
+	// Compile independent mask layouts in varying registration orders. User
+	// masks keep precedence; enabled engine-only features get stable tag order.
+	for attempt := 0; attempt < 32; attempt++ {
+		planner := newPlanFeaturePlanner(nil, SelectionContext{}, nil, user)
+		for i := range tags {
+			planner.EnableFeature(tags[(i+attempt)%len(tags)])
+		}
+		planner.DisableFeature(ot.T("kern"))
+		features := append(append([]FeatureRange(nil), user...), planner.maskFeatures()...)
+		layout, err := compileUserFeatureMasks(features)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(layout.ByFeature) != len(want) || layout.GlobalMask != 7 {
+			t.Fatalf("attempt %d: unexpected mask layout %+v", attempt, layout)
+		}
+		for tag, mask := range want {
+			if got := layout.ByFeature[tag].Mask; got != mask {
+				t.Fatalf("attempt %d: feature %s mask = %#x, want %#x", attempt, tag, got, mask)
+			}
+		}
 	}
 }
 

@@ -48,13 +48,13 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def capture(binary):
+def capture(binary, specifications=CASES, empty_output_ids=()):
     env = {**os.environ, "LC_ALL": "C"}
     version = subprocess.check_output([binary, "--version"], text=True, env=env).strip()
     if version != VERSION:
         raise ValueError(f"expected {VERSION!r}, got {version!r}")
     cases = []
-    for ident, font, script, language, direction, text, features in CASES:
+    for ident, font, script, language, direction, text, features in specifications:
         font_path = "testdata/fonts/" + font
         args = [font_path, "--unicodes=" + ",".join(f"U+{ord(c):04X}" for c in text),
                 "--shapers=ot", "--font-funcs=ot", "--font-size=upem",
@@ -62,8 +62,13 @@ def capture(binary):
                 "--cluster-level=0", "--single-par", "--no-glyph-names", "--output-format=json"]
         if features:
             args.append("--features=" + ",".join(features))
-        output = json.loads(subprocess.check_output([binary, *args], cwd=ROOT, env=env, text=True))
-        if not output or any(set(g) != {"g", "cl", "dx", "dy", "ax", "ay"} or
+        raw_output = subprocess.check_output([binary, *args], cwd=ROOT, env=env, text=True)
+        # hb-shape 15 emits only a newline for a run whose glyphs are all
+        # deleted, including in JSON mode. Permit exactly that serialization
+        # only for explicitly named deletion cases; preserve it as provenance.
+        empty_serialization = ident in empty_output_ids and raw_output == "\n"
+        output = [] if empty_serialization else json.loads(raw_output)
+        if (not output and ident not in empty_output_ids) or any(set(g) != {"g", "cl", "dx", "dy", "ax", "ay"} or
                              any(type(v) is not int for v in g.values()) or g["g"] == 0
                              for g in output):
             raise ValueError(f"{ident}: incomplete output or missing glyph")
@@ -75,6 +80,8 @@ def capture(binary):
                                               "language": language, "dir": direction,
                                               "features": features},
                                   "input": [ord(c) for c in text], "output": output}})
+        if empty_serialization:
+            cases[-1]["empty_output_serialization"] = raw_output
     return {"schema_version": 1, "capture": {
         "version": version, "binary_sha256": sha(Path(binary).resolve().read_bytes()),
         "locale": "C", "cluster_indices": "unicode_scalars", "cluster_level": 0,

@@ -4,6 +4,53 @@ Validated against the source on 2026-10-26. The repeated fill/shape/flush/compac
 loop is implemented. Context-safe equivalence to shaping a complete run is not
 established and has known counterexamples; see [TESTING.md](TESTING.md).
 
+## Agreed buffer contract (2026-10-27; not yet implemented)
+
+Prefer a generous, reusable buffer and explicit supported limits over complex
+logic for arbitrarily small buffers. A required minimum of hundreds or thousands
+of slots is acceptable. Exact sizes and units remain to be selected; the current
+4096-codepoint default is not evidence that the guarantees below already hold.
+Latin and Hebrew are the initial supported scope.
+
+The agreed requirements are:
+
+1. Keep incomplete normalization and base/mark sequences buffered. Impose a
+   documented practical maximum on such sequences; supporting arbitrarily long
+   combining sequences is not required.
+2. Provide sufficient capacity for supported ligatures and their surrounding
+   substitution/positioning context. Ligature component count alone is not the
+   required source-window size. Account for normalization and substitution
+   expansion separately from raw input capacity.
+3. Emit only a prefix whose glyphs, clusters, advances, and offsets cannot change
+   with further input. Retain any preceding context needed to shape the suffix.
+   A sufficiently large buffer still needs a safe-cut rule: a ligature or mark
+   sequence can begin near its end.
+4. Treat watermarks as scheduling preferences, subordinate to safe progress.
+   Reject configurations below the required capacity. If an accepted request
+   reaches a hard limit without a safe cut, return an explicit error instead of
+   forcing a cut that changes shaping. Already emitted output must be final;
+   errors do not imply rollback of earlier sink writes.
+5. Preserve shaping context across feature push/pop boundaries for features
+   that remain enabled. Increasing buffer capacity alone does not fix the
+   separate event-span context barrier (SHAPE-016).
+
+Choose the minimum capacity together with practical sequence/context limits
+and reserved carry/lookahead space. Prefer conservative bounds and explicit
+rejection of unsupported requirements to elaborate attempts to fit every font
+and input into a tiny window. The numeric limits, precise sequence-counting
+rules, and error API are implementation decisions still to be specified. No
+silent truncation or insertion of characters is authorized by this policy.
+
+Tests must distinguish invalid configuration, supported shaping, and resource
+exhaustion. Supported cases must match the independent full-output oracle;
+cases exceeding documented limits must assert the specific error and any
+already-emitted valid prefix. Do not accept an arbitrary error as a substitute
+for correct shaping. Once the minimum is enforced, tiny-buffer discovery cases
+will become rejection tests where applicable. Add long Latin/Hebrew inputs
+with ligatures, pairs, marks, and scopes deliberately straddling boundaries at
+the supported minimum and default sizes, so larger buffers do not merely hide
+the existing failures. Current tests and behavior remain unchanged for now.
+
 ## Public API
 
 ```go

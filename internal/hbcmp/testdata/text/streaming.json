@@ -1,0 +1,1760 @@
+{
+  "schema_version": 1,
+  "capture": {
+    "version": "hb-shape (HarfBuzz) 15.0.0",
+    "binary_sha256": "855aedbd766ed19a7548f9d39fe6aee510c342f893a42e7cc512af437f0d981f",
+    "locale": "C",
+    "cluster_indices": "unicode_scalars",
+    "cluster_level": 0,
+    "units": "font_units",
+    "normalization": "HarfBuzz default; input unmodified"
+  },
+  "cases": [
+    {
+      "id": "stream_ligatures",
+      "text": "office office office",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+006F,U+0066,U+0066,U+0069,U+0063,U+0065,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "liga=1"
+          ]
+        },
+        "input": [
+          111,
+          102,
+          102,
+          105,
+          99,
+          101,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101
+        ],
+        "output": [
+          {
+            "g": 82,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 7,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 8,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 11,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 12,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 13,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 14,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 15,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 18,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 19,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "stream_kerning",
+      "text": "AVATAR AVATAR",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0041,U+0056,U+0041,U+0054,U+0041,U+0052,U+0020,U+0041,U+0056,U+0041,U+0054,U+0041,U+0052",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=kern=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "kern=1"
+          ]
+        },
+        "input": [
+          65,
+          86,
+          65,
+          84,
+          65,
+          82,
+          32,
+          65,
+          86,
+          65,
+          84,
+          65,
+          82
+        ],
+        "output": [
+          {
+            "g": 36,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1059,
+            "ay": 0
+          },
+          {
+            "g": 57,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1130,
+            "ay": 0
+          },
+          {
+            "g": 36,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1119,
+            "ay": 0
+          },
+          {
+            "g": 55,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1007,
+            "ay": 0
+          },
+          {
+            "g": 36,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1219,
+            "ay": 0
+          },
+          {
+            "g": 53,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1149,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 36,
+            "cl": 7,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1059,
+            "ay": 0
+          },
+          {
+            "g": 57,
+            "cl": 8,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1130,
+            "ay": 0
+          },
+          {
+            "g": 36,
+            "cl": 9,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1119,
+            "ay": 0
+          },
+          {
+            "g": 55,
+            "cl": 10,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1007,
+            "ay": 0
+          },
+          {
+            "g": 36,
+            "cl": 11,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1219,
+            "ay": 0
+          },
+          {
+            "g": 53,
+            "cl": 12,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1149,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "stream_accents",
+      "text": "café café café",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0063,U+0061,U+0066,U+0065,U+0301,U+0020,U+0063,U+0061,U+0066,U+0065,U+0301,U+0020,U+0063,U+0061,U+0066,U+0065,U+0301",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=fr",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "fr",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          99,
+          97,
+          102,
+          101,
+          769,
+          32,
+          99,
+          97,
+          102,
+          101,
+          769,
+          32,
+          99,
+          97,
+          102,
+          101,
+          769
+        ],
+        "output": [
+          {
+            "g": 70,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 68,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 940,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 112,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 68,
+            "cl": 7,
+            "dx": 0,
+            "dy": 0,
+            "ax": 940,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 8,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 112,
+            "cl": 9,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 11,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 12,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 68,
+            "cl": 13,
+            "dx": 0,
+            "dy": 0,
+            "ax": 940,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 14,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 112,
+            "cl": 15,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "stream_hebrew",
+      "text": "שלום שלום שלום",
+      "font_path": "testdata/fonts/NotoSansHebrew-Regular.ttf",
+      "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/NotoSansHebrew-Regular.ttf",
+        "--unicodes=U+05E9,U+05DC,U+05D5,U+05DD,U+0020,U+05E9,U+05DC,U+05D5,U+05DD,U+0020,U+05E9,U+05DC,U+05D5,U+05DD",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "NotoSansHebrew-Regular.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": []
+        },
+        "input": [
+          1513,
+          1500,
+          1493,
+          1501,
+          32,
+          1513,
+          1500,
+          1493,
+          1501,
+          32,
+          1513,
+          1500,
+          1493,
+          1501
+        ],
+        "output": [
+          {
+            "g": 23,
+            "cl": 13,
+            "dx": 0,
+            "dy": 0,
+            "ax": 684,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 12,
+            "dx": -10,
+            "dy": 0,
+            "ax": 291,
+            "ay": 0
+          },
+          {
+            "g": 55,
+            "cl": 11,
+            "dx": 0,
+            "dy": 0,
+            "ax": 522,
+            "ay": 0
+          },
+          {
+            "g": 96,
+            "cl": 10,
+            "dx": 0,
+            "dy": 0,
+            "ax": 730,
+            "ay": 0
+          },
+          {
+            "g": 106,
+            "cl": 9,
+            "dx": 0,
+            "dy": 0,
+            "ax": 270,
+            "ay": 0
+          },
+          {
+            "g": 23,
+            "cl": 8,
+            "dx": 0,
+            "dy": 0,
+            "ax": 684,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 7,
+            "dx": -10,
+            "dy": 0,
+            "ax": 291,
+            "ay": 0
+          },
+          {
+            "g": 55,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 522,
+            "ay": 0
+          },
+          {
+            "g": 96,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 730,
+            "ay": 0
+          },
+          {
+            "g": 106,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 270,
+            "ay": 0
+          },
+          {
+            "g": 23,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 684,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 2,
+            "dx": -10,
+            "dy": 0,
+            "ax": 291,
+            "ay": 0
+          },
+          {
+            "g": 55,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 522,
+            "ay": 0
+          },
+          {
+            "g": 96,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 730,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "stream_range",
+      "text": "office office office",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+006F,U+0066,U+0066,U+0069,U+0063,U+0065,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=0,liga[8:11]=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "liga=0",
+            "liga[8:11]=1"
+          ]
+        },
+        "input": [
+          111,
+          102,
+          102,
+          105,
+          99,
+          101,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101
+        ],
+        "output": [
+          {
+            "g": 82,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 7,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 8,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 11,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 12,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 13,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 14,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 15,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 16,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 17,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 18,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 19,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_nested",
+      "text": "office office office office office",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+006F,U+0066,U+0066,U+0069,U+0063,U+0065,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=1,liga[0:21]=0,liga[7:14]=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "liga=1",
+            "liga[0:21]=0",
+            "liga[7:14]=1"
+          ]
+        },
+        "input": [
+          111,
+          102,
+          102,
+          105,
+          99,
+          101,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101
+        ],
+        "output": [
+          {
+            "g": 82,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 7,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 8,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 11,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 12,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 13,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 14,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 15,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 16,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 17,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 18,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 19,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 20,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 21,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 22,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 25,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 26,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 27,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 28,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 29,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 32,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 33,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_pair",
+      "text": "AVATAR",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0041,U+0056,U+0041,U+0054,U+0041,U+0052",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=kern=1,liga=1,liga[1:2]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "kern=1",
+            "liga=1",
+            "liga[1:2]=0"
+          ]
+        },
+        "input": [
+          65,
+          86,
+          65,
+          84,
+          65,
+          82
+        ],
+        "output": [
+          {
+            "g": 36,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1059,
+            "ay": 0
+          },
+          {
+            "g": 57,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1130,
+            "ay": 0
+          },
+          {
+            "g": 36,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1119,
+            "ay": 0
+          },
+          {
+            "g": 55,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1007,
+            "ay": 0
+          },
+          {
+            "g": 36,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1219,
+            "ay": 0
+          },
+          {
+            "g": 53,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1149,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_accent",
+      "text": "é office office",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0065,U+0301,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065,U+0020,U+006F,U+0066,U+0066,U+0069,U+0063,U+0065",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=fr",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=1,liga[3:10]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "fr",
+          "dir": "ltr",
+          "features": [
+            "liga=1",
+            "liga[3:10]=0"
+          ]
+        },
+        "input": [
+          101,
+          769,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101,
+          32,
+          111,
+          102,
+          102,
+          105,
+          99,
+          101
+        ],
+        "output": [
+          {
+            "g": 112,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 7,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 8,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 3,
+            "cl": 9,
+            "dx": 0,
+            "dy": 0,
+            "ax": 451,
+            "ay": 0
+          },
+          {
+            "g": 82,
+            "cl": 10,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 741,
+            "cl": 11,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1829,
+            "ay": 0
+          },
+          {
+            "g": 70,
+            "cl": 14,
+            "dx": 0,
+            "dy": 0,
+            "ax": 895,
+            "ay": 0
+          },
+          {
+            "g": 72,
+            "cl": 15,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "progress_expand",
+      "text": "abababa",
+      "font_path": "testdata/fonts/ShaperTestProgress.ttf",
+      "font_sha256": "6b4bb3ea60b769f0b385eeed74dc79ab50e61628f458c1a1368548acd59293be",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestProgress.ttf",
+        "--unicodes=U+0061,U+0062,U+0061,U+0062,U+0061,U+0062,U+0061",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=test=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestProgress.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "test=1"
+          ]
+        },
+        "input": [
+          97,
+          98,
+          97,
+          98,
+          97,
+          98,
+          97
+        ],
+        "output": [
+          {
+            "g": 1,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 2,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 2,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 1,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 2,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 2,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 1,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 2,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 2,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 1,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "progress_delete",
+      "text": "adadada",
+      "font_path": "testdata/fonts/ShaperTestProgress.ttf",
+      "font_sha256": "6b4bb3ea60b769f0b385eeed74dc79ab50e61628f458c1a1368548acd59293be",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestProgress.ttf",
+        "--unicodes=U+0061,U+0064,U+0061,U+0064,U+0061,U+0064,U+0061",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=test=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestProgress.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "test=1"
+          ]
+        },
+        "input": [
+          97,
+          100,
+          97,
+          100,
+          97,
+          100,
+          97
+        ],
+        "output": [
+          {
+            "g": 1,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 580,
+            "ay": 0
+          },
+          {
+            "g": 1,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 580,
+            "ay": 0
+          },
+          {
+            "g": 1,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 580,
+            "ay": 0
+          },
+          {
+            "g": 1,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "progress_all_deleted",
+      "text": "dddddd",
+      "font_path": "testdata/fonts/ShaperTestProgress.ttf",
+      "font_sha256": "6b4bb3ea60b769f0b385eeed74dc79ab50e61628f458c1a1368548acd59293be",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestProgress.ttf",
+        "--unicodes=U+0064,U+0064,U+0064,U+0064,U+0064,U+0064",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=test=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestProgress.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "test=1"
+          ]
+        },
+        "input": [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "output": []
+      },
+      "empty_output_serialization": "\n"
+    },
+    {
+      "id": "progress_contract",
+      "text": "afifiafifi",
+      "font_path": "testdata/fonts/ShaperTestProgress.ttf",
+      "font_sha256": "6b4bb3ea60b769f0b385eeed74dc79ab50e61628f458c1a1368548acd59293be",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestProgress.ttf",
+        "--unicodes=U+0061,U+0066,U+0069,U+0066,U+0069,U+0061,U+0066,U+0069,U+0066,U+0069",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=test=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestProgress.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "test=1"
+          ]
+        },
+        "input": [
+          97,
+          102,
+          105,
+          102,
+          105,
+          97,
+          102,
+          105,
+          102,
+          105
+        ],
+        "output": [
+          {
+            "g": 1,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 6,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 6,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 1,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 6,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 6,
+            "cl": 8,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          }
+        ]
+      }
+    }
+  ]
+}

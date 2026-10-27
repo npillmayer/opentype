@@ -49,8 +49,12 @@ var textBaselineFindings = map[string]string{
 // Load every record even for a filtered run: missing fonts, fields or cases
 // must fail rather than silently shrink the offline corpus.
 func loadTextBaselines(t *testing.T) []textBaseline {
+	return loadTextBaselineFile(t, "testdata/text/baselines.json", textBaselineFindings, nil)
+}
+
+func loadTextBaselineFile(t *testing.T, path string, assignments map[string]string, emptyOutputs map[string]bool) []textBaseline {
 	t.Helper()
-	data, err := os.ReadFile("testdata/text/baselines.json")
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +96,7 @@ func loadTextBaselines(t *testing.T) []textBaseline {
 			t.Fatalf("empty/duplicate case ID %q", c.ID)
 		}
 		seen[c.ID] = true
-		if _, ok := textBaselineFindings[c.ID]; !ok {
+		if _, ok := assignments[c.ID]; !ok {
 			t.Fatalf("%s: case has no test assignment", c.ID)
 		}
 		f := c.Fixture
@@ -111,7 +115,7 @@ func loadTextBaselines(t *testing.T) []textBaseline {
 		if err != nil {
 			t.Fatalf("%s: %v", c.ID, err)
 		}
-		if len(f.Output) == 0 {
+		if f.Output == nil || (len(f.Output) == 0 && !emptyOutputs[c.ID]) {
 			t.Fatalf("%s: empty oracle", c.ID)
 		}
 		for j, g := range f.Output {
@@ -130,8 +134,8 @@ func loadTextBaselines(t *testing.T) []textBaseline {
 			}
 		}
 	}
-	if len(seen) != len(textBaselineFindings) {
-		t.Fatalf("got %d text baselines, want %d assigned cases", len(seen), len(textBaselineFindings))
+	if len(seen) != len(assignments) {
+		t.Fatalf("got %d text baselines, want %d assigned cases", len(seen), len(assignments))
 	}
 	return corpus.Cases
 }

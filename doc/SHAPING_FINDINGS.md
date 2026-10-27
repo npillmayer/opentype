@@ -69,7 +69,7 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: twenty failing top-level tests across the two packages.
+# Discovery suite: twenty-six failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Inspect one finding (replace 001 with 002, 003, or 004).
@@ -103,6 +103,10 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-012](#shape-012--canonical-equivalent-mark-orders-shape-differently) | reproduced | Canonical ordering is missing before composition |
 | [SHAPE-013](#shape-013--normalization-ignores-font-coverage) | reproduced | Composition/decomposition ignores available cmap mappings |
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
+| [SHAPE-015](#shape-015--streaming-cuts-lose-shaping-context) | reproduced | Buffer cuts change ligatures, pair positioning, and normalization |
+| [SHAPE-016](#shape-016--feature-scopes-sever-unrelated-lookup-context) | reproduced | Feature-event spans break kerning across scope boundaries |
+| [SHAPE-017](#shape-017--gsub-deletion-is-ignored) | reproduced | Empty GSUB multiple-substitution sequences leave glyphs unchanged |
+| [SHAPE-018](#shape-018--forward-lookup-scans-bypass-feature-masks) | reproduced | A lookup enabled at its starting index can match a later disabled glyph |
 
 The AOTS baseline batch adds SHAPE-005/006 in
 [`internal/hbcmp/aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go).
@@ -142,6 +146,18 @@ and one deferred parser-scope failure (SHAPE-014). The full ordinary suite passe
 SHAPE-009 is resolved by contract; SHAPE-011 is now an agreed requirement;
 SHAPE-012/013 are new normalization findings. Only API comments, tests, fixtures,
 tools, and documentation changed; production behavior is unchanged.
+
+The [streaming/scope batch](../internal/hbcmp/testdata/text/STREAMING.md), verified
+on **2026-10-26** at source `f36813fa22e1b0795a66a4860975612f4c7ce9cc` plus
+this batch's tests, adds twelve captures and reuses four existing controls.
+Five buffer profiles, two entry points, and two flush modes produce 320 matrix
+executions: 134 pass and 186 fail under the discovery tag. Ten additional
+empty-input/event checks pass. Six new tagged groups cover SHAPE-015–018 and
+extensions of SHAPE-002/011, bringing the combined total to **twenty-six failing
+top-level tests**. The full ordinary suite passes; all new failures are output
+assertions, with complete input consumption, nil shaping errors, and no panic
+or timeout. No production behavior changed. Each new finding below uses this
+verification baseline.
 
 ## SHAPE-001 — SetupMasks changes are overwritten
 
@@ -224,6 +240,13 @@ a merged cluster is presumed. See the
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE002RangeAfterComposition' -count=1 -v
 ```
+
+**Streaming matrix extension:** `TestKnownBugSHAPE002StreamingBaselines` applies
+`liga=0,liga[8:11]=1` to three `office` words. Whole-input `Shape` passes;
+all four smaller profiles fail. The equivalent push/pop schedule passes with
+whole/lookahead/carry buffers; tiny/forced event runs also lose context
+(SHAPE-015). This independently exercises source ranges after compaction;
+see the [matrix report](../internal/hbcmp/testdata/text/STREAMING.md).
 
 ## SHAPE-003 — Feature values do not select alternates
 
@@ -699,6 +722,12 @@ wrong after length-changing normalization (SHAPE-002).
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE011' -count=1 -v
 ```
 
+**Streaming matrix extension:** `TestKnownBugSHAPE011StreamingBaselines` repeats
+`x + acute` and explicitly enabled Hebrew vav/holam marks over all five buffer
+profiles, both entry points, and both flush modes. All forty executions fail
+the complete oracle. Since whole-input output already fails grouping and final
+positions (SHAPE-007), these are not isolated streaming-context reproductions.
+
 ## SHAPE-012 — Canonical-equivalent mark orders shape differently
 
 **Status:** reproduced. **Test:** `TestKnownBugSHAPE012CanonicalOrdering`.
@@ -791,12 +820,153 @@ by this broader font-acceptance limitation.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE014' -count=1 -v
 ```
 
+## SHAPE-015 — Streaming cuts lose shaping context
+
+**Status:** reproduced. **Test:** `TestKnownBugSHAPE015StreamingContext`.
+
+**Contract decision (2026-10-27):** require a generous minimum buffer capacity
+and impose documented practical sequence/context limits. Hundreds or thousands
+of slots are acceptable; exact limits remain open. Supported runs must preserve
+the oracle output, while invalid configurations or exhausted safe buffering
+must fail explicitly. Forced incorrect output is not acceptable. See the
+[agreed buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented).
+The tiny-buffer reproductions below describe currently accepted configurations;
+after enforcement, applicable cases become specific rejection tests, accompanied
+by boundary regressions at supported sizes. No production or test behavior was
+changed by this decision.
+
+**Expected behavior and basis:** buffer sizes and flush modes should not alter
+the complete shaped output. Independently captured whole-text HarfBuzz results
+supply all GIDs, original scalar clusters, advances, and offsets, in the agreed
+logical order. Passing whole-input controls distinguish these cases from
+pre-existing normalization/mark failures.
+
+**Reproduction:** Gentium `office office office`, `AVATAR AVATAR`, and three
+decomposed `café` words; Noto Hebrew `שלום שלום שלום`; and synthetic `afifiafifi`.
+The [matrix report](../internal/hbcmp/testdata/text/STREAMING.md) specifies every
+feature setting, watermark, and failing cell. Both public entry points and
+both flush modes are affected.
+
+**Observed:** with high/low/max `3/1/8`, the office case emits 15 glyphs instead
+of 14: a final `ffi` dependency is split. The accented text emits 15 instead of
+14, splitting the second expected `é` at cluster 9 into `e` at 9 and acute at
+10. With `3/3/3`, Hebrew loses the first vav's pair adjustment: offset/advance
+`0/301` instead of `-10/291`. Whole-input controls pass every field. Disabled
+ligature/kerning controls and synthetic expansion pass every configuration.
+Some particular alignments pass, including accented text with `3/3/3`;
+passing at one small size does not establish safe cuts generally.
+
+**Implementation evidence:** [shape_streaming.go](../otshape/shape_streaming.go)
+selects and flushes prefixes using the current run's boundary information,
+with forced progress at the cap. These results show that emitted prefixes and
+retained context are insufficient for the tested lookup/normalization
+relationships. A complete repair must consider both safe-cut information and
+hard-cap policy; this discovery batch does not prescribe that implementation.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE015' -count=1 -timeout=30s -v
+```
+
+## SHAPE-016 — Feature scopes sever unrelated lookup context
+
+**Status:** reproduced. **Test:** `TestKnownBugSHAPE016FeatureScopeContext`.
+
+**Expected behavior and basis:** a `liga` scope must not disable an otherwise
+enabled `kern` relationship across its boundary. Event settings are independently
+checked against the equivalent HarfBuzz scalar ranges before shaping.
+
+**Reproduction:** Gentium `AVATAR`, Latn/en/LTR, global `kern=1,liga=1`;
+push `liga=0` at scalar 1 and pop at 2. Whole-input buffers `7/1/8` rule out
+streaming cuts. HarfBuzz receives `kern=1,liga=1,liga[1:2]=0`.
+
+**Observed:** event output preserves GIDs and clusters but gives the first A
+advance 1219 instead of 1059 and V advance 1331 instead of 1130. The remaining
+advances match. Equivalent `Shape` ranges pass whole/lookahead/carry profiles;
+`ShapeEvents` fails every profile and both flush modes.
+
+**Implementation evidence:** `shapeEventCarry` in
+[shape_events.go](../otshape/shape_events.go) partitions input by plan ID,
+normalizes/maps/shapes each span separately, and appends the results. Lookup
+context cannot cross those spans even for features unchanged by the push/pop.
+This reproduces a scope-boundary problem independently of SHAPE-015.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE016' -count=1 -timeout=30s -v
+```
+
+## SHAPE-017 — GSUB deletion is ignored
+
+**Status:** reproduced. **Test:** `TestKnownBugSHAPE017GSUBDeletion`.
+
+**Expected behavior and basis:** GSUB type 2 with an empty replacement sequence
+removes the matched glyph. The repository-authored
+[progress font](../testdata/fonts/STREAMING.md) contains `sub d by NULL` and
+both required layout tables; normal parsing is used. HarfBuzz supplies the
+independent empty/nonempty outputs.
+
+**Reproduction:** `adadada` and `dddddd`, Latn/en/LTR, `test=1`, all five
+buffer profiles, both APIs, both flush modes.
+
+**Observed:** `adadada` remains seven glyphs `[1,3,1,3,1,3,1]`, each advancing
+600. Expected are four `a` glyphs at clusters `[0,2,4,6]`, with advances
+`[580,580,580,600]` after pair positioning. The all-deletion case emits six `d`
+glyphs instead of none. Both return nil and consume through EOF. Expansion
+`b → b b` passes every configuration, and ligature contraction passes the
+whole/lookahead/carry profiles.
+
+**Implementation evidence:** `gsubLookupType2Fmt1` in
+[gsub.go](../otlayout/gsub.go) returns “not applied” when the replacement
+sequence is empty, bypassing deletion. Consequently the all-deletion test is
+installed but cannot yet verify actual zero-output progress. Empty input and
+balanced event-only scopes pass separately. HB's exact newline serialization
+for all-deleted output is preserved in capture metadata and accepted only for
+this designated case; missing/null output is rejected.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE017' -count=1 -timeout=30s -v
+```
+
+## SHAPE-018 — Forward lookup scans bypass feature masks
+
+**Status:** reproduced. **Test:** `TestKnownBugSHAPE018MaskedLookupScan`.
+
+**Expected behavior and basis:** a disabled feature range must prevent a lookup
+from starting a substitution within that range, even when an earlier glyph
+has the feature enabled. Independent HB captures specify the range behavior.
+
+**Reproduction:** five Gentium `office` words with
+`liga=1,liga[0:21]=0,liga[7:14]=1`, whole-input buffers `35/1/36`. The nested
+settings enable the second word, disable the third, then restore global enable
+for the fourth/fifth. A second case uses `e + U+0301 + office office` with
+`liga=1,liga[3:10]=0` and buffers `17/1/18`.
+
+**Observed:** `Shape` produces 26 rather than 28 glyphs in the nested case,
+incorrectly forming `ffi` at cluster 15 in the disabled third word. The first
+disabled word and enabled second word work. The accented case produces 11
+rather than 13 glyphs, also forming a disabled `ffi`. Equivalent event scopes
+pass whole/lookahead/carry profiles. The nested whole-input case has neither
+normalization nor compaction, isolating this from SHAPE-002's coordinate drift.
+
+**Implementation evidence:** `applyLookupSpanInternal` in
+[lookups.go](../otshape/lookups.go) checks the feature mask at `st.Index`, then
+calls lower-level `ApplyFeature`. `gsubLookupType4Fmt1` in
+[gsub.go](../otlayout/gsub.go) uses `matchCoverageForward` from
+[feature.go](../otlayout/feature.go), which can find a later covered glyph
+without checking its API feature mask. The enabled starting index therefore
+does not guarantee the eventual match is enabled.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE018' -count=1 -timeout=30s -v
+```
+
 ## Remaining discovery work
 
 The shared-API and initial AOTS batches are not a complete defect inventory.
 [TESTING.md](TESTING.md#next-testing-priorities) retains the wider priorities
 and earlier inspection/review observations. Next shared-API cases include
-Latin/Hebrew script and language selection, ranges inside merged clusters,
-and feature scopes through `ShapeEvents`. Whole-input range drift after
-normalization is now reproduced under SHAPE-002. Add stable findings here as those
+Latin/Hebrew script and language selection, ranges/scopes inside merged
+clusters, additional feature values, and broader buffer sweeps. The initial
+streaming/event/progress setup is complete; successful all-deletion progress
+remains blocked by SHAPE-017. Whole-input range drift after normalization is
+reproduced under SHAPE-002. Add stable findings here as those
 cases are investigated; do not silently equate missing coverage with a bug.

@@ -27,6 +27,11 @@ agreed contracts. Plain Hebrew passes with the explicit logical-order oracle
 conversion (SHAPE-009 resolved). The normalization extension exposes canonical
 ordering and font-coverage gaps (SHAPE-012/013), strengthens SHAPE-002/010/011,
 and records the parser's no-GPOS scope restriction separately (SHAPE-014).
+The streaming/scope extension adds twelve separate captures and a 320-execution
+matrix: 134 pass, 186 remain tagged; ten empty-input/event checks also pass.
+It exposes lost streaming context, feature-scope context barriers, ignored GSUB
+deletion, and masked forward-scan errors (SHAPE-015–018). The initial test setup
+for priority 5 is implemented; production fixes remain separate.
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md) records their workflow, evidence, and
 open contract questions. Failing discovery tests expose gaps without fixing
 the implementation and are excluded from the ordinary suite; passing baselines
@@ -47,12 +52,12 @@ within the same Go module.
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
-| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. Ten AOTS records and fourteen real-text cases are behind `shaping_knownbugs`. No runner invokes HarfBuzz during tests. |
-| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and 24 independently captured Latin/Hebrew cases in `text/baselines.json`. `text/README.md` and `text/NORMALIZATION.md` record capture semantics, commands, and results. |
+| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. Ten AOTS records and fourteen real-text cases are behind `shaping_knownbugs`. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. No runner invokes HarfBuzz during tests. |
+| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and 24 independently captured Latin/Hebrew cases in `text/baselines.json`. Twelve additional records in `text/streaming.json` supply streaming/scope/progress oracles. `text/README.md`, `text/NORMALIZATION.md`, and `text/STREAMING.md` record semantics, commands, and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Fourteen selected records are executed (five GSUB, nine GPOS; four passing, ten tagged failures, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
-| [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Three derived normalization fonts remove a cmap mapping, mark features, or GPOS; `fonts/NORMALIZATION.md` records their generation and licenses. Also contains Calibri and Go fonts. |
-| [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` prepares fonts; `recover_harfbuzz_aots.py` recovers upstream records; `capture_harfbuzz_text.py` captures/checks complete text output with HarfBuzz 15.0.0. `build_normalization_fonts.py` reproducibly derives capability-reduced fixtures with FontTools. These are not Go test drivers. |
+| [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Three derived normalization fonts remove a cmap mapping, mark features, or GPOS; `fonts/NORMALIZATION.md` records their generation and licenses. The repository-authored `ShaperTestProgress.ttf` isolates expansion, deletion, and contraction; `fonts/STREAMING.md` records its reproducible construction. Also contains Calibri and Go fonts. |
+| [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` prepares fonts; `recover_harfbuzz_aots.py` recovers upstream records; `capture_harfbuzz_text.py` captures/checks complete text output with HarfBuzz 15.0.0. `build_normalization_fonts.py` reproducibly derives capability-reduced fixtures with FontTools. `build_streaming_font.py` builds the progress fixture; `capture_harfbuzz_streaming.py` captures/checks the twelve additional oracles. These are not Go test drivers. |
 | [`ot-tools/`](../ot-tools/) | Manual diagnostics: `shape` prints glyph output, `view` renders glyph proofs, and `font` inspects tables. Useful for investigation; visual inspection does not replace output assertions. |
 | [`internal/fontload/`](../internal/fontload/) | Shared font-byte/SFNT loading support. It does not select or execute shaping features. |
 
@@ -484,16 +489,30 @@ ranged ligatures after an NFC prefix, and Hebrew fallback with absent mark
 features in a font retaining GPOS. Fourteen remain tagged for source-range drift,
 mark offsets/grouping, effective mark-support detection, canonical ordering,
 font-aware normalization, or the explicit no-GPOS parser restriction. This adds
-seven text tests to the thirteen shared/AOTS tests: the combined discovery suite
-has twenty failing top-level tests. Nineteen fail on shaping assertions; one
-fails before shaping at the parser's documented scope boundary (SHAPE-014).
+seven text tests to the thirteen shared/AOTS tests. The streaming extension
+adds six more tagged groups: the combined discovery suite now has **twenty-six
+failing top-level tests**. Twenty-five fail on shaping assertions; one fails
+before shaping at the parser's documented scope boundary (SHAPE-014).
+
+The [streaming/scope matrix](../internal/hbcmp/testdata/text/STREAMING.md) adds
+twelve independent captures and reuses four original text cases. Five buffer
+profiles × both public entry points × both flush modes yield 320 executions:
+134 pass, 186 remain tagged. The runner validates actual push/pop schedules
+against the equivalent HB ranges at every scalar and checks complete output,
+EOF consumption, early emission, and bounded source/sink activity. Ten additional
+empty-input and balanced empty-scope checks pass. Four new findings cover
+streaming context (SHAPE-015), scope context (SHAPE-016), deletion (SHAPE-017),
+and masked forward scans (SHAPE-018); existing SHAPE-002/007/011 remain visible.
+Run with `-timeout=30s` to bound loops without source/sink activity. Actual
+zero-output progress remains blocked because deletion currently does nothing.
 
 Go tests require neither HarfBuzz nor Python/FontTools. HarfBuzz is needed only
 for capture/check preparation; FontTools is needed only to derive/check the
-three modified fonts. Both versions and source/output font hashes are recorded.
+three modified fonts and the synthetic progress font. Tool versions and font
+hashes are recorded.
 The capture executable hash identifies the installed tool, not a reproducible
-build. The small corpus does not establish full Latin/Hebrew conformance or
-cover streaming cuts, feature events, or paragraph bidi processing.
+build. The combined corpora cover selected streaming cuts and feature events; they
+do not establish full Latin/Hebrew conformance or paragraph bidi processing.
 
 ### Measured snapshot
 
@@ -636,12 +655,21 @@ continue to pass, but expanding their coverage is not a current priority.
    marks on ligatures where applicable. Test final coordinates and advances,
    not only `AttachKind`, `AttachTo`, and anchor references. SHAPE-007/008 now
    supply independent public-output reproductions for anchor and advance gaps.
-5. **Streaming and feature-scope boundaries.** Use the Latin/Hebrew baselines to
-   test ligatures, pair positioning, normalization, and combining-mark attachments
-   across buffer cuts. Sweep watermarks and feature push/pop boundaries, checking
-   clusters, ranges, and positions against independent output. Include
-   length-changing and empty-output cases to verify progress. Extend the fixture
-   runner or add dedicated public-API tests for event/streaming configurations.
+5. **Streaming and feature-scope boundaries.** The initial
+   [matrix and event/progress driver](../internal/hbcmp/testdata/text/STREAMING.md)
+   are implemented: independent Latin/Hebrew and synthetic expectations cover
+   ligatures, pairs, normalization, mark failures, nested push/pop restoration,
+   compaction, EOF tails, expansion, contraction, and deletion. Five buffer
+   profiles, both APIs, and both flush modes distinguish passing cells from
+   recorded failures (SHAPE-002/007/011/015–018). Fixes are a separate batch;
+   deletion must work before actual zero-output progress can be verified.
+   The [agreed buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented)
+   permits a generous required minimum and practical sequence/context limits.
+   When implemented, test explicit rejection below the minimum, specific errors
+   on limit exhaustion, and exact output across boundaries in long inputs at
+   supported buffer sizes. Tiny-buffer acceptance is not a future requirement.
+   Further coverage can add scopes inside merged clusters, additional feature
+   values, longer combining sequences, and broader buffer sweeps.
 
 Arabic joining, Syriac shaping, script-specific cursive behavior, and broader
 script coverage remain follow-up work after these Latin/Hebrew priorities.

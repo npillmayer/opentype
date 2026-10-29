@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/npillmayer/opentype/ot"
+	"github.com/npillmayer/opentype/otlayout"
 )
 
 func TestSHAPE003RandomSelectionSurvivesCarryAndScopes(t *testing.T) {
@@ -88,6 +89,69 @@ func TestSHAPE003MasksPreserveLargeValues(t *testing.T) {
 		}
 		if got := spec.decode(mask); got != want {
 			t.Fatalf("source %d: decoded %d, want %d", i, got, want)
+		}
+	}
+}
+
+func TestSHAPE018RandomSelectionUsesMatchedAnchor(t *testing.T) {
+	font := loadMiniOTFont(t, "gsub3_1_simple_f1.otf")
+	params := standardParams(font)
+	params.Features = []FeatureRange{{Feature: ot.T("test"), On: true, Arg: -1}}
+	compiler := newPlanCompiler(params, selectionContextFromParams(params), nil)
+	compiler.randomSeed = 42
+	pl, err := compiler.compileDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for source := uint32(1); source < 32; source += 2 {
+		want := []ot.GlyphIndex{20, 21, 22}[rand.New(rand.NewPCG(42, uint64(source)<<32)).IntN(3)]
+		// The same covered source may be preceded by an uncovered glyph or be
+		// first in rebuilt carry. Both must use its own anchor for the choice.
+		for _, prefix := range []bool{true, false} {
+			runes, clusters := []rune{18}, []uint32{source}
+			if prefix {
+				runes, clusters = []rune{17, 18}, []uint32{source - 1, source}
+			}
+			run := mapRunesToRunBufferInto(newRunBuffer(2), runes, clusters, nil, font)
+			if err := shapeMappedRun(run, nil, pl); err != nil {
+				t.Fatal(err)
+			}
+			last := len(runes) - 1
+			if run.Len() != len(runes) || run.Glyphs[last] != want || run.Clusters[last] != source {
+				t.Fatalf("source=%d prefix=%t: glyphs=%v clusters=%v want=%d", source, prefix, run.Glyphs, run.Clusters, want)
+			}
+			if prefix && (run.Glyphs[0] != 17 || run.Clusters[0] != source-1) {
+				t.Fatal("uncovered prefix changed")
+			}
+		}
+	}
+}
+
+func TestSHAPE018PositioningRespectsStartMask(t *testing.T) {
+	font := loadMiniOTFont(t, "gpos_chaining3_boundary_f2.otf")
+	lookup := font.Layout.GPos.LookupGraph().Lookup(0)
+	lookup.Type, lookup.Flag = ot.MaskGPosLookupType(ot.GPosLookupTypeSingle), 0
+	*lookup.Subtable(0) = ot.LookupNode{LookupType: lookup.Type, Format: 1,
+		Coverage: ot.Coverage{GlyphRange: partialProgressCoverage{}},
+		GPos: &ot.GPosLookupPayload{SingleFmt1: &ot.GPosSingleFmt1Payload{
+			ValueFormat: ot.ValueFormatXAdvance, Value: ot.ValueRecord{XAdvance: 25},
+		}},
+	}
+	run := newRunBuffer(3)
+	run.Glyphs = otlayout.GlyphBuffer{9, 10, 10}
+	run.Clusters, run.Masks = []uint32{0, 1, 2}, []uint32{1, 0, 1}
+	run.Pos = otlayout.NewPosBuffer(3)
+	st := otlayout.NewBufferState(run.Glyphs, run.Pos)
+	exec := &planExecutor{run: run}
+	pl := &plan{font: font}
+	op := lookupOp{FeatureTag: ot.T("test"), Mask: 1}
+	feat := planLookupFeature{tag: op.FeatureTag, typ: otlayout.GPosFeatureType, lookupInx: 0}
+	if _, err := exec.applyLookupSpan(pl, op, feat, st, 0, 0, st.Len(), 0); err != nil {
+		t.Fatal(err)
+	}
+	for i, want := range []int32{0, 0, 25} {
+		if run.Pos[i].XAdvance != want || run.Clusters[i] != uint32(i) {
+			t.Fatalf("glyph %d: pos=%+v cluster=%d, want advance=%d", i, run.Pos[i], run.Clusters[i], want)
 		}
 	}
 }

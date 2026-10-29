@@ -1,5 +1,14 @@
 # AOTS positioning baseline batch
 
+**SHAPE-005 update (2026-10-29):** classification now permits the ligature in
+`gpos5.tests:2`, but replacement deletes the ignored mark. Actual origins are
+`[17|18@1500,0|17@3000,0]`; the complete upstream expectation remains unchanged
+and tagged under the historical `TestKnownBugSHAPE005AOTSLigatureAcrossMark`
+name, now tracking [SHAPE-019](../../../doc/SHAPING_FINDINGS.md#shape-019--ligature-substitution-deletes-ignored-marks).
+Mark preservation/component association and final SHAPE-007/008 positioning
+require separate work. The flagged pair case in [PAIR.md](PAIR.md)
+now passes and has been promoted. The dated results below are historical.
+
 Verified on 2026-10-26 at repository revision
 `f560698c2ecf09ed0c317a78327862707e5d8f46` plus the new tests and adapter changes.
 The six active records below use existing, hash-verified fonts and unchanged

@@ -195,7 +195,7 @@ func TestShapeAppliesGPOSCursiveAttachment(t *testing.T) {
 	}
 }
 
-func TestShapeSkipsGPOSCursiveWithIgnoreBaseGlyphs(t *testing.T) {
+func TestShapeAppliesGPOSCursiveToUnclassifiedGlyphs(t *testing.T) {
 	font := loadMiniOTFont(t, "gpos3_font2.otf")
 	node := lookupNodeAt(t, font, 0)
 	if got := ot.GPosLookupType(node.LookupType); got != ot.GPosLookupTypeCursive {
@@ -218,9 +218,34 @@ func TestShapeSkipsGPOSCursiveWithIgnoreBaseGlyphs(t *testing.T) {
 	if got[0].GID != g1 || got[1].GID != g2 {
 		t.Fatalf("shaped glyphs = [%d %d], want [%d %d]", got[0].GID, got[1].GID, g1, g2)
 	}
-	if got[1].Pos.AttachKind != otlayout.AttachNone || got[1].Pos.AttachTo != -1 {
-		t.Fatalf("expected no attachment for ignore-base-flag fixture, got kind=%d to=%d",
-			got[1].Pos.AttachKind, got[1].Pos.AttachTo)
+	// The fixture classifies only GID 21 as base. GIDs 18/19 are
+	// unclassified, so IgnoreBaseGlyphs must allow their exit/entry pair.
+	if class := font.Layout.GDef.GlyphClassDef.Lookup(21); class != 1 {
+		t.Fatalf("GID 21 class = %d, want base class 1", class)
+	}
+	for _, gid := range []ot.GlyphIndex{g1, g2} {
+		if class := font.Layout.GDef.GlyphClassDef.Lookup(gid); class != 0 {
+			t.Fatalf("GID %d class = %d, want unclassified", gid, class)
+		}
+	}
+	if got[0].Pos.AttachKind != otlayout.AttachNone || got[0].Pos.AttachTo != -1 {
+		t.Fatalf("unexpected leading attachment: %+v", got[0].Pos)
+	}
+	if got[1].Pos.AttachKind != otlayout.AttachCursive || got[1].Pos.AttachTo != 0 {
+		t.Fatalf("expected cursive attachment to glyph 0, got %+v", got[1].Pos)
+	}
+	// The same lookup must skip the actual base glyph between the partners.
+	cp21 := otquery.CodePointForGlyph(font, 21)
+	if cp21 == 0 {
+		t.Fatal("expected cmap mapping for base GID 21")
+	}
+	acrossBase := shapeRunes(t, font, []rune{cp1, cp21, cp2}, []otshape.FeatureRange{{Feature: ot.T("test"), On: true}})
+	if len(acrossBase) != 3 || acrossBase[1].GID != 21 {
+		t.Fatalf("unexpected glyphs across base: %+v", acrossBase)
+	}
+	if acrossBase[1].Pos.AttachKind != otlayout.AttachNone || acrossBase[1].Pos.AttachTo != -1 ||
+		acrossBase[2].Pos.AttachKind != otlayout.AttachCursive || acrossBase[2].Pos.AttachTo != 0 {
+		t.Fatalf("expected cursive attachment across ignored base: %+v", acrossBase)
 	}
 }
 
@@ -250,10 +275,16 @@ func TestShapeHandlesGPOSCursiveMixedEntryExitRecords(t *testing.T) {
 		t.Fatalf("shaped glyphs = [%d %d %d], want [%d %d %d]",
 			got[0].GID, got[1].GID, got[2].GID, g18, g19, g20)
 	}
+	// The checked-in TTX gives g18 an exit and g19 an entry, but g19
+	// has no exit and g20 has no entry. Only g19 can attach to g18.
 	for i := range got {
-		if got[i].Pos.AttachKind != otlayout.AttachNone || got[i].Pos.AttachTo != -1 {
-			t.Fatalf("expected no attachment on glyph[%d], got kind=%d to=%d",
-				i, got[i].Pos.AttachKind, got[i].Pos.AttachTo)
+		wantKind, wantTo := otlayout.AttachNone, int32(-1)
+		if i == 1 {
+			wantKind, wantTo = otlayout.AttachCursive, 0
+		}
+		if got[i].Pos.AttachKind != wantKind || got[i].Pos.AttachTo != wantTo {
+			t.Fatalf("attachment on glyph[%d] = %d to %d, want %d to %d",
+				i, got[i].Pos.AttachKind, got[i].Pos.AttachTo, wantKind, wantTo)
 		}
 	}
 }

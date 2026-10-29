@@ -365,7 +365,7 @@ func (cdf *classDefinitionsFormat2) Lookup(glyph GlyphIndex) int {
 		if glyph < GlyphIndex(rec.U16(0)) {
 			return 0
 		}
-		if glyph < GlyphIndex(rec.U16(2)) {
+		if glyph <= GlyphIndex(rec.U16(2)) {
 			return int(rec.U16(4))
 		}
 	}

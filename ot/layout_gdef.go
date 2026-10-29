@@ -110,14 +110,14 @@ func (h GDefHeader) offsetFor(which string) int {
 }
 
 // GlyphClassDefEnum lists the glyph classes for ClassDefinitions
-// ('GlyphClassDef'-table).
+// ('GlyphClassDef'-table). Zero denotes an unclassified glyph.
 type GlyphClassDefEnum uint16
 
 const (
-	BaseGlyph      GlyphClassDefEnum = iota //single character, spacing glyph
-	LigatureGlyph                           //multiple character, spacing glyph
-	MarkGlyph                               //non-spacing combining glyph
-	ComponentGlyph                          //part of single character, spacing glyph
+	BaseGlyph      GlyphClassDefEnum = iota + 1 //single character, spacing glyph
+	LigatureGlyph                               //multiple character, spacing glyph
+	MarkGlyph                                   //non-spacing combining glyph
+	ComponentGlyph                              //part of single character, spacing glyph
 )
 
 // --- Attachment point list -------------------------------------------------

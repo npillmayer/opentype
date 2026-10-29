@@ -169,7 +169,7 @@ func TestNestedLookupErrorsPreserveAppliedFlag(t *testing.T) {
 
 func TestSequenceRecordInvalidInputIndex(t *testing.T) {
 	font := loadTestFont(t, "gsub3_1_simple_f1.otf")
-	_, _, applied, err := applySequenceLookupRecords(NewBufferState(GlyphBuffer{10}, nil), []int{0},
+	_, _, _, applied, err := applySequenceLookupRecords(NewBufferState(GlyphBuffer{10}, nil), []int{0},
 		[]ot.SequenceLookupRecord{{SequenceIndex: 1}}, font.Layout.GSub.LookupGraph(),
 		errorTestFeature{GSubFeatureType, []int{0}}, 0, nil, applyEnv{numGlyphs: 100})
 	if err == nil || applied || !strings.Contains(err.Error(), "input index 1") {
@@ -273,7 +273,7 @@ func TestZeroDeltaIsAppliedAndCoverageMissIsNot(t *testing.T) {
 }
 
 func TestContextRequiresGraphForNonemptyRecords(t *testing.T) {
-	_, _, applied, err := applySequenceLookupRecords(NewBufferState(GlyphBuffer{10}, nil), []int{0},
+	_, _, _, applied, err := applySequenceLookupRecords(NewBufferState(GlyphBuffer{10}, nil), []int{0},
 		[]ot.SequenceLookupRecord{{}}, nil, errorTestFeature{GSubFeatureType, []int{0}},
 		0, nil, applyEnv{numGlyphs: 100})
 	if err == nil || applied {

@@ -77,6 +77,43 @@ Leaf GSUB/GPOS functions retain position, applied flag, glyph buffer, and edit
 metadata, and add a final error result. Dispatchers and contextual helpers carry
 that error through to `ApplyFeature` and the shaping caller.
 
+### Forward lookup starts (SHAPE-018)
+
+Each forward GSUB/GPOS lookup starts exactly at the current `BufferState.Index`.
+If that glyph is uncovered or excluded by lookup flags, the lookup returns a
+normal non-match without advancing to another candidate. This replaces the
+previous implicit search ahead; direct callers must now perform their own
+iteration and handle the returned position, edits, and errors. `otshape` already
+owns that loop and rechecks each candidate's mask, alternate value, and original
+source anchor before calling `ApplyFeature`.
+
+This restriction applies to the first input of a contextual/chained lookup and
+to each designated nested target, including extension lookups. It does not
+restrict access to surrounding context: subsequent inputs, lookahead, and
+backtrack retain the existing ignored-glyph skipping. A matched contextual rule
+may inspect or modify later glyphs. Nested calls inherit the enclosing alternate
+value and random stream; they do not independently recheck feature settings at
+every nested target. The GDEF classification defects were separately corrected
+by the [SHAPE-005 fix](SHAPING_FINDINGS.md#shape-005--gdef-classification-prevents-ignoremarks).
+Reverse-chaining traversal remains separate. Contextual progression was
+subsequently corrected by the [reviewed SHAPE-006 fix](SHAPING_FINDINGS.md#shape-006--contextual-lookup-revisits-matched-input),
+as described below.
+
+### Forward contextual continuation (SHAPE-006)
+
+After successful nested application, all formats of GSUB 5/6 and GPOS 7/8
+continue after their matched input, adjusted for nested glyph edits. This avoids
+starting another match inside the input just processed. Backtrack and lookahead
+are context only; they do not extend the continuation. Ignored glyphs between
+inputs are accounted for using actual matched positions. See
+[PARTIAL_PROGRESS.md](PARTIAL_PROGRESS.md#successful-contextual-continuation)
+for endpoint remapping and the unchanged partial-failure policy.
+
+A nonapplying child sequence retains the old non-match behavior. Empty-record
+rules, intentional deletion, and reverse traversal are outside this correction.
+Forward class-sequence matching also now honors its requested starting position;
+backward matching continues to start at the preceding glyph.
+
 ### Dispatch and diagnostics
 
 - After a normal non-match, dispatch may try the next subtable.

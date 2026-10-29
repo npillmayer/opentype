@@ -269,16 +269,6 @@ func streamingFinding(id, profile, entry string) string {
 		if entry == "events" {
 			return "016"
 		}
-	case "scope_nested":
-		// Source-coordinate masks fix these two alignments. Whole/tiny/forced
-		// still expose masked forward scans; no general SHAPE-018 fix is claimed.
-		if entry == "runes" && profile != "lookahead" && profile != "carry" {
-			return "018"
-		}
-	case "scope_accent":
-		if entry == "runes" {
-			return "018"
-		}
 	}
 	if profile == "whole" {
 		return ""
@@ -291,6 +281,7 @@ func streamingFinding(id, profile, entry string) string {
 			return "015"
 		}
 	case "stream_kerning", "stream_hebrew", "stream_range", "scope_nested", "scope_pair", "scope_accent", "progress_contract":
+		// SHAPE-018 fixes scope masks; tiny/forced cuts still lose context.
 		if profile == "tiny" || profile == "forced" {
 			return "015"
 		}

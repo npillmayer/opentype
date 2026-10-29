@@ -22,7 +22,7 @@ import (
 // An invalid result returns an error without changing the buffer or producing an edit.
 func gsubLookupType1Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, _, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage) // format 1 does not use the Coverage index
+	mpos, _, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage) // format 1 does not use the Coverage index
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -53,7 +53,7 @@ func gsubLookupType1Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // array, this format uses the Coverage index returned from the Coverage table.
 func gsubLookupType1Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -92,7 +92,7 @@ func gsubLookupType1Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // (glyphCount) and an array of output glyph indices (substituteGlyphIDs).
 func gsubLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -139,7 +139,7 @@ func gsubLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // negative values request random selection. Oversized positive values do not apply.
 func gsubLookupType3Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos, alt int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -189,7 +189,7 @@ func gsubLookupType3Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // NavLocation which is a LigatureSet, i.e. a list of records of unequal lengths.
 func gsubLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -245,7 +245,7 @@ func gsubLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // sequence matches any of the sequence rules. The first matching rule subtable is used.
 func gsubLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -273,13 +273,13 @@ func gsubLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
 		}
 		if applied {
-			return pos, true, out, nil, nil
+			return next, true, out, nil, nil
 		}
 	}
 	return pos, false, buf, nil, nil
@@ -287,7 +287,7 @@ func gsubLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 
 func gsubLookupType5Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, _, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, _, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -316,13 +316,13 @@ func gsubLookupType5Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
 		}
 		if applied {
-			return pos, true, out, nil, nil
+			return next, true, out, nil, nil
 		}
 	}
 	return pos, false, buf, nil, nil
@@ -342,27 +342,27 @@ func gsubLookupType5Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if len(payload.InputCoverages) == 0 {
 		return pos, false, buf, nil, nil
 	}
-	inputPos, ok := matchCoverageSequenceForward(ctx, buf, pos, payload.InputCoverages)
+	inputPos, ok := matchInputCoverageSequence(ctx, buf, pos, payload.InputCoverages)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
 	if len(payload.Records) == 0 {
 		return pos, false, buf, nil, nil
 	}
-	out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+	out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 	ctx.buf.Pos = outPosBuf
 	if err != nil {
 		return pos, applied, out, nil, err
 	}
 	if applied {
-		return pos, true, out, nil, nil
+		return next, true, out, nil, nil
 	}
 	return pos, false, buf, nil, nil
 }
 
 func gsubLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -407,13 +407,13 @@ func gsubLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
 		}
 		if applied {
-			return pos, true, out, nil, nil
+			return next, true, out, nil, nil
 		}
 	}
 	return pos, false, buf, nil, nil
@@ -421,7 +421,7 @@ func gsubLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 
 func gsubLookupType6Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -466,13 +466,13 @@ func gsubLookupType6Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
 		}
 		if applied {
-			return pos, true, out, nil, nil
+			return next, true, out, nil, nil
 		}
 	}
 	return pos, false, buf, nil, nil
@@ -501,7 +501,7 @@ func gsubLookupType6Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		return pos, false, buf, nil, nil
 	}
 	inputFn := func(ctx *applyCtx, buf GlyphBuffer, pos int) ([]int, bool) {
-		return matchCoverageSequenceForward(ctx, buf, pos, payload.InputCoverages)
+		return matchInputCoverageSequence(ctx, buf, pos, payload.InputCoverages)
 	}
 	var backtrackFn matchSeqFn
 	if len(payload.BacktrackCoverages) > 0 {
@@ -522,13 +522,13 @@ func gsubLookupType6Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if len(payload.Records) == 0 {
 		return pos, false, buf, nil, nil
 	}
-	out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+	out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 	ctx.buf.Pos = outPosBuf
 	if err != nil {
 		return pos, applied, out, nil, err
 	}
 	if applied {
-		return pos, true, out, nil, nil
+		return next, true, out, nil, nil
 	}
 	return pos, false, buf, nil, nil
 }

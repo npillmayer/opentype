@@ -271,8 +271,8 @@ func (e *planExecutor) applyLookupSpanInternal(
 		if selection < 0 {
 			// Rebuilt carry must draw the same choice on subsequent passes. Seed
 			// by the original source anchor and outer lookup, never chunk offset.
-			// Nested lookups share this stream. Forward scans past this starting
-			// glyph remain subject to SHAPE-018's mask/value gating limitation.
+			// Nested lookups share this stream. Forward lookup starts are anchored
+			// to this glyph; a non-match lets the loop check the next candidate.
 			source := uint32(indexBase + st.Index)
 			if len(e.run.Clusters) > indexBase+st.Index {
 				source = e.run.Clusters[indexBase+st.Index]

@@ -108,3 +108,50 @@ func TestSHAPE003NestedAlternateScopes(t *testing.T) {
 		assertAPIGlyphs(t, sink.glyphs, []ot.GlyphIndex{21, 22, 18, 22, 18, 22, 20, 22, 21})
 	}
 }
+
+// SHAPE-018: the lookup must use the settings at the actual starting glyph.
+func TestSHAPE018AlternateValueAtMatchedGlyph(t *testing.T) {
+	params, cp := alternateAPIInput(t)
+	params.Features = []otshape.FeatureRange{
+		{Feature: ot.T("test"), On: true, Arg: 1},
+		{Feature: ot.T("test"), On: true, Arg: 3, Start: 1, End: 2},
+	}
+	got := shapeAPIRecords(t, params, string(rune(17))+cp, otshape.BufferOptions{}, otcore.New())
+	assertAPIGlyphs(t, got, []ot.GlyphIndex{17, 22})
+}
+
+func TestSHAPE018ScopesAfterUncoveredGlyph(t *testing.T) {
+	for _, api := range []string{"Shape", "ShapeEvents"} {
+		for _, opts := range []otshape.BufferOptions{
+			{HighWatermark: 8, LowWatermark: 4, MaxBuffer: 8},
+			{HighWatermark: 2, LowWatermark: 1, MaxBuffer: 4},
+		} {
+			t.Run(fmt.Sprintf("%s/high=%d", api, opts.HighWatermark), func(t *testing.T) {
+				params, cp := alternateAPIInput(t)
+				params.Features[0].Arg = 1
+				sink := &glyphCollector{}
+				shaper := otshape.NewShaper(otcore.New())
+				var err error
+				if api == "Shape" {
+					params.Features = append(params.Features,
+						otshape.FeatureRange{Feature: ot.T("test"), On: false, Start: 1, End: 2},
+						otshape.FeatureRange{Feature: ot.T("test"), On: true, Arg: 3, Start: 3, End: 4})
+					err = shaper.Shape(params, strings.NewReader(string(rune(17))+cp+string(rune(17))+cp), sink, opts)
+				} else {
+					uncovered := otshape.InputEvent{Kind: otshape.InputEventRune, Rune: 17, Size: 1}
+					covered := otshape.InputEvent{Kind: otshape.InputEventRune, Rune: []rune(cp)[0], Size: len(cp)}
+					pop := otshape.InputEvent{Kind: otshape.InputEventPopFeatures}
+					src := &alternateEventSource{events: []otshape.InputEvent{
+						uncovered, {Kind: otshape.InputEventPushFeatures, Push: []otshape.FeatureSetting{{Tag: ot.T("test"), Enabled: false}}}, covered, pop,
+						uncovered, {Kind: otshape.InputEventPushFeatures, Push: []otshape.FeatureSetting{{Tag: ot.T("test"), Enabled: true, Value: 3}}}, covered, pop,
+					}}
+					err = shaper.ShapeEvents(params, src, sink, opts)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertAPIGlyphs(t, sink.glyphs, []ot.GlyphIndex{17, 18, 17, 22})
+			})
+		}
+	}
+}

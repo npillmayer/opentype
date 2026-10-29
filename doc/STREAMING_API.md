@@ -81,8 +81,8 @@ glyph unchanged by that substitution. A request-local seed is shared by all
 event plans. Random lookup attempts derive their generator from that seed, the
 original scalar anchor, and the outer lookup index, so reshaping the same carry
 anchor repeats the choice. Separate requests can differ. This does not repair
-context loss or SHAPE-018's scans to a later glyph with a different mask/value
-or source anchor; see [SHAPE-003](SHAPING_FINDINGS.md#shape-003--feature-values-do-not-select-alternates).
+context loss. SHAPE-018 now anchors forward lookup starts to the checked glyph,
+including its mask/value and source anchor; reverse traversal remains separate. See [SHAPE-003](SHAPING_FINDINGS.md#shape-003--feature-values-do-not-select-alternates).
 
 The source must return `io.EOF` to terminate. Rune byte sizes are ignored by
 ordinary ingestion; cluster IDs are monotonically assigned codepoint indexes.

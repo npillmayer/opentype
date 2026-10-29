@@ -5,6 +5,39 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## Reviewed SHAPE-006 resolution (2026-10-29)
+
+The [reviewed SHAPE-006 fix](SHAPING_FINDINGS.md#shape-006--contextual-lookup-revisits-matched-input)
+keeps forward contextual matches from revisiting their input. The upstream case
+passes unchanged in
+`TestAOTSGSUBBaselines`. Fourteen selected AOTS records now have nine passing
+and five tagged records, plus the passing simple-alternate streaming execution.
+The shared endpoint fix covers GSUB 5/6 and GPOS 7/8, all three formats. Focused
+checks cover ignored marks, lookahead boundaries, nested expansion/contraction,
+partial failures, and whole/isolated-run progression. The approved forward
+class-matching offset correction has a separate forward/backward regression.
+Empty-record/no-applying-child behavior and SHAPE-017/019 remain separate.
+
+## Reviewed SHAPE-005 resolution (2026-10-29)
+
+The [reviewed SHAPE-005 fix](SHAPING_FINDINGS.md#shape-005--gdef-classification-prevents-ignoremarks)
+corrects inclusive ClassDef format-2 endpoints and GDEF class numbers.
+Three unchanged AOTS records were promoted: interleaved IgnoreMarks and flagged
+alternates in `TestAOTSGSUBBaselines`, and the flagged pair-advance case in
+`TestAOTSGPOSBaselines`. The fourteen selected AOTS records now have eight
+passing and six tagged records, plus the passing simple-alternate streaming
+execution. `TestAOTSGDEFClassification` retains the promoted classification
+assertions; parser boundary tests cover singleton/adjacent ranges and glyph 65535.
+
+Two cursive metadata tests previously treated unclassified glyphs as base glyphs.
+Their expectations now follow the fonts' GDEF and checked-in GPOS TTX; an added
+case verifies skipping the actual base glyph. No HarfBuzz expectations changed.
+The full interleaved-mark ligature record stays tagged: its ligature now forms,
+but span replacement deletes the intervening mark
+([SHAPE-019](SHAPING_FINDINGS.md#shape-019--ligature-substitution-deletes-ignored-marks)).
+Its test retains the historical `TestKnownBugSHAPE005AOTSLigatureAcrossMark` name.
+Component association and SHAPE-007/008 positioning remain separate work.
+
 ## Assessment as of 2026-10-26
 
 The shaping pipeline is substantially implemented and easy to exercise through
@@ -57,9 +90,9 @@ within the same Go module.
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
-| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. Ten AOTS records and thirteen real-text cases are behind `shaping_knownbugs`. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. No runner invokes HarfBuzz during tests. |
+| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. Five AOTS records and thirteen real-text cases are behind `shaping_knownbugs`. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. No runner invokes HarfBuzz during tests. |
 | [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and 24 independently captured Latin/Hebrew cases in `text/baselines.json`. Twelve additional records in `text/streaming.json` supply streaming/scope/progress oracles. `text/README.md`, `text/NORMALIZATION.md`, and `text/STREAMING.md` record semantics, commands, and results. |
-| [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Fourteen selected records are executed (five GSUB, nine GPOS; four passing, ten tagged failures, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
+| [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Fourteen selected records are executed (five GSUB, nine GPOS; nine passing, five tagged failures, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
 | [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Three derived normalization fonts remove a cmap mapping, mark features, or GPOS; `fonts/NORMALIZATION.md` records their generation and licenses. The repository-authored `ShaperTestProgress.ttf` isolates expansion, deletion, and contraction; `fonts/STREAMING.md` records its reproducible construction. Also contains Calibri and Go fonts. |
 | [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` prepares fonts; `recover_harfbuzz_aots.py` recovers upstream records; `capture_harfbuzz_text.py` captures/checks complete text output with HarfBuzz 15.0.0. `build_normalization_fonts.py` reproducibly derives capability-reduced fixtures with FontTools. `build_streaming_font.py` builds the progress fixture; `capture_harfbuzz_streaming.py` captures/checks the twelve additional oracles. These are not Go test drivers. |
@@ -128,15 +161,14 @@ That stub does not describe the implementation state of `Shaper.Shape`.
 
 ### Failures reproduced through the public API
 
-These began as temporary review probes. Engine selection and range-crossing
-scans remain tagged;
+These began as temporary review probes. Engine selection remains tagged;
+range-crossing forward starts now have ordinary regressions;
 see [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md) for stable IDs, exact commands,
 and current status. Streaming-context and script-tag observations below remain
 review probes outside that first regression batch.
 
 | Finding | Reproduction / result | Implementation location |
 | --- | --- | --- |
-| Forward scans bypass alternate values (SHAPE-018) | On `gsub3_1_simple_f1.otf`, input GIDs `[17,18]`, global `test=1`, and `test[1:2]=3` produce `[17,20]` instead of `[17,22]`. Value selection uses the attempted start, but the lower lookup scans to a different glyph. | `applyLookupSpanInternal` in [lookups.go](../otshape/lookups.go); [shared_api_knownbugs_test.go](../otshape/otcore/shared_api_knownbugs_test.go) |
 | Streaming loses context | With `gpos3_font1.otf`, input U+0012 U+0013, and `test` enabled, default buffering records a cursive attachment on the second glyph. High/low/max `1/1/2` loses it. | [shape_streaming.go](../otshape/shape_streaming.go) |
 | A nonmatching engine can be selected | Supply only an engine returning `ShaperConfidenceNone`. Shaping succeeds instead of returning `ErrNoMatchingShaper`; selection skips negative scores but accepts zero. | `selectShapingEngine` in [shape_api.go](../otshape/shape_api.go) |
 | Script tags are incomplete | `ScriptTagForScript` returns `DFLT` for `Syrc`, `Taml`, and `Mlym`. Much of the map uses full names instead of ISO script codes. Syriac engine matching does not repair the layout script tag. | [language.go](../otshape/language.go) |
@@ -221,19 +253,19 @@ and streaming.
 
 | Font(s) | Structural TTX comparisons | Lookup execution / public shaping examples |
 | --- | --- | --- |
-| `gsub3_1_simple_f1` | GSUB structural and concrete comparisons | Alternate selection in `otlayout/feature_functional_test.go`; public GSUB in `otshape/otcore/otcore_test.go`; ordinary shared-API and AOTS range/value regressions; tagged SHAPE-018 crossing case |
-| `gsub3_1_lookupflag_f1` | GSUB structural and concrete comparisons | Tagged AOTS IgnoreBaseGlyphs failure (SHAPE-005); no corresponding case in `feature_functional_test.go` |
+| `gsub3_1_simple_f1` | GSUB structural and concrete comparisons | Alternate selection in `otlayout/feature_functional_test.go`; public GSUB in `otshape/otcore/otcore_test.go`; ordinary shared-API and AOTS range/value regressions; ordinary SHAPE-018 crossing case |
+| `gsub3_1_lookupflag_f1` | GSUB structural and concrete comparisons | Ordinary AOTS IgnoreBaseGlyphs regression (SHAPE-005); no corresponding case in `feature_functional_test.go` |
 | `gsub_chaining2_next_glyph_f1` | Selected single/ligature lookups in both GSUB comparison suites | No corresponding execution case in `feature_functional_test.go` |
-| `gsub_context1_lookupflag_f1` | Selected contextual lookup in both GSUB comparison suites | `feature_functional_test.go` exercises the IgnoreMarks flag without interleaved marks; pipeline/edit tests; AOTS SHAPE-005 adds interleaved marks |
-| `gsub_context1_next_glyph_f1`, `classdef2_font4` | Selected contextual lookups in both GSUB comparison suites | AOTS adapter: tagged SHAPE-006 progression failure and passing no-change class baseline, respectively |
+| `gsub_context1_lookupflag_f1` | Selected contextual lookup in both GSUB comparison suites | `feature_functional_test.go` exercises the IgnoreMarks flag without interleaved marks; pipeline/edit tests; ordinary AOTS SHAPE-005 regression adds interleaved marks |
+| `gsub_context1_next_glyph_f1`, `classdef2_font4` | Selected contextual lookups in both GSUB comparison suites | AOTS adapter: ordinary SHAPE-006 progression regression and passing no-change class baseline, respectively |
 | `gpos_chaining3_boundary_f2` | Selected single, pair, and chained-context lookups in both GPOS comparison suites | Single/pair execution in `otlayout/gpos_runtime_golden_test.go`; passing AOTS chained single-positioning baseline (not pair positioning) |
-| `gpos4_simple_1`, `gpos5_font1` | Mark-to-base and mark-to-ligature comparisons | Attachment execution in `otlayout/gpos_runtime_golden_test.go`; five tagged AOTS origin cases for SHAPE-005/007/008 |
+| `gpos4_simple_1`, `gpos5_font1` | Mark-to-base and mark-to-ligature comparisons | Attachment execution in `otlayout/gpos_runtime_golden_test.go`; five tagged AOTS origin cases for SHAPE-007/008/019 |
 | `gpos3_font1`, `gpos3_font2`, `gpos3_font3` | Their TTX files are currently unused by the comparison tests | Cursive attachment cases in `otshape/otcore/gpos_test.go` |
 
 The later additions `gpos2_1_simple_f1` and `gpos2_1_lookupflag_f2` bring the
 current mini-font total to 14. They have no structural TTX comparisons: the
 first supplies two passing AOTS pair cases, and the second a tagged pair-advance
-case for SHAPE-005. The missing-type/format TTX inventory below is unchanged.
+case for SHAPE-005 (promoted on 2026-10-29). The missing-type/format TTX inventory below is unchanged.
 
 The test entry points are:
 
@@ -386,9 +418,9 @@ the later AOTS adapter adds behavioral tests, not structural TTX comparisons.
 and position buffer, and runs the concrete dispatcher. Embedded vectors cover
 alternate selection and contextual substitution with the IgnoreMarks flag,
 but those vectors contain no interleaved marks. The upstream baseline in
-SHAPE-005 supplies that missing behavior and fails; SHAPE-006 independently
-exposes overlapping contextual matches. See
-[SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#shape-005--gdef-classification-prevents-ignoremarks).
+SHAPE-005 supplies that missing behavior and now passes. The reviewed
+[SHAPE-006 regressions](SHAPING_FINDINGS.md#shape-006--contextual-lookup-revisits-matched-input)
+verify non-overlapping contextual continuation, including nested glyph edits.
 Other
 `otlayout` tests cover synthetic substitutions, positioning, extensions, nested
 errors, bounded recursion/work, and partial edits.
@@ -415,8 +447,15 @@ selection contract with fixed-seed random draws; internal
 across rebuilt spans/event plans and retention of large values. The unchanged
 AOTS alternate oracle passes in whole-input and streaming configurations.
 See the [reviewed SHAPE-003 resolution](SHAPING_FINDINGS.md#shape-003--feature-values-do-not-select-alternates).
-Forward scans across differently valued ranges remain a separate tagged
-SHAPE-018 regression, including a limitation on which anchor seeds randomness.
+The [reviewed SHAPE-018 fix](SHAPING_FINDINGS.md#shape-018--forward-lookup-scans-bypass-feature-masks)
+anchors forward starts at the checked glyph: the range-crossing
+regression is ordinary, and fixed-seed tests check the matched source anchor
+with and without an uncovered prefix. Direct/extension/nested GSUB and GPOS
+checks live in [lookup_start_test.go](../otlayout/lookup_start_test.go).
+This guarantee concerns lookup starts; matched contextual rules may still touch
+later glyphs, and nested calls inherit the enclosing value and random stream.
+An explicit ignored-start case, especially for format-3 contexts, remains an
+optional coverage improvement; review verified that branch by inspection.
 
 The engine subpackages add public-API and script unit tests. However, Arabic
 streaming parity deliberately uses non-joining digits; Hebrew streaming parity
@@ -450,17 +489,18 @@ and reproducible recovery commands.
 
 The [first AOTS batch](../testdata/harfbuzz/aots/ADAPTER.md) selected three active
 records and ran public `Shaper.Shape` with the core engine in a single shaping
-window. `classdef2.tests:2` passes with an unchanged glyph sequence;
-`gsub_context1_lookupflag.tests:2` and `gsub_context1_next_glyph.tests:2` fail
-and are retained as SHAPE-005/006 under `shaping_knownbugs`. Script/language/
+window. `classdef2.tests:2` passes with an unchanged glyph sequence, and
+`gsub_context1_lookupflag.tests:2` now passes after SHAPE-005.
+`gsub_context1_next_glyph.tests:2` now passes after SHAPE-006. Script/language/
 direction are explicitly Latin/English/LTR. Both recorded and explicit-context
 commands reproduced the expected output using installed HarfBuzz 15.0.0;
 the pinned upstream records remain the oracle. No external executable is
 required by the Go tests. That initial batch supplied no positioning, cluster,
 Hebrew, or streaming baseline. The alternate extension adds two
 active records: `gsub3_1_simple.tests:2` now passes whole-input and small-buffer
-execution after SHAPE-002/003, promoted with unchanged expectations; `gsub3_1_lookupflag.tests:2` exposes
-SHAPE-005 through IgnoreBaseGlyphs. Both retain exact upstream expectations.
+execution after SHAPE-002/003, promoted with unchanged expectations;
+`gsub3_1_lookupflag.tests:2` now passes after SHAPE-005, exercising IgnoreBaseGlyphs
+and alternate values. Both retain exact upstream expectations.
 Adapter mapping tests separately check scalar range boundaries and value
 translation; they do not extend the upstream oracle to random or out-of-range
 alternate selection.
@@ -468,18 +508,17 @@ alternate selection.
 The [GPOS batch](../testdata/harfbuzz/aots/GPOS.md) adds six active records.
 The chained single-positioning case passes; mark-to-base/mark-to-ligature
 cases expose SHAPE-007 (anchor offsets remain unresolved), SHAPE-008 (marks
-retain nominal advances), and SHAPE-005 (ligature formation blocked by GDEF
-classification). Origins are compared as preceding emitted advances plus the
+retain nominal advances), and SHAPE-019 (ligature substitution deletes an ignored
+mark after classification was fixed). Origins are compared as preceding emitted advances plus the
 current offset, in font units; the adapter does not resolve attachments itself.
 These assertions do not independently validate every advance/offset or the
 final run advance. The fixture's pair lookups are not reached by its public
 feature. The later [pair batch](../testdata/harfbuzz/aots/PAIR.md) uses two new
 fonts with `test` selecting their sole pair lookup (type 2 format 1). Matching
 18/19, nonmatching 18/20, and incomplete end-of-input cases pass. The separate
-advance-changing pair record remains tagged because IgnoreBaseGlyphs wrongly
-filters its unclassified glyphs (SHAPE-005). It retains the upstream −200
-advance effect on trailing origins. That AOTS advance-changing case remains
-blocked; the later Latin `AVATAR` captures do pass with adjusted advances.
+advance-changing pair record now passes after SHAPE-005. It retains the upstream
+−200 advance effect on trailing origins and checks the pair across an ignored
+base glyph. The later Latin `AVATAR` captures also pass with adjusted advances.
 Cursive baselines remain deferred.
 
 The original JSON path in `internal/hbcmp` runs `Shaper.Shape` with all three
@@ -510,7 +549,7 @@ ranged ligatures after NFC and NFD prefixes, and Hebrew fallback with absent
 mark features in a font retaining GPOS. Thirteen remain tagged for mark
 offsets/grouping, effective mark-support detection, canonical ordering,
 font-aware normalization, or the explicit no-GPOS parser restriction. The
-combined discovery suite has **twenty failing top-level tests**: nineteen
+combined discovery suite after SHAPE-006 has **fourteen failing top-level tests**: thirteen
 shaping assertion groups and the deferred SHAPE-014 parser case.
 
 SHAPE-002's ordinary public-API regression verifies source ranges after streaming
@@ -522,15 +561,18 @@ Ranges splitting merged source sequences remain outside the agreed fix scope.
 The [streaming/scope matrix](../internal/hbcmp/testdata/text/STREAMING.md) adds
 twelve independent captures and reuses four original text cases. Five buffer
 profiles × both public entry points × both flush modes yield 320 executions:
-142 pass, 178 remain tagged. The runner validates actual push/pop schedules
+150 pass, 170 remain tagged. The runner validates actual push/pop schedules
 against the equivalent HB ranges at every scalar and checks complete output,
 EOF consumption, early emission, and bounded source/sink activity. Ten additional
-empty-input and balanced empty-scope checks pass. Four new findings cover
-streaming context (SHAPE-015), scope context (SHAPE-016), deletion (SHAPE-017),
-and masked forward scans (SHAPE-018); existing SHAPE-007/011 remain visible.
+empty-input and balanced empty-scope checks pass. Remaining findings cover
+streaming context (SHAPE-015), scope context (SHAPE-016), and deletion (SHAPE-017);
+existing SHAPE-007/011 remain visible.
 SHAPE-002 promoted eight matrix cells; remaining tiny/forced range failures
 retain full expectations under SHAPE-015. The AOTS streaming range case now
-passes after SHAPE-003 and is an ordinary regression.
+passes after SHAPE-003 and is an ordinary regression. The reviewed SHAPE-018 fix
+promoted eight more complete matrix cells: whole nested scopes and whole/lookahead/carry
+accented scopes, rune input with both flush modes. Eight remaining tiny/forced
+scope cells retain their full expectations under SHAPE-015.
 Run with `-timeout=30s` to bound loops without source/sink activity. Actual
 zero-output progress remains blocked because deletion currently does nothing.
 
@@ -646,21 +688,20 @@ where they affect Latin or Hebrew; use fixtures from those scripts or small
 synthetic cases to isolate them. Existing tests for deferred scripts should
 continue to pass, but expanding their coverage is not a current priority.
 
-1. **Shared API correctness.** Engine selection and forward-scan mask/value
-   gating remain tagged; alternate selection now has ordinary regressions for
+1. **Shared API correctness.** Engine selection remains tagged; exact forward
+   lookup starts and alternate selection now have ordinary regressions for
    one-based/default/random/oversized values, ranges, and event scopes. Track
    review status and dependencies in [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md).
    Continue discovery with
    Latin/Hebrew script and language selection; defer expanding the script map
    and regressions specific to other scripts.
 2. **Independent Latin/Hebrew baselines.** The first AOTS GSUB adapter batch
-   contributes one passing no-change case and two tagged findings (SHAPE-005/006).
-   The simple alternate record now passes both whole-input and streaming checks;
-   the flagged alternate record remains blocked by SHAPE-005.
+   contributes a passing no-change case and interleaved IgnoreMarks case;
+   contextual progression now also passes after SHAPE-006. Both alternate records
+   now pass, including the simple record's additional streaming execution.
    Six GPOS origin records add one passing chained single-positioning baseline
-   and five failures for SHAPE-005/007/008. The pair batch adds matching and
-   nonmatching format-1 baselines that pass, plus an advance-changing case
-   blocked by SHAPE-005. The 24 real-text captures now exercise Latin ligatures,
+   and five failures for SHAPE-007/008/019. All three pair records pass, including
+   the flagged advance-changing case. The 24 real-text captures exercise Latin ligatures,
    kerning, accents, source ranges after normalization, and Hebrew mark/fallback
    behavior. Logical output and level-0 grouping contracts are settled.
    Fix documented blockers in separate sessions and promote passing baselines.
@@ -689,8 +730,8 @@ continue to pass, but expanding their coverage is not a current priority.
    ligatures, pairs, normalization, mark failures, nested push/pop restoration,
    compaction, EOF tails, expansion, contraction, and deletion. Five buffer
    profiles, both APIs, and both flush modes distinguish passing cells from
-   recorded failures (SHAPE-007/011/015–018). Fixes are a separate batch;
-   deletion must work before actual zero-output progress can be verified.
+   remaining failures (SHAPE-007/011/015–017). Deletion must work before actual
+   zero-output progress can be verified.
    The [agreed buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented)
    permits a generous required minimum and practical sequence/context limits.
    When implemented, test explicit rejection below the minimum, specific errors

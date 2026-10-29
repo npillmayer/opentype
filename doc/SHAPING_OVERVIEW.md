@@ -105,14 +105,14 @@ See [SHAPER_INTERFACES.md](SHAPER_INTERFACES.md) for exact hooks and lifetimes.
 
 Implemented: public source/sink API, feature planning and ordering, GSUB/GPOS
 dispatch, edit-aware metadata, script hook interfaces, event feature stacks,
-streaming mechanics, error/partial-progress tests, and benchmarks.
+streaming mechanics, error/partial-progress tests, exact forward lookup starts,
+contextual continuation after the edited input span, and benchmarks.
 
 Known limitations include:
 
-- Forward lookup scans can bypass masks and alternate values at the matched
-  glyph (SHAPE-018). Mask preservation, source-coordinate ranges, and alternate
-  selection have SHAPE-001/002/003 ordinary regressions; ranges splitting merged
-  source sequences remain unresolved.
+- Ranges splitting merged source sequences remain unresolved. Mask preservation,
+  source-coordinate ranges, alternate selection, and exact forward lookup starts
+  have SHAPE-001/002/003/018 ordinary regressions.
 - Streaming can discard needed shaping context; forced flushing does not prove
   equivalence to a complete run.
 - GPOS attachments lack final coordinate resolution; direction handling and

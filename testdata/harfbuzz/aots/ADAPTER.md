@@ -1,5 +1,20 @@
 # AOTS baseline adapter
 
+**Reviewed SHAPE-006 resolution (2026-10-29):** the fix is accepted; see the
+[archived resolution](../../../doc/SHAPING_FINDINGS.md#shape-006--contextual-lookup-revisits-matched-input). `gsub_context1_next_glyph.tests:2` now
+matches its complete unchanged upstream sequence and is an ordinary
+`TestAOTSGSUBBaselines` case. All five selected GSUB records pass; the original
+batch results below remain historical. No oracle or fixture data changed.
+
+**SHAPE-005 update (2026-10-29):** `gsub_context1_lookupflag.tests:2` and
+`gsub3_1_lookupflag.tests:2` now pass their complete unchanged upstream glyph
+expectations and are ordinary `TestAOTSGSUBBaselines` cases. The classification
+assertions moved to `TestAOTSGDEFClassification`. SHAPE-005 is reviewed and
+resolved; the remaining ligature mark-loss test retains its old SHAPE005 name
+but tracks [SHAPE-019](../../../doc/SHAPING_FINDINGS.md#shape-019--ligature-substitution-deletes-ignored-marks).
+The dated results below retain
+the original discovery evidence.
+
 The test-only adapter in
 [`internal/hbcmp/aots_gsub_test.go`](../../../internal/hbcmp/aots_gsub_test.go)
 reads explicitly selected records from the recovered files. It checks the
@@ -165,8 +180,8 @@ PY
 # Passing baseline and adapter validation; no HarfBuzz/Python required.
 go test ./internal/hbcmp -run '^TestAOTS' -count=1 -v
 
-# All AOTS findings, including GPOS: nine failing top-level tests.
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE' -count=1 -v
+# AOTS findings: four failing top-level tests; SHAPE005 is the legacy name for SHAPE-019.
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE(005|006|007|008)AOTS' -count=1 -v
 ```
 
 The full ordinary `go test ./... -count=1` suite passed. Once a defect is fixed,

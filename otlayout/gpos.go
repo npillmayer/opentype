@@ -8,7 +8,7 @@ import (
 // GPOS Lookup Type 1, Format 1: Single Adjustment (single value for all covered glyphs).
 func gposLookupType1Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, _, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, _, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -32,7 +32,7 @@ func gposLookupType1Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 1, Format 2: Single Adjustment (one value per covered glyph).
 func gposLookupType1Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -59,7 +59,7 @@ func gposLookupType1Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 2, Format 1: Pair Adjustment (glyph pair).
 func gposLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -95,7 +95,7 @@ func gposLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 2, Format 2: Pair Adjustment (class-based).
 func gposLookupType2Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, _, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, _, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -132,7 +132,7 @@ func gposLookupType2Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 4, Format 1: MarkToBase Attachment.
 func gposLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, markInx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, markInx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -190,7 +190,7 @@ func gposLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 5, Format 1: MarkToLigature Attachment.
 func gposLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, markInx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, markInx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -257,7 +257,7 @@ func gposLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 6, Format 1: MarkToMark Attachment.
 func gposLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, markInx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, markInx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -315,7 +315,7 @@ func gposLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 7, Format 1: Contextual Positioning (glyph-based).
 func gposLookupType7Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -343,13 +343,13 @@ func gposLookupType7Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
 		}
 		if applied {
-			return mpos, true, out, nil, nil
+			return next, true, out, nil, nil
 		}
 	}
 	return pos, false, buf, nil, nil
@@ -358,7 +358,7 @@ func gposLookupType7Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 7, Format 2: Contextual Positioning (class-based).
 func gposLookupType7Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, _, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, _, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -387,13 +387,13 @@ func gposLookupType7Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		if len(rule.Records) == 0 {
 			continue
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
 		}
 		if applied {
-			return mpos, true, out, nil, nil
+			return next, true, out, nil, nil
 		}
 	}
 	return pos, false, buf, nil, nil
@@ -414,20 +414,20 @@ func gposLookupType7Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if len(payload.InputCoverages) == 0 {
 		return pos, false, buf, nil, nil
 	}
-	inputPos, ok := matchCoverageSequenceForward(ctx, buf, pos, payload.InputCoverages)
+	inputPos, ok := matchInputCoverageSequence(ctx, buf, pos, payload.InputCoverages)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
 	if len(payload.Records) == 0 {
 		return pos, false, buf, nil, nil
 	}
-	out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+	out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 	ctx.buf.Pos = outPosBuf
 	if err != nil {
 		return pos, applied, out, nil, err
 	}
 	if applied {
-		return pos, true, out, nil, nil
+		return next, true, out, nil, nil
 	}
 	return pos, false, buf, nil, nil
 }
@@ -435,7 +435,7 @@ func gposLookupType7Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 8, Format 1: Chained Contextual Positioning (glyph-based).
 func gposLookupType8Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -474,13 +474,13 @@ func gposLookupType8Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 				continue
 			}
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
 		}
 		if applied {
-			return mpos, true, out, nil, nil
+			return next, true, out, nil, nil
 		}
 	}
 	return pos, false, buf, nil, nil
@@ -489,7 +489,7 @@ func gposLookupType8Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 8, Format 2: Chained Contextual Positioning (class-based).
 func gposLookupType8Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -528,13 +528,13 @@ func gposLookupType8Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 				continue
 			}
 		}
-		out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+		out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, matchPositions, rule.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 		ctx.buf.Pos = outPosBuf
 		if err != nil {
 			return pos, applied, out, nil, err
 		}
 		if applied {
-			return mpos, true, out, nil, nil
+			return next, true, out, nil, nil
 		}
 	}
 	return pos, false, buf, nil, nil
@@ -562,7 +562,7 @@ func gposLookupType8Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		}
 	}
 	inputFn := func(ctx *applyCtx, buf GlyphBuffer, pos int) ([]int, bool) {
-		return matchCoverageSequenceForward(ctx, buf, pos, payload.InputCoverages)
+		return matchInputCoverageSequence(ctx, buf, pos, payload.InputCoverages)
 	}
 	var lookaheadFn matchSeqFn
 	if len(payload.LookaheadCoverages) > 0 {
@@ -577,13 +577,13 @@ func gposLookupType8Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if len(payload.Records) == 0 {
 		return pos, false, buf, nil, nil
 	}
-	out, outPosBuf, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
+	out, outPosBuf, next, applied, err := applySequenceLookupRecords(ctx.buf, inputPos, payload.Records, ctx.lookupGraph, ctx.feat, ctx.alt, ctx.gdef, ctx.env)
 	ctx.buf.Pos = outPosBuf
 	if err != nil {
 		return pos, applied, out, nil, err
 	}
 	if applied {
-		return pos, true, out, nil, nil
+		return next, true, out, nil, nil
 	}
 	return pos, false, buf, nil, nil
 }
@@ -591,7 +591,7 @@ func gposLookupType8Fmt3(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GPOS Lookup Type 3, Format 1: Cursive Attachment.
 func gposLookupType3Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
-	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
+	mpos, inx, ok := matchCoverageAt(ctx, buf, pos, sub.Coverage)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}

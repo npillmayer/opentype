@@ -173,6 +173,11 @@ func (f feature) LookupIndex(i int) int {
 // --- Feature application ---------------------------------------------------
 
 // ApplyFeature applies a feature starting at st.Index, updating the buffer state.
+// Each forward lookup attempts to match exactly at its current cursor; an
+// uncovered or ignored starting glyph is a non-match, not a search for a later
+// candidate. Callers own iteration. Input/context matching after that start can
+// still skip ignored glyphs. Nested forward lookups use their designated target.
+// Reverse-chaining traversal retains its separate behavior.
 // It returns the resulting position and whether any lookup was applied. Application
 // does not necessarily change a glyph or position value: a zero-delta substitution
 // can still be applied. The boolean is not an error/success indicator.
@@ -927,18 +932,33 @@ func prevMatchable(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool) {
 type singleMatchFn func(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool)
 type matchSeqFn func(ctx *applyCtx, buf GlyphBuffer, pos int) ([]int, bool)
 
-func matchCoverageForward(ctx *applyCtx, buf GlyphBuffer, pos int, cov ot.Coverage) (mpos, inx int, ok bool) {
-	for i := pos; i < buf.Len(); {
-		mpos, ok = nextMatchable(ctx, buf, i)
-		if !ok {
-			return 0, 0, false
-		}
-		if inx, ok = cov.Match(buf.At(mpos)); ok {
-			return
-		}
-		i = mpos + 1
+// matchCoverageAt checks the lookup's designated start. Searching for the next
+// candidate belongs to the caller, which must recheck that candidate's settings.
+func matchCoverageAt(ctx *applyCtx, buf GlyphBuffer, pos int, cov ot.Coverage) (mpos, inx int, ok bool) {
+	if pos < 0 || pos >= buf.Len() || skipGlyph(ctx, buf.At(pos)) {
+		return 0, 0, false
 	}
-	return 0, 0, false
+	inx, ok = cov.Match(buf.At(pos))
+	return pos, inx, ok
+}
+
+// Coverage-based input sequences anchor their first glyph exactly at pos. The
+// remaining input may skip ignored glyphs, just like lookahead and backtrack.
+func matchInputCoverageSequence(ctx *applyCtx, buf GlyphBuffer, pos int, covs []ot.Coverage) ([]int, bool) {
+	if len(covs) == 0 {
+		return nil, false
+	}
+	if _, _, ok := matchCoverageAt(ctx, buf, pos, covs[0]); !ok {
+		return nil, false
+	}
+	if len(covs) == 1 {
+		return []int{pos}, true
+	}
+	rest, ok := matchCoverageSequenceForward(ctx, buf, pos+1, covs[1:])
+	if !ok {
+		return nil, false
+	}
+	return append([]int{pos}, rest...), true
 }
 
 type matchingCoveraveCtx struct {
@@ -1238,7 +1258,7 @@ func matchClassSequence(ctx *applyCtx, buf GlyphBuffer, matchCtx matchingClassCt
 		return nil, false
 	}
 	out := make([]int, len(matchCtx.classes))
-	cur := matchCtx.pos + matchCtx.dir
+	cur := matchCtx.pos + matchCtx.offset
 	for i, clz := range matchCtx.classes {
 		mpos, ok := matchCtx.matcher(ctx, buf, cur)
 		if !ok {
@@ -1277,6 +1297,9 @@ func matchChainedForward(ctx *applyCtx, buf GlyphBuffer, pos int, backtrack, inp
 // buffer incrementally; callers must not assume rollback. Errors retain completed
 // edits in st's journal and return its current buffers. Each enclosing frame
 // consumes those edits only to remap its own matched inputs, not to mutate buffers.
+// The returned continuation is the edited input end on successful application;
+// errors and non-applications retain the enclosing cursor. The owner cursor is
+// restored until dispatch publishes the caller's result.
 // See doc/PARTIAL_PROGRESS.md for the checkpoint and cursor conventions.
 func applySequenceLookupRecords(
 	st *BufferState,
@@ -1287,20 +1310,27 @@ func applySequenceLookupRecords(
 	alt int,
 	gdef *ot.GDefTable,
 	env applyEnv,
-) (GlyphBuffer, PosBuffer, bool, error) {
+) (GlyphBuffer, PosBuffer, int, bool, error) {
 	// Share the actual owner, not just its slices: nested writes must retain
 	// copy-on-write flags and append to the same edit journal.
 	savedIndex := st.Index
 	defer func() { st.Index = savedIndex }()
 	mapIdx := buildInputMap(matchPositions)
+	// Track an exclusive boundary separately from input identities: an expanded
+	// final input maps to its first output, but continuation belongs after all
+	// its outputs. Backtrack and lookahead are not part of matchPositions.
+	end := savedIndex
+	if len(matchPositions) > 0 {
+		end = matchPositions[len(matchPositions)-1] + 1
+	}
 	if len(records) == 0 {
-		return st.Glyphs, st.Pos, false, nil
+		return st.Glyphs, st.Pos, savedIndex, false, nil
 	}
 	if lookupGraph == nil {
-		return st.Glyphs, st.Pos, false, errors.New("context lookup: missing lookup graph")
+		return st.Glyphs, st.Pos, savedIndex, false, errors.New("context lookup: missing lookup graph")
 	}
 	if err := lookupGraph.Error(); err != nil {
-		return st.Glyphs, st.Pos, false, fmt.Errorf("context lookup graph: %w", err)
+		return st.Glyphs, st.Pos, savedIndex, false, fmt.Errorf("context lookup graph: %w", err)
 	}
 
 	applied := false
@@ -1310,19 +1340,19 @@ func applySequenceLookupRecords(
 	}
 	for recordIndex, rec := range records {
 		if err := st.execution.spend(); err != nil {
-			return st.Glyphs, st.Pos, applied, fmt.Errorf("sequence record %d: %w", recordIndex, err)
+			return st.Glyphs, st.Pos, savedIndex, applied, fmt.Errorf("sequence record %d: %w", recordIndex, err)
 		}
 		tracer().Debugf("sequence lookup record: seq=%d lookup=%d", rec.SequenceIndex, rec.LookupListIndex)
 		seqIndex := int(rec.SequenceIndex)
 		if seqIndex < 0 || seqIndex >= len(mapIdx) {
-			return st.Glyphs, st.Pos, applied, fmt.Errorf("sequence record %d: input index %d outside %d matched positions", recordIndex, seqIndex, len(mapIdx))
+			return st.Glyphs, st.Pos, savedIndex, applied, fmt.Errorf("sequence record %d: input index %d outside %d matched positions", recordIndex, seqIndex, len(mapIdx))
 		}
 		targetPos := mapIdx[seqIndex]
 		if targetPos < 0 { // an earlier record deleted this matched input
 			continue
 		}
 		if targetPos >= st.Len() {
-			return st.Glyphs, st.Pos, applied, fmt.Errorf("sequence record %d: target position %d outside buffer", recordIndex, targetPos)
+			return st.Glyphs, st.Pos, savedIndex, applied, fmt.Errorf("sequence record %d: target position %d outside buffer", recordIndex, targetPos)
 		}
 		tracer().Debugf("sequence lookup record: target position %d", targetPos)
 		clookup := lookupGraph.Lookup(int(rec.LookupListIndex))
@@ -1331,10 +1361,19 @@ func applySequenceLookupRecords(
 		_, ok, _, err := applyLookupConcrete(clookup, lookupGraph, feat, st, alt, gdef, env)
 		applied = applied || ok
 		if err != nil {
-			return st.Glyphs, st.Pos, applied, fmt.Errorf("sequence record %d input %d lookup %d: %w", recordIndex, seqIndex, rec.LookupListIndex, err)
+			return st.Glyphs, st.Pos, savedIndex, applied, fmt.Errorf("sequence record %d input %d lookup %d: %w", recordIndex, seqIndex, rec.LookupListIndex, err)
 		}
 		for _, edit := range st.edits[checkpoint:] {
 			delta := edit.Len - (edit.To - edit.From)
+			if edit.From < end {
+				if edit.To <= end {
+					end += delta
+				} else {
+					// A nested replacement can consume beyond the outer input.
+					// Continue after that replacement, never inside its output.
+					end = edit.From + edit.Len
+				}
+			}
 			for i := range mapIdx {
 				if mapIdx[i] < 0 {
 					continue
@@ -1351,7 +1390,10 @@ func applySequenceLookupRecords(
 			}
 		}
 	}
-	return st.Glyphs, st.Pos, applied, nil
+	if !applied {
+		end = savedIndex
+	}
+	return st.Glyphs, st.Pos, end, applied, nil
 }
 
 // check if we recognize a feature tag

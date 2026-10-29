@@ -87,6 +87,23 @@ retained; the frame need not remap inputs for further records because it does
 not continue. It restores its enclosing cursor on exit, while lookup dispatch
 publishes the operation's returned cursor. This convention is not resumability.
 
+### Successful contextual continuation
+
+For forward GSUB 5/6 and GPOS 7/8, the sequence-record helper also tracks the
+exclusive end of the matched input. This boundary is separate from the original
+input map: an expanded input maps to its first output for subsequent records,
+while the continuation must follow all outputs. Each successful child's journal
+entries update both maps without replaying mutations. A replacement entirely
+before the end shifts it by the length delta; one crossing the end places it
+after the replacement. Edits wholly after the end do not move it.
+
+Only matched input positions define this boundary. Backtrack and lookahead do
+not extend it, and matching lookahead across ignored glyphs does not consume
+those trailing glyphs. After successful application, the contextual wrapper
+returns the adjusted end and dispatch publishes it as `BufferState.Index`.
+Non-applications and errors retain the existing cursor convention described
+above. The returned endpoint is not used to recover from failure.
+
 ## Shaping Integration
 
 `applyLookupSpanInternal` consumes `AppliedEdits()` before testing the returned

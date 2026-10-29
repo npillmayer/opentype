@@ -49,14 +49,14 @@ findings, without production fixes or new external test dependencies.
 
 ## Test location and execution
 
-The remaining shared-API reproductions (SHAPE-004/018) live in
+The remaining shared-API reproduction (SHAPE-004) lives in
 [`otshape/otcore/shared_api_knownbugs_test.go`](../otshape/otcore/shared_api_knownbugs_test.go),
 in external package `otcore_test`. They exercise exported `NewShaper`/`Shape`
 and engine hooks. This keeps the base `otshape` tests independent of concrete
 engine imports. The ordinary [`shared_api_test.go`](../otshape/otcore/shared_api_test.go) now
 contains SHAPE-001/002 and the shared fixture/assertion helpers;
 [`alternate_values_test.go`](../otshape/otcore/alternate_values_test.go) contains
-the ordinary SHAPE-003 value/range/scope regressions. These tests reuse
+the ordinary SHAPE-003/018 value/range/scope regressions. These tests reuse
 `loadMiniOTFont` from `gpos_test.go` and `glyphCollector` from `otcore_test.go`.
 
 These shared-API cases use
@@ -74,14 +74,14 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: twenty failing top-level tests across the two packages.
+# Discovery suite: eighteen failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Fixed mask regression, covering both public entry points.
 go test ./otshape/otcore -run '^TestSHAPE001' -count=1 -v
 
 # Inspect an unresolved shared-API finding.
-go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE018AlternateValueAtMatchedGlyph$' -count=1 -v
+go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE004' -count=1 -v
 ```
 
 Original shared-API batch verification baseline: production source at
@@ -99,8 +99,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | --- | --- | --- |
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | fixed (agreed scope) | Ranges use original scalar anchors across compaction and normalization |
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
-| [SHAPE-005](#shape-005--gdef-classification-prevents-ignoremarks) | reproduced | GDEF range endpoints and class constants break IgnoreMarks/IgnoreBaseGlyphs filtering |
-| [SHAPE-006](#shape-006--contextual-lookup-revisits-matched-input) | reproduced | Contextual lookup progression applies overlapping matches |
 | [SHAPE-007](#shape-007--mark-attachments-do-not-resolve-to-origins) | reproduced | Mark attachment metadata does not become final anchor offsets |
 | [SHAPE-008](#shape-008--marks-retain-nominal-advances) | reproduced | Mark advances shift following glyph origins |
 | [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | fixed (contract resolved) | Logical sink order agreed; plain Hebrew passes after explicit oracle adaptation |
@@ -112,12 +110,15 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-015](#shape-015--streaming-cuts-lose-shaping-context) | reproduced | Buffer cuts change ligatures, pair positioning, and normalization |
 | [SHAPE-016](#shape-016--feature-scopes-sever-unrelated-lookup-context) | reproduced | Feature-event spans break kerning across scope boundaries |
 | [SHAPE-017](#shape-017--gsub-deletion-is-ignored) | reproduced | Empty GSUB multiple-substitution sequences leave glyphs unchanged |
-| [SHAPE-018](#shape-018--forward-lookup-scans-bypass-feature-masks) | reproduced | A lookup enabled at its starting index can match a later disabled glyph |
+| [SHAPE-019](#shape-019--ligature-substitution-deletes-ignored-marks) | reproduced | Ligature span replacement deletes skipped marks; component association remains to be verified |
 
 Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
 [SHAPE-002 — source ranges](#shape-002--feature-ranges-use-chunk-local-coordinates),
-and [SHAPE-003 — alternate selection](#shape-003--feature-values-do-not-select-alternates).
+[SHAPE-003 — alternate selection](#shape-003--feature-values-do-not-select-alternates),
+[SHAPE-005 — GDEF classification](#shape-005--gdef-classification-prevents-ignoremarks),
+[SHAPE-006 — contextual continuation](#shape-006--contextual-lookup-revisits-matched-input),
+and [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks).
 
 The AOTS baseline batch adds SHAPE-005/006 in
 [`internal/hbcmp/aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go).
@@ -193,151 +194,6 @@ cannot rely on the error to detect unsupported engine selection.
 zero; `ShaperConfidenceNone` is zero in [engine_api.go](../otshape/engine_api.go).
 
 **Reproduce:** use the individual command above with `SHAPE004`.
-
-## SHAPE-005 — GDEF classification prevents IgnoreMarks
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE005AOTSIgnoreMarks`.
-**Verified:** 2026-10-26, production revision
-`7b9df6582ee7154a8f9be2a2ba718689e4a7681e` plus the new tests.
-
-**Expected behavior and basis:** active upstream record
-[`gsub_context1_lookupflag.tests:2`](../testdata/harfbuzz/aots/tests/gsub_context1_lookupflag.tests)
-at HarfBuzz revision `29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b` requires
-contextual substitution across interleaved mark glyphs. Lookup 4 has
-`IgnoreMarks`; nested single substitutions change 20/21/22 to 60/61/62 while
-leaving marks 90/91/92 in place. The source/font hashes are checked by the test.
-
-**Reproduction:** `gsub_context1_lookupflag_f1.otf`, input
-`U+0000 U+0014 U+005A U+0015 U+005B U+005C U+0016 U+0000`, global `test` enabled,
-Latin/English/LTR with the core engine and watermarks `9/1/10`.
-
-**Observed:** `Shape` returns nil and emits `[0,20,90,21,91,92,22,0]`;
-expected `[0,60,90,61,91,92,62,0]`. The contextual substitution never applies.
-Clusters and positions are not asserted by this upstream record.
-
-**Diagnostic evidence:** two independently testable classification problems
-contribute to this failure:
-
-1. The font's GDEF ClassDef format 2 contains singleton ranges `[90,90]`,
-   `[91,91]`, and `[92,92]`, each with class 3. The exported class lookup returns
-   zero for each. `classDefinitionsFormat2.Lookup` in
-   [layout.go](../ot/layout.go) checks `glyph < endGlyphID`, excluding the range
-   endpoint. The range includes both endpoints under the
-   [OpenType ClassDef definition](https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#class-definition-table).
-2. `GlyphClassDefEnum` in [layout_gdef.go](../ot/layout_gdef.go) assigns
-   base/ligature/mark/component the values 0/1/2/3, while GDEF encodes them as
-   1/2/3/4. `glyphClass` and `skipGlyph` in
-   [feature.go](../otlayout/feature.go) compare the raw class values with those
-   constants. Correcting the endpoint alone therefore does not establish proper
-   mark filtering. See the [GDEF class definitions](https://learn.microsoft.com/en-us/typography/opentype/spec/gdef#glyph-class-definition-table).
-
-The tagged test asserts the unchanged upstream output, the three class lookups,
-and the four class constant values. Existing
-`TestGSUBContextSubstFmt1IgnoreMarks` vectors contain no interleaved marks, so
-they do not expose this case despite the test name. The broader effects of these
-classification defects on other GSUB/GPOS operations remain to be tested,
-beyond the additional alternate-lookup case below.
-
-**IgnoreBaseGlyphs extension (2026-10-26):**
-`TestKnownBugSHAPE005AOTSIgnoreBaseGlyphs` uses active upstream
-[`gsub3_1_lookupflag.tests:2`](../testdata/harfbuzz/aots/tests/gsub3_1_lookupflag.tests).
-Input is `U+0011 U+0012 U+0012 U+0012 U+0013 U+0013 U+0013 U+0013 U+0011`;
-features are `-test[4],test[5],test[6]=2,-test[7]`. With Latin/English/LTR,
-the core engine, and whole-input watermarks `10/1/11`, expected GIDs are
-`[17,18,18,18,19,22,23,19,17]`; actual GIDs are
-`[17,18,18,18,19,19,19,19,17]`, with nil error.
-
-The font's GDEF ClassDef format 2 has just `[18,18]` with class 1; GID 19 is
-unclassified (zero). Lookup 0 has `IgnoreBaseGlyphs`. Because `ot.BaseGlyph`
-incorrectly equals zero, `skipGlyph` filters the unclassified GID 19, preventing
-both requested substitutions. The singleton defect also affects GID 18, but
-the record never enables substitution at its positions, so it cannot establish
-correct base filtering. Once classification is fixed, this case will also
-exercise the now-implemented SHAPE-003 second-alternate selection; preserve
-the full expectation until that combination passes. See the [adapter report](../testdata/harfbuzz/aots/ADAPTER.md#alternate-substitution-batch)
-for the verification revision and unchanged upstream oracle.
-
-**Interleaved-mark ligature extension (2026-10-26):**
-`TestKnownBugSHAPE005AOTSLigatureAcrossMark` runs
-[`gpos5.tests:2`](../testdata/harfbuzz/aots/tests/gpos5.tests), whose GSUB lookup
-forms ligature 18 from 30 and 31 with `IgnoreMarks`. Input is
-`U+0011 U+001E U+0013 U+001F U+0011`, Latin/English/LTR, global `test`, buffers
-`6/1/7`. GID 19 lies between the components and has GDEF singleton `[19,19]`
-class 3, but is currently classified as zero. The output GIDs remain
-`[17,30,19,31,17]` instead of `[17,18,19,17]`, with nil error. The adjacent
-component control (`gpos5.tests:3`) forms the ligature but fails final positioning
-(SHAPE-007/008). The tagged assertion retains the complete origin expectation;
-see [GPOS.md](../testdata/harfbuzz/aots/GPOS.md) for actual/expected origins.
-
-Classification is the first blocker here. Source inspection also shows
-`gsubLookupType4Fmt1` replacing the full matched span and GPOS selecting the
-last ligature component by default. Preservation of skipped marks and component
-association will need separate verification after this blocker is fixed;
-this run does not establish those later behaviors.
-
-**Pair-advance extension (2026-10-26):**
-`TestKnownBugSHAPE005AOTSPairAdvance` uses active upstream
-[`gpos2_1_lookupflag.tests:3`](../testdata/harfbuzz/aots/tests/gpos2_1_lookupflag.tests)
-with newly recovered `gpos2_1_lookupflag_f2.otf`. Input is
-`U+0011 U+0013 U+0014 U+0011 U+0013 U+0012 U+0014 U+0011`, core engine,
-Latin/English/LTR, global `test`, buffers `9/1/10`. The only lookup is GPOS
-type 2 format 1, with IgnoreBaseGlyphs. Pair 19/20 changes the first advance by
-−200 and the second Y offset by −100. GDEF assigns only singleton `[18,18]`
-class 1; GIDs 19/20 are unclassified (zero), so the incorrect `BaseGlyph=0`
-constant skips them and no pair executes.
-
-`Shape` returns nil and nominal positions. The first trailing GID 17 starts
-at X=4500 rather than 4300; the last starts at 10500 rather than 10100. The
-complete exact expectations, actual origins, hashes, import procedure, and
-HarfBuzz verification are in [PAIR.md](../testdata/harfbuzz/aots/PAIR.md).
-The companion unflagged pair font passes matching and nonmatching public-API
-cases. This failure is therefore tracked under classification; it does not
-isolate an advance-arithmetic defect. Both class constants and range endpoints
-must be considered before claiming that the flagged case is fixed.
-
-**Reproduce:**
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE005' -count=1 -v
-```
-
-## SHAPE-006 — Contextual lookup revisits matched input
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE006AOTSContextProgression`.
-**Verified:** 2026-10-26, production revision
-`7b9df6582ee7154a8f9be2a2ba718689e4a7681e` plus the new tests.
-
-**Expected behavior and basis:** active upstream record
-[`gsub_context1_next_glyph.tests:2`](../testdata/harfbuzz/aots/tests/gsub_context1_next_glyph.tests)
-at the same pinned HarfBuzz revision expects successive non-overlapping matches
-of a two-glyph context. The fixture's lookup 4 matches `[20,20]` and invokes
-lookup 0 to replace the first glyph with 60. Processing then continues beyond
-the matched input pair.
-
-**Reproduction:** `gsub_context1_next_glyph_f1.otf`, input
-`U+0000 U+0014 U+0014 U+0014 U+0014 U+0014 U+0000`, global `test` enabled,
-Latin/English/LTR with the core engine and watermarks `8/1/9`.
-
-**Observed:** `Shape` returns nil and emits `[0,60,60,60,60,20,0]`;
-expected `[0,60,20,60,20,20,0]`. The pipeline substitutes extra glyphs by
-revisiting positions inside previously matched contexts. Clusters and positions
-are not asserted by this upstream record.
-
-**Implementation evidence:** `gsubLookupType5Fmt1` in
-[gsub.go](../otlayout/gsub.go) returns its incoming `pos` after successful nested
-application rather than the position following the matched context.
-`applySequenceLookupRecords` in [feature.go](../otlayout/feature.go) restores
-the caller's index; `applyLookupSpanInternal` in
-[lookups.go](../otshape/lookups.go) increments an unchanged index by one.
-This path explains the overlapping matches observed here. The fix must preserve
-partial-progress and edit-remapping contracts; length-changing contexts and
-other contextual formats are outside this reproduction's scope.
-
-**Reproduce:**
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE006' -count=1 -v
-```
 
 ## SHAPE-007 — Mark attachments do not resolve to origins
 
@@ -420,8 +276,9 @@ The helpers in [plan.go](../otshape/plan.go) can zero internal position values
 when that policy is set, but the public output path later adds each glyph's
 nominal metric in `materializeGlyphRecord`. Merely enabling that helper is
 therefore not enough to establish zero final advances. GDEF classification
-(SHAPE-005) also affects unattached mark recognition. A fix must address the
-policy, classification, and nominal-versus-adjustment representation together.
+(SHAPE-005) was another prerequisite; its correction leaves these advance tests
+failing. A fix must coordinate the zero-mark policy with the
+nominal-versus-adjustment representation, using the corrected classification.
 This finding does not prescribe zero advances for every mark in every script.
 
 ```sh
@@ -760,52 +617,47 @@ this designated case; missing/null output is rejected.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE017' -count=1 -timeout=30s -v
 ```
 
-## SHAPE-018 — Forward lookup scans bypass feature masks
+## SHAPE-019 — Ligature substitution deletes ignored marks
 
-**Status:** reproduced. **Tests:** `TestKnownBugSHAPE018MaskedLookupScan` and
-`TestKnownBugSHAPE018AlternateValueAtMatchedGlyph`.
+**Status:** reproduced 2026-10-29 after the SHAPE-005 classification fix.
+Split from that finding so the completed classification work can be archived.
+**Test:** `TestKnownBugSHAPE005AOTSLigatureAcrossMark` in
+[aots_knownbugs_test.go](../internal/hbcmp/aots_knownbugs_test.go). The test retains
+its historical name in this documentation-only update; it now tracks SHAPE-019.
 
-**SHAPE-003 dependency (2026-10-27):** the scan also bypasses value selection.
-With GIDs `[17,18]`, global `test=1`, and `test[1:2]=3`, the first uncovered
-glyph starts a lookup that reaches GID 18 using value 1. Output is `[17,20]`
-instead of the TTX-derived `[17,22]`. The new public-API regression retains
-both glyph and original-cluster assertions. Random selection has the same
-starting-versus-matched-anchor limitation. The user chose to keep this scan
-fix separate from SHAPE-003.
+**Expected behavior and basis:** unchanged upstream
+[`gpos5.tests:2`](../testdata/harfbuzz/aots/tests/gpos5.tests), at HarfBuzz revision
+`29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b`, requires GIDs 30 and 31 to form
+ligature 18 across ignored mark 19, preserving the mark. The complete glyph/origin
+oracle is `[17@0,0 18@1500,0 19@1400,-80 17@3000,0]`.
 
-**Expected behavior and basis:** a disabled feature range must prevent a lookup
-from starting a substitution within that range, even when an earlier glyph
-has the feature enabled. Independent HB captures specify the range behavior.
+**Reproduction:** `gpos5_font1.otf`, input
+`U+0011 U+001E U+0013 U+001F U+0011`, Latin/English/LTR, core engine,
+global `test` enabled, watermarks high/low/max `6/1/7`.
+`Shape` returns nil and emits `[17@0,0 18@1500,0 17@3000,0]`: the ligature
+forms, but the mark is absent. Source/font hashes and the full upstream output
+remain checked by the existing test; no capture was changed.
 
-**Reproduction:** five Gentium `office` words with
-`liga=1,liga[0:21]=0,liga[7:14]=1`, whole-input buffers `35/1/36`. The nested
-settings enable the second word, disable the third, then restore global enable
-for the fourth/fifth. A second case uses `e + U+0301 + office office` with
-`liga=1,liga[3:10]=0` and buffers `17/1/18`.
+**Cause:** [gsubLookupType4Fmt1](../otlayout/gsub.go) skips the mark while
+matching components, then replaces the entire matched span with the ligature.
+That replacement deletes the skipped glyph as well as the consumed components.
 
-**Observed:** `Shape` produces 26 rather than 28 glyphs in the nested case,
-incorrectly forming `ffi` at cluster 15 in the disabled third word. The first
-disabled word and enabled second word work. The accented case produces 11
-rather than 13 glyphs, also forming a disabled `ffi`. Equivalent event scopes
-pass whole/lookahead/carry profiles. The nested whole-input case has neither
-normalization nor compaction, isolating this from SHAPE-002's coordinate drift.
+**Fix scope and dependencies:** preserve skipped marks and their source/cluster
+correspondence during ligature substitution. Component association needs
+verification once the mark survives: current GPOS defaults to the last ligature
+component, but this failing output alone does not establish the required repair.
+Final attachment origins and mark advances remain SHAPE-007/008. Keep the full
+oracle tagged until all its blockers are resolved; a future mark-preservation
+fix should also have an isolated regression that can pass independently of GPOS.
+This differs from SHAPE-017, where an intentional empty substitution is ignored.
 
-**Implementation evidence:** `applyLookupSpanInternal` in
-[lookups.go](../otshape/lookups.go) checks the feature mask at `st.Index`, then
-calls lower-level `ApplyFeature`. `gsubLookupType4Fmt1` in
-[gsub.go](../otlayout/gsub.go) uses `matchCoverageForward` from
-[feature.go](../otlayout/feature.go), which can find a later covered glyph
-without checking its API feature mask. The enabled starting index therefore
-does not guarantee the eventual match is enabled.
-
-**SHAPE-002 promotion (2026-10-27):** the nested-scope `lookahead` and `carry`
-rune-input profiles now pass every field in both flush modes and moved to the
-ordinary matrix. Correct source coordinates repair those particular buffer
-alignments. The whole-input, tiny, and forced nested profiles still fail;
-the accented case still fails every rune-input profile. SHAPE-018 remains open.
+**Verification:** reproduced during the SHAPE-005 review on 2026-10-29 with the
+classification fix in the working tree. This reassignment adds no test and does
+not change the fifteen failing top-level discovery tests.
 
 ```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE018' -count=1 -timeout=30s -v
+# Historical test name; current finding is SHAPE-019.
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE005AOTSLigatureAcrossMark$' -count=1 -v
 ```
 
 ## Remaining discovery work
@@ -945,12 +797,12 @@ is for typography, not cryptography.
   `gsub3_1_simple.tests:2` oracle in whole-input and streaming configurations,
   completing the alternate-value dependency left by SHAPE-002.
 
-**Remaining dependencies:** [SHAPE-018](#shape-018--forward-lookup-scans-bypass-feature-masks)
-can select a value or random seed at an attempted start rather than the later
-matched glyph. Its full desired-behavior regression remains tagged; carry
-equivalence for such scans is not established. The flagged AOTS alternate case
-remains blocked by [SHAPE-005](#shape-005--gdef-classification-prevents-ignoremarks).
-Neither dependency is claimed fixed here.
+**Subsequent dependency update (2026-10-29):** the SHAPE-018 forward-start fix
+now applies the checked value and random anchor at the actual starting glyph;
+its alternate regression was promoted unchanged. SHAPE-003 itself is not
+reopened. The flagged AOTS alternate case also passes after the reviewed
+[SHAPE-005 classification fix](#shape-005--gdef-classification-prevents-ignoremarks)
+and is an ordinary `TestAOTSGSUBBaselines` case.
 
 **Review verification (2026-10-29):** the full ordinary suite and
 `go test -race ./otlayout ./otshape/... ./internal/hbcmp -count=1` pass.
@@ -961,4 +813,155 @@ No captured expectations were changed or weakened.
 
 ```sh
 go test ./otlayout ./otshape/... ./internal/hbcmp -run 'SHAPE003|ApplyFeatureAlternateValues|AOTSGSUBBaselines|OutputBoundsSelection' -count=1
+```
+
+### SHAPE-005 — GDEF classification prevents IgnoreMarks
+
+**Fixed:** implemented and reviewed 2026-10-29. No blocking code defects found.
+
+**Cause and fix:** [ClassDef format 2](../ot/layout.go) excluded the final glyph
+of each range, including every singleton. Its comparison now includes both
+endpoints. [GDEF class constants](../ot/layout_gdef.go) now match the font
+encoding: base=1, ligature=2, mark=3, component=4; zero is unclassified.
+The exported names are unchanged. These corrections restore IgnoreMarks and
+IgnoreBaseGlyphs behavior and apply to the shared GSUB/GPOS class-table reader.
+See the [ClassDef specification](https://learn.microsoft.com/en-us/typography/opentype/spec/chapter2#class-definition-table)
+and [GDEF enumeration](https://learn.microsoft.com/en-us/typography/opentype/spec/gdef#glyph-class-definition-table).
+
+**Permanent regressions:**
+
+- [Class-definition boundary tests](../ot/class_definition_test.go) cover singleton,
+  multi-glyph and adjacent ranges, gaps, glyph zero, and glyph 65535.
+- [GDEF classification tests](../internal/hbcmp/gdef_classification_test.go) check
+  real-font singleton marks 90/91/92 and independent class-number expectations.
+- [GSUB baselines](../internal/hbcmp/aots_gsub_test.go) now include
+  `gsub_context1_lookupflag.tests:2` (interleaved IgnoreMarks) and
+  `gsub3_1_lookupflag.tests:2` (IgnoreBaseGlyphs and alternate values).
+  [GPOS baselines](../internal/hbcmp/aots_gpos_test.go) include
+  `gpos2_1_lookupflag.tests:3` (pair advances across an ignored base).
+  All three preserve their complete upstream expectations.
+- [Cursive metadata tests](../otshape/otcore/gpos_test.go) were corrected using
+  binary GDEF and checked-in GPOS TTX: unclassified 18/19 can attach, the
+  mixed-anchor fixture leaves 20 unattached, and actual base glyph 21 is skipped.
+  These are attachment-metadata tests, not final-positioning baselines.
+
+**Remaining work:** classification now permits the interleaved-mark ligature,
+but span replacement deletes the mark. That distinct failure is
+[SHAPE-019](#shape-019--ligature-substitution-deletes-ignored-marks), retaining the
+full oracle under the historical `TestKnownBugSHAPE005AOTSLigatureAcrossMark`
+name. Component association and SHAPE-007/008 positioning are not resolved here.
+
+**Review verification (2026-10-29):** `go test ./... -count=1` and
+`go test -race ./... -count=1` passed. Reverting either classification correction
+separately through temporary Go overlays made the relevant regressions fail.
+Discovery retained fifteen failing top-level tests, including the deferred parser
+case, without build failures, panics, or timeouts. No fonts or captures changed.
+
+```sh
+go test ./ot ./otshape/otcore ./internal/hbcmp -count=1
+```
+
+### SHAPE-006 — Contextual lookup revisits matched input
+
+**Fixed:** implemented and reviewed 2026-10-29. No blocking defects found within
+the documented forward-contextual scope.
+
+**Cause and fix:** contextual wrappers returned their starting cursor after
+successful nested application, so the shaping loop advanced only one glyph and
+revisited matched input. All twelve forward paths (GSUB 5/6 and GPOS 7/8,
+formats 1–3) now return the exclusive end of the matched input.
+[The sequence-record helper](../otlayout/feature.go) tracks that boundary
+separately from nested input identities and adjusts it through each glyph edit.
+Expansion/contraction shift the boundary; a replacement crossing it moves the
+boundary after the replacement. Backtrack/lookahead are excluded. Ignored glyphs
+between inputs count toward the span; trailing ignored glyphs do not merely
+because lookahead skipped them. Existing partial changes and diagnostic cursors
+on error remain intact. See [PARTIAL_PROGRESS.md](PARTIAL_PROGRESS.md#successful-contextual-continuation).
+
+The approved dependency correction makes `matchClassSequence` use its configured
+offset: zero forward, minus one backward. Forward class matching had skipped the
+first candidate by using the direction instead.
+
+**Permanent regressions:**
+
+- [AOTS GSUB baselines](../internal/hbcmp/aots_gsub_test.go) now include unchanged
+  upstream [`gsub_context1_next_glyph.tests:2`](../testdata/harfbuzz/aots/tests/gsub_context1_next_glyph.tests).
+  The expected `[0,60,20,60,20,20,0]` replaces the former overlapping result
+  `[0,60,60,60,60,20,0]`. No fixture or oracle was regenerated.
+- [Lookup progression tests](../otlayout/context_progression_test.go) cover all
+  twelve paths, ignored marks, successful/nonapplying children, nested expansion,
+  final-input expansion, contraction within/across the endpoint, zero-net-length
+  edits, and later failure after completed edits. The class-sequence regression
+  checks both directions and a nonmatching first class without scanning ahead.
+- [Shaping progression tests](../otshape/context_progression_test.go) check
+  non-overlapping substitution, expansion, and positioning in whole-run and
+  isolated-syllable execution, including clusters and positions.
+
+**Review verification (2026-10-29):** full ordinary and race suites passed.
+Restoring the old continuation through a temporary Go overlay made lookup,
+shaping, and upstream regressions fail. Independently restoring the old class
+offset made format-2 and class-sequence regressions fail. Discovery retained
+fourteen failing top-level tests, without build failures, panics, or timeouts.
+
+**Remaining scope:** empty-record and nonapplying-child rules retain their prior
+behavior; a value-preserving substitution still counts as application.
+Intentional deletion (SHAPE-017), ignored-mark preservation (SHAPE-019), reverse
+traversal, and streaming context safety remain separate. This resolution does
+not establish complete contextual shaping conformance.
+
+```sh
+go test ./internal/hbcmp -run '^TestAOTSGSUBBaselines/gsub_context1_next_glyph' -count=1 -v
+go test ./otlayout ./otshape -run 'TestContextProgression|TestClassSequenceStarts' -count=1
+```
+
+### SHAPE-018 — Forward lookup scans bypass feature masks
+
+**Fixed:** implemented and reviewed 2026-10-29, within the agreed forward-lookup
+scope. Review found no blocking defects.
+
+**Cause and fix:** `matchCoverageForward` could search past the glyph whose mask,
+alternate value, and random seed the shaping loop had checked. `matchCoverageAt`
+now attempts only the designated start; uncovered or lookup-flag-ignored starts
+are normal non-matches. The caller advances and rechecks the next candidate.
+This repairs the TTX-derived `[17,18]` range case from `[17,20]` to `[17,22]`.
+
+Contextual/chained first inputs, nested sequence-record targets, and extension
+lookups follow the same start rule. A matched contextual rule may still inspect
+or modify later glyphs; subsequent inputs, lookahead, and backtrack retain
+ignored-glyph skipping. Nested calls inherit the enclosing alternate value and
+random stream; they do not independently recheck feature settings at every
+nested target. See [FEATURE_APPLICATION.md](FEATURE_APPLICATION.md#forward-lookup-starts-shape-018)
+for the changed direct-caller contract. Error and partial-progress contracts
+are unchanged.
+
+**Permanent regressions:**
+
+- [Public alternate/range/scope tests](../otshape/otcore/alternate_values_test.go)
+  check the original crossing case and disabled/value-3 ranges through both APIs
+  with whole-input and streaming buffers.
+- [Lookup-start tests](../otlayout/lookup_start_test.go) cover direct/extension
+  GSUB/GPOS misses, explicit caller advancement, and nested targets.
+- [Internal shaping tests](../otshape/alternate_values_test.go) check masked GPOS
+  targets and fixed-seed choices at the same source anchor with/without a prefix.
+- Eight complete [HarfBuzz matrix cells](../internal/hbcmp/streaming_baselines_test.go)
+  were promoted unchanged: `scope_nested` whole/runes and `scope_accent`
+  whole/lookahead/carry/runes, both flush modes. All output fields remain checked.
+
+**Remaining scope:** eight tiny/forced scope cells retain their complete oracles
+under SHAPE-015. Reverse chaining and scope context barriers (SHAPE-016) remain
+separate; contextual progression was subsequently fixed under
+[SHAPE-006](#shape-006--contextual-lookup-revisits-matched-input).
+An explicit ignored-start regression, particularly for format-3 contexts, would
+strengthen coverage; that branch was verified by inspection during review.
+
+**Review verification (2026-10-29):** the full ordinary suite and
+`go test -race ./otlayout ./otshape/... ./internal/hbcmp -count=1` passed.
+Restoring the old scanning behavior through a temporary Go overlay made all six
+focused regression tests fail. Discovery retained 18 failing top-level tests,
+without build failures, panics, or timeouts. The matrix has 150 passing and 170
+failing cells. Independent captures and full-output assertions are unchanged.
+
+```sh
+go test ./otlayout ./otshape/... -run 'SHAPE018|ForwardLookupStartsAtCursor|NestedForwardLookupStaysAtTarget' -count=1
+go test ./internal/hbcmp -run '^TestHarfBuzzStreamingBaselines/(scope_nested|scope_accent)/' -count=1
 ```

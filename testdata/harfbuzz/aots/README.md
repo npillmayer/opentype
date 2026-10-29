@@ -112,7 +112,7 @@ and glyph-origin comparison for nine GPOS records, verifying their explicit
 context against HarfBuzz. It supports global and
 single-index feature requests, including alternate values and explicit
 disabling. Pair format 1 now has independent matching and nonmatching coverage;
-the flagged advance-changing case remains blocked by SHAPE-005. Broader feature
+the flagged advance-changing case was promoted after SHAPE-005 (2026-10-29). Broader feature
 syntax and class-based pair positioning remain later work.
 
 Cursive cases are recovered for completeness of the existing-font inventory;

@@ -327,6 +327,9 @@ func runAOTSCaseWithBuffers(t *testing.T, id, expectedFields string, opts otshap
 func TestAOTSGSUBBaselines(t *testing.T) {
 	for _, id := range []string{
 		"classdef2.tests:2",
+		"gsub_context1_next_glyph.tests:2", // non-overlapping contextual progression
+		"gsub_context1_lookupflag.tests:2", // IgnoreMarks with interleaved marks
+		"gsub3_1_lookupflag.tests:2",       // IgnoreBaseGlyphs and alternate values
 		"gsub3_1_simple.tests:2",
 	} {
 		t.Run(id, func(t *testing.T) { runAOTSGSUBCase(t, id) })

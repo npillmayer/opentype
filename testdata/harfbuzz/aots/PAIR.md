@@ -1,5 +1,11 @@
 # Independent pair-positioning baselines
 
+**SHAPE-005 update (2026-10-29):** correcting inclusive GDEF range endpoints
+and class numbers makes `gpos2_1_lookupflag.tests:3` pass its complete unchanged
+upstream origin expectation. All three pair records are now ordinary
+`TestAOTSGPOSBaselines` cases. The results below retain the original discovery
+snapshot; no fixture or oracle data was regenerated.
+
 Verified on 2026-10-26 at repository revision
 `a16f51a27adce48fcd0346f96de0bb8b0231faa6` plus these fixtures and tests.
 All expected origins come from unchanged active records in HarfBuzz revision
@@ -109,8 +115,8 @@ in [GPOS.md](GPOS.md#independent-verification), replacing its case list with:
 # Includes the passing matching and nonmatching cases; no HarfBuzz required.
 go test ./internal/hbcmp -run '^TestAOTSGPOSBaselines' -count=1 -v
 
-# Expected failure while SHAPE-005 is open.
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE005AOTSPairAdvance' -count=1 -v
+# Promoted flagged pair case after SHAPE-005.
+go test ./internal/hbcmp -run '^TestAOTSGPOSBaselines/gpos2_1_lookupflag' -count=1 -v
 ```
 
 This batch covers pair format 1, not class-based pair format 2. It does not

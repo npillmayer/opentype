@@ -17,6 +17,15 @@ profiles in both flush modes: eight complete comparisons now pass. Tiny/forced
 `stream_range` failures remain under SHAPE-015; SHAPE-018 remains open for the
 other nested-scope profiles. No captured output or assertion changed.
 
+**SHAPE-018 update (2026-10-29):** exact forward lookup starts promote eight
+more complete rune-input comparisons: `scope_nested/whole` and
+`scope_accent/whole`, `lookahead`, and `carry`, all in both flush modes.
+The eight tiny/forced scope comparisons now reside under SHAPE-015, retaining
+all expected fields. Their disabled ranges are respected, but enabled ligatures
+are lost at cuts; the tiny accented case also splits normalization. Nested
+output counts are 34/31 instead of 28, accented counts 16/14 instead of 13.
+No captures, feature schedules, or assertions changed.
+
 ## What is now implemented
 
 [streaming_baselines_test.go](../../streaming_baselines_test.go) applies the same
@@ -30,7 +39,7 @@ oracle, and whole-versus-streaming equality is not the primary assertion.
 [streaming.json](streaming.json) adds twelve independently captured records.
 Four existing text records are reused as controls/known whole-run failures.
 The total matrix is **16 cases × 5 profiles × 2 entry points × 2 flush modes =
-320 executions: 142 passing and 178 tagged failures**. Ten separate empty-input
+320 executions: 150 passing and 170 tagged failures**. Ten separate empty-input
 checks pass, including balanced nested scopes with no rune events. Ordinary
 tests validate every captured record/font, including tagged cases.
 
@@ -53,7 +62,7 @@ an emission with a particular internal safe-cut decision.
 Source read and output budgets abort runaway I/O; recovered panics fail the
 individual case. Use the documented Go timeout to catch loops that perform no
 I/O—these callbacks cannot interrupt such a loop themselves. No hang, panic, or
-budget exhaustion occurred with the final fixtures. All 178 remaining failures are exact
+budget exhaustion occurred with the final fixtures. All 170 remaining failures are exact
 output mismatches. These checks establish progress for tested inputs, not a
 general termination proof.
 
@@ -80,7 +89,8 @@ plain rune events with the same global features as `Shape`.
 
 The nested and accented schedules pass as event input with whole/lookahead/carry
 profiles, including correct restoration and global cluster indexes. Equivalent
-indexed-range input can fail separately (SHAPE-018). The unrelated-feature
+indexed-range input previously failed separately (SHAPE-018, now repaired for
+forward starts). The unrelated-feature
 pair case fails even with whole-input buffering (SHAPE-016), distinguishing
 scope segmentation from the ordinary streaming-context problem (SHAPE-015).
 
@@ -154,9 +164,10 @@ python3 testdata/scripts/capture_harfbuzz_streaming.py
 python3 testdata/scripts/build_streaming_font.py  # recorded FontTools version required
 ```
 
-The ordinary full suite passes. Five top-level tagged matrix groups cover SHAPE-015
-(stream context), SHAPE-016 (scope context), SHAPE-017 (deletion), SHAPE-018
-(masked forward scans), and the streaming extension of SHAPE-011. Their cells
+The ordinary full suite passes. Four top-level tagged matrix groups cover
+SHAPE-015 (stream context), SHAPE-016 (scope context), SHAPE-017 (deletion), and
+the streaming extension of SHAPE-011. SHAPE-018 forward-scan cells were promoted
+or retained under SHAPE-015 as described above. The remaining cells
 are statically assigned by `streamingFinding`; no outcome-driven skip or buggy
 expectation is used. Promote cells when their full independent comparison passes.
 

@@ -9,24 +9,11 @@ import (
 
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otshape"
-	"github.com/npillmayer/opentype/otshape/otcore"
 )
 
 // These tests assert intended behavior and currently fail. See
 // doc/SHAPING_FINDINGS.md for evidence and promotion into the default suite.
 // Shared fixture and assertion helpers live in shared_api_test.go.
-
-// SHAPE-018 also blocks values when a lookup scans from an uncovered glyph
-// into a different feature range. Keep the complete source/value expectation.
-func TestKnownBugSHAPE018AlternateValueAtMatchedGlyph(t *testing.T) {
-	params, cp := alternateAPIInput(t)
-	params.Features = []otshape.FeatureRange{
-		{Feature: ot.T("test"), On: true, Arg: 1},
-		{Feature: ot.T("test"), On: true, Arg: 3, Start: 1, End: 2},
-	}
-	got := shapeAPIRecords(t, params, string(rune(17))+cp, otshape.BufferOptions{}, otcore.New())
-	assertAPIGlyphs(t, got, []ot.GlyphIndex{17, 22})
-}
 
 type confidenceEngine struct {
 	name  string

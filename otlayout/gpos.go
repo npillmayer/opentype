@@ -180,7 +180,8 @@ func gposLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 				MarkAnchor: markAnchor,
 				BaseAnchor: baseAnchor,
 			}
-			setMarkAttachment(&ctx.buf.Pos[mpos], basePos, AttachMarkToBase, markRec.Class, ref)
+			setMarkAttachment(&ctx.buf.Pos[mpos], basePos, AttachMarkToBase, markRec.Class, ref,
+				markRec.Anchor, baseRec.Anchors[class], ctx.buf.Pos[basePos].YOffset)
 			return mpos + 1, true, buf, nil, nil
 		}
 	}
@@ -247,7 +248,8 @@ func gposLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 				BaseAnchor:   baseAnchor,
 				LigatureComp: uint16(compIndex),
 			}
-			setMarkAttachment(&ctx.buf.Pos[mpos], ligPos, AttachMarkToLigature, markRec.Class, ref)
+			setMarkAttachment(&ctx.buf.Pos[mpos], ligPos, AttachMarkToLigature, markRec.Class, ref,
+				markRec.Anchor, lig.ComponentAnchors[compIndex][class], ctx.buf.Pos[ligPos].YOffset)
 			return mpos + 1, true, buf, nil, nil
 		}
 	}
@@ -305,7 +307,8 @@ func gposLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 				MarkAnchor: markAnchor,
 				BaseAnchor: baseAnchor,
 			}
-			setMarkAttachment(&ctx.buf.Pos[mpos], mark2Pos, AttachMarkToMark, markRec.Class, ref)
+			setMarkAttachment(&ctx.buf.Pos[mpos], mark2Pos, AttachMarkToMark, markRec.Class, ref,
+				markRec.Anchor, mark2Rec.Anchors[class], ctx.buf.Pos[mark2Pos].YOffset)
 			return mpos + 1, true, buf, nil, nil
 		}
 	}

@@ -547,11 +547,12 @@ const (
 	AttachCursive
 )
 
-// AnchorRef carries unresolved anchor references for later resolution.
-// Indices are format-specific references into GPOS mark/base/ligature tables.
+// AnchorRef retains format-specific GPOS references for attachment diagnostics.
+// Mark coordinates are read during lookup execution, not recovered from these
+// references during final positioning.
 type AnchorRef struct {
-	MarkAnchor   uint16 // index into MarkArray for mark attachments (GPOS 4/5/6)
-	BaseAnchor   uint16 // index into BaseArray / Mark2Array for mark attachments
+	MarkAnchor   uint16 // anchor offset relative to MarkArray (GPOS 4/5/6)
+	BaseAnchor   uint16 // anchor offset relative to BaseArray / LigatureAttach / Mark2Array
 	LigatureComp uint16 // ligature component index (GPOS 5)
 	CursiveEntry uint16 // entry anchor index (GPOS 3)
 	CursiveExit  uint16 // exit anchor index (GPOS 3)
@@ -569,6 +570,12 @@ type PosItem struct {
 	AttachKind  AttachKind
 	AttachClass uint16
 	AnchorRef   AnchorRef
+
+	// MarkAttachmentPending means XOffset/YOffset contain anchor placement but
+	// still need horizontal target placement and final pen compensation. The
+	// public Latin/Hebrew shaper clears this after GPOS; attachment diagnostics
+	// remain intact. Lower-level ApplyFeature does not finalize pen positions.
+	MarkAttachmentPending bool
 
 	Cluster uint32 // potentially used for shaping
 	Flags   uint16 // TODO
@@ -632,6 +639,7 @@ func (pb PosBuffer) ApplyEdit(edit *EditSpan) PosBuffer {
 			out[i].AttachKind = AttachNone
 			out[i].AttachClass = 0
 			out[i].AnchorRef = AnchorRef{}
+			out[i].MarkAttachmentPending = false
 		} else if target >= edit.To {
 			out[i].AttachTo += int32(edit.Len - (edit.To - edit.From))
 		}

@@ -57,8 +57,10 @@ unsafe flags. It is richer than legacy `ShapedGlyph{Index, Advance}`.
 Position materialization adds nominal horizontal advance to layout deltas.
 After GPOS in Latin/Hebrew plans, GDEF marks receive a delta that cancels this
 metric, producing zero final advances without changing placement offsets.
-Mark/cursive attachment references are still unresolved, so the output is not
-fully positioned for those cases.
+Then mark-to-base/ligature/mark attachment offsets are finalized from design-unit
+anchors, target placement, and final pen differences, before `PostprocessRun`.
+Cursive and hint/device/variation adjustments remain unresolved; ligature
+component association and streaming context remain separate limitations.
 
 The ordinary request path is:
 
@@ -117,8 +119,9 @@ Known limitations include:
   have SHAPE-001/002/003/018 ordinary regressions.
 - Streaming can discard needed shaping context; forced flushing does not prove
   equivalence to a complete run.
-- GPOS attachments lack final coordinate resolution; direction handling and
-  normalization remain partial.
+- GPOS cursive attachments lack final coordinate resolution. Mark attachments
+  are finalized for horizontal Latin/Hebrew; component association, streaming
+  context, and normalization remain partial.
 - Internal policy support is not fully wired to the public API; declared flags
   and hooks do not all have their intended behavior.
 - Multiple event plans share mutable engine-local state.

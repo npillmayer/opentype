@@ -1,6 +1,10 @@
 package otlayout
 
-import "github.com/npillmayer/opentype/ot"
+import (
+	"math"
+
+	"github.com/npillmayer/opentype/ot"
+)
 
 // applyValueRecord applies a ValueRecord to a position item according to format.
 // Device table offsets are currently ignored.
@@ -28,8 +32,13 @@ func applyValueRecordPair(p1, p2 *PosItem, v1 ot.ValueRecord, f1 ot.ValueFormat,
 	applyValueRecord(p2, v2, f2)
 }
 
-// setMarkAttachment records a mark attachment without resolving anchor coordinates.
-func setMarkAttachment(pos *PosItem, baseIndex int, kind AttachKind, class uint16, ref AnchorRef) {
+// setMarkAttachment installs design-unit anchor placement for horizontal shaping.
+// Attachment replaces earlier placement of this mark; later value records add
+// to it. The target's cross-stream placement is captured now (also for mark
+// chains). Its horizontal placement and the final pen difference are resolved
+// after all GPOS lookups and advance policies have run.
+// Anchor-point hinting and device/variation adjustments are not implemented.
+func setMarkAttachment(pos *PosItem, baseIndex int, kind AttachKind, class uint16, ref AnchorRef, mark, base *ot.Anchor, baseYOffset int32) {
 	if pos == nil {
 		return
 	}
@@ -37,6 +46,12 @@ func setMarkAttachment(pos *PosItem, baseIndex int, kind AttachKind, class uint1
 	pos.AttachKind = kind
 	pos.AttachClass = class
 	pos.AnchorRef = ref
+	pos.XOffset = int32(base.XCoordinate) - int32(mark.XCoordinate)
+	// Saturate before storing: final pen compensation cannot repair a wrapped
+	// target cross-stream placement.
+	yOffset := int64(base.YCoordinate) - int64(mark.YCoordinate) + int64(baseYOffset)
+	pos.YOffset = int32(max(int64(math.MinInt32), min(int64(math.MaxInt32), yOffset)))
+	pos.MarkAttachmentPending = true
 }
 
 // setCursiveAttachment records a cursive attachment without resolving anchor coordinates.
@@ -47,4 +62,5 @@ func setCursiveAttachment(pos *PosItem, baseIndex int, ref AnchorRef) {
 	pos.AttachTo = int32(baseIndex)
 	pos.AttachKind = AttachCursive
 	pos.AnchorRef = ref
+	pos.MarkAttachmentPending = false
 }

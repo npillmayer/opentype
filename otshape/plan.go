@@ -1014,7 +1014,7 @@ func (e *planExecutor) apply(pl *plan) error {
 		appliedGPOS = true
 	}
 	e.applyPositionPolicies(pl, appliedGPOS)
-	return nil
+	return e.finishMarkAttachments(pl)
 }
 
 func (e *planExecutor) applyGSUB(pl *plan) error {

@@ -163,15 +163,19 @@ For each current raw carry buffer, or each contiguous event-plan span:
     final advances of GDEF-classified marks by storing negative nominal
     horizontal metrics as adjustments; offsets and attachments are preserved.
     Missing GDEF/class tables do not trigger Unicode or attachment inference.
-12. `PostprocessRun`.
-13. Select an output prefix and emit `GlyphRecord` values, adding nominal
+12. Finalize horizontal Latin/Hebrew mark attachment offsets from anchor
+    placement, target X placement, and final pen differences.
+13. `PostprocessRun`.
+14. Select an output prefix and emit `GlyphRecord` values, adding nominal
     horizontal advances during materialization.
 
 This order is taken from [shape_api.go](../otshape/shape_api.go) and
 [plan.go](../otshape/plan.go), not from the earlier proposed hook order.
 There is no general combining-class sort before the reorder hook, dotted-circle
 prelude, default-ignorable cleanup, or direction-restore phase here.
-Mark/cursive anchor resolution is also incomplete.
+Horizontal Latin/Hebrew mark anchors are finalized before `PostprocessRun`.
+Cursive, hinted/device/variation anchor adjustments, and ligature component
+association remain incomplete. See SHAPE-007 in [the findings](SHAPING_FINDINGS.md).
 
 Because carry is reshaped, runtime hooks can run more than once for input that
 has not yet been emitted. Hooks must not assume one invocation per source rune.

@@ -13,8 +13,9 @@ func TestKnownBugSHAPE010HebrewComposition(t *testing.T) {
 	}
 }
 
-// A single base with two marks isolates the unresolved attachments from the
-// vav+holam composition problem. Mark clusters and internal mark order differ too.
+// Historical SHAPE-007 reproduction: offsets now agree with HarfBuzz, but
+// clusters and internal mark order still differ (SHAPE-011). Keep the complete
+// oracle and this test tagged until both remaining differences are resolved.
 func TestKnownBugSHAPE007HebrewMarkOffsets(t *testing.T) {
 	runTextBaselineID(t, "hebrew_shin_pointed")
 }

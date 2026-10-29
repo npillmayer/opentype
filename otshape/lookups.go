@@ -203,6 +203,7 @@ func (e *planExecutor) applyLookupIsolatedSpan(
 							sub.Pos[i].AttachKind = otlayout.AttachNone
 							sub.Pos[i].AttachClass = 0
 							sub.Pos[i].AnchorRef = otlayout.AnchorRef{}
+							sub.Pos[i].MarkAttachmentPending = false
 							break
 						}
 						if int(target) >= edit.To {

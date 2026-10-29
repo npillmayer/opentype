@@ -1,5 +1,13 @@
 # AOTS positioning baseline batch
 
+**SHAPE-007 implementation (2026-10-29; review pending):**
+`gpos4_simple.tests:2` and `gpos5.tests:3` now pass their unchanged full
+origin expectations and are promoted to `TestAOTSGPOSBaselines`. Mark origins
+are `(1400,-80)` and `(1401,-79)` respectively; the trailing glyph remains at
+`(3000,0)`. `gpos5.tests:2` stays tagged with its complete expectation because
+SHAPE-019 still deletes the ignored mark. The dated entries below preserve
+the discovery and earlier fix snapshots.
+
 **Reviewed SHAPE-008 resolution (2026-10-29):** the
 [advance fix](../../../doc/SHAPING_FINDINGS.md#shape-008--marks-retain-nominal-advances)
 is accepted. `gpos4_simple.tests:3` and `:4` now pass

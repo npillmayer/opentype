@@ -99,7 +99,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | --- | --- | --- |
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | fixed (agreed scope) | Ranges use original scalar anchors across compaction and normalization |
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
-| [SHAPE-007](#shape-007--mark-attachments-do-not-resolve-to-origins) | reproduced | Mark attachment metadata does not become final anchor offsets |
 | [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | fixed (contract resolved) | Logical sink order agreed; plain Hebrew passes after explicit oracle adaptation |
 | [SHAPE-010](#shape-010--default-mark-positioning-is-missed-during-normalization) | reproduced | Hebrew presentation-form fallback ignores default-enabled GPOS mark support |
 | [SHAPE-011](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0) | reproduced | HarfBuzz level-0 grouping agreed; Latin/Hebrew marks still retain individual scalar clusters |
@@ -117,6 +116,7 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-003 — alternate selection](#shape-003--feature-values-do-not-select-alternates),
 [SHAPE-005 — GDEF classification](#shape-005--gdef-classification-prevents-ignoremarks),
 [SHAPE-006 — contextual continuation](#shape-006--contextual-lookup-revisits-matched-input),
+[SHAPE-007 — final mark positioning](#shape-007--mark-attachments-do-not-resolve-to-origins),
 [SHAPE-008 — GDEF mark advances](#shape-008--marks-retain-nominal-advances),
 and [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks).
 
@@ -195,59 +195,6 @@ zero; `ShaperConfidenceNone` is zero in [engine_api.go](../otshape/engine_api.go
 
 **Reproduce:** use the individual command above with `SHAPE004`.
 
-## SHAPE-007 — Mark attachments do not resolve to origins
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE007AOTSMarkAttachmentOrigins`.
-**Verified:** 2026-10-26, source revision
-`f560698c2ecf09ed0c317a78327862707e5d8f46` plus new tests.
-
-**Expected behavior and basis:** active upstream `gpos4_simple.tests:2` and
-`gpos5.tests:3` require a mark origin aligned with its base or ligature anchor.
-The public output must contain the offsets needed to reproduce those origins;
-attachment references alone do not satisfy the baseline.
-
-**Reproduction:** core engine, Latin/English/LTR, global `test`, one shaping
-window. Mark-to-base input is `U+0011 U+0012 U+0013 U+0011`, buffers `5/1/6`;
-mark-to-ligature input is `U+0011 U+001E U+001F U+0013 U+0011`, buffers `6/1/7`.
-The font/source hashes and exact upstream expectations are checked at runtime.
-
-**Observed:** both calls return nil and the correct GIDs `[17,18,19,17]`.
-GID 19 has `AttachTo:1` and the appropriate mark-to-base/mark-to-ligature kind
-and anchor references, but `XOffset/YOffset` remain zero. Its origin is
-`(3000,0)`, rather than `(1400,-80)` for the base or `(1401,-79)` for the ligature.
-The final glyph also had the wrong origin due to SHAPE-008; that advance defect
-was corrected on 2026-10-29, while the mark origins remain unresolved. Complete sequences
-and independent HarfBuzz checks are in [GPOS.md](../testdata/harfbuzz/aots/GPOS.md).
-
-**Implementation evidence:** `gposLookupType4Fmt1`/`gposLookupType5Fmt1` in
-[gpos.go](../otlayout/gpos.go) call `setMarkAttachment` in
-[gpos_helpers.go](../otlayout/gpos_helpers.go). That helper records metadata
-without resolving anchor coordinates. The public execution/output path does
-not subsequently turn those references into offsets. Existing attachment tests
-assert metadata, so their success does not establish final positioning.
-
-**Fix scope:** resolve the appropriate anchors and relative pen positions before
-emitting public output. Retain separate checks for mark advance handling,
-ligature component association, mark-to-mark chains, and streaming boundaries;
-the two cases here do not establish those other behaviors.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE007' -count=1 -v
-```
-
-**Real Hebrew extension (2026-10-26):**
-`TestKnownBugSHAPE007HebrewMarkOffsets` uses Noto Sans Hebrew and input
-U+05E9 U+05B8 U+05C1 (shin, qamats, shin dot), Hebr/he/RTL, default features,
-buffers `4/1/5`. HarfBuzz emits marks GID 79 and 100 with X offsets 227 and 539
-and zero advances, followed by base GID 96 with advance 730. Our output is in
-logical order and retains separate mark clusters; both marks have zero offsets
-despite `AttachTo:0`, classes 4/5, and anchor references. The full assertion
-originally exposed SHAPE-009/011. Following the logical-order decision, only
-the oracle's final RTL reversal is undone; internal mark ordering, clusters,
-and offsets remain exact assertions. This font already has zero nominal mark advances, so it
-does not reproduce SHAPE-008. Exact output and provenance are in the
-[real-text report](../internal/hbcmp/testdata/text/README.md).
-
 ## SHAPE-009 — RTL output order differs from HarfBuzz
 
 **Status:** fixed by contract resolution, not by a production reversal.
@@ -313,7 +260,8 @@ through its attachment metadata, despite the absence of user feature masks.
 
 **Normalization extension (2026-10-26):** the vav/holam matrix now checks
 default, explicitly enabled, disabled, and absent mark features. With explicit
-`mark=1,mkmk=1`, the two GIDs match HarfBuzz, but SHAPE-007/011 remain. With
+`mark=1,mkmk=1`, the two GIDs and, after SHAPE-007, offsets match HarfBuzz;
+SHAPE-011 cluster differences remain. With
 `mark=0,mkmk=0`, HarfBuzz uses fallback GID 126 while our output stays
 `[124,46]`: allocating masks is incorrectly treated as enabled support.
 The NoMark fixture removes those features while retaining GPOS. Its default
@@ -324,8 +272,9 @@ are in the [normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.
 
 **Fix scope:** derive effective mark support from resolved font/plan state,
 including enablement, rather than mask allocation alone. Resolving composition
-will not by itself fix mark offsets, grouping, or internal mark order; the
-tagged tests retain those expectations. Absence of the entire GPOS table is
+will not by itself fix grouping or internal mark order; the tagged tests retain
+all position and cluster expectations. SHAPE-007 now resolves mark offsets
+within its agreed scope. Absence of the entire GPOS table is
 separately blocked at the parser and deferred under SHAPE-014.
 
 ```sh
@@ -341,7 +290,8 @@ cases in `TestKnownBugSHAPE007HebrewMarkOffsets` and
 **Verified:** real-text batch revision/date above.
 
 **Baseline and reproduction:** pointed shin U+05E9 U+05B8 U+05C1 in Noto Sans
-Hebrew, same context as SHAPE-007's extension. HarfBuzz cluster level 0 assigns
+Hebrew, RTL with default features and buffers `4/1/5`, as in the historical
+SHAPE-007 extension. HarfBuzz cluster level 0 assigns
 the base and both marks cluster 0. Our glyphs 96, 79, 100 retain clusters
 0, 1, 2 respectively. Pointed shalom has the same difference for its initial
 three scalars. This discrepancy is independent of RTL sequence order.
@@ -363,7 +313,7 @@ boundary alone is not proof of a safe shaping/streaming break.
 The normalization extension adds canonical `a + dot below + acute`,
 `x + acute`, explicitly enabled Hebrew vav/holam marks, and reordered pointed
 shin. All have correct GID sequences under the logical-order comparison but
-retain individual mark clusters and fail final positioning (SHAPE-007).
+retain individual mark clusters. Final positioning now matches after SHAPE-007.
 `TestKnownBugSHAPE011CombiningClusters` preserves the complete oracle; it does
 not ignore positioning to report partial success. See the
 [normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.md) for exact
@@ -379,8 +329,15 @@ go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE011' -c
 **Streaming matrix extension:** `TestKnownBugSHAPE011StreamingBaselines` repeats
 `x + acute` and explicitly enabled Hebrew vav/holam marks over all five buffer
 profiles, both entry points, and both flush modes. All forty executions fail
-the complete oracle. Since whole-input output already fails grouping and final
-positions (SHAPE-007), these are not isolated streaming-context reproductions.
+the complete oracle. Since whole-input output already fails grouping, these
+are not isolated streaming-context reproductions; SHAPE-007 has resolved the
+whole-input positioning mismatch.
+
+**SHAPE-007 dependency update (2026-10-29):** whole-input offsets now match
+for all four `TestKnownBugSHAPE011CombiningClusters` cases. Their remaining
+mismatch is the mark cluster. Pointed shin in its other input order still also
+requires internal mark reordering. The streaming variants preserve the full
+expectation; tiny windows additionally lose base/mark context (SHAPE-015).
 
 ## SHAPE-012 — Canonical-equivalent mark orders shape differently
 
@@ -609,8 +566,8 @@ That replacement deletes the skipped glyph as well as the consumed components.
 correspondence during ligature substitution. Component association needs
 verification once the mark survives: current GPOS defaults to the last ligature
 component, but this failing output alone does not establish the required repair.
-Final attachment origins remain SHAPE-007; SHAPE-008 now cancels advances for
-surviving GDEF marks in the agreed scope. Keep the full
+SHAPE-007/008 now resolve anchor offsets and cancel advances for surviving
+GDEF marks in the agreed horizontal Latin/Hebrew scope. Keep the full
 oracle tagged until all its blockers are resolved; a future mark-preservation
 fix should also have an isolated regression that can pass independently of GPOS.
 This differs from SHAPE-017, where an intentional empty substitution is ignored.
@@ -813,7 +770,8 @@ and [GDEF enumeration](https://learn.microsoft.com/en-us/typography/opentype/spe
 but span replacement deletes the mark. That distinct failure is
 [SHAPE-019](#shape-019--ligature-substitution-deletes-ignored-marks), retaining the
 full oracle under the historical `TestKnownBugSHAPE005AOTSLigatureAcrossMark`
-name. Component association and SHAPE-007/008 positioning are not resolved here.
+name. Component association remains separate; SHAPE-007/008 subsequently
+resolved positioning for surviving marks within their agreed scope.
 
 **Review verification (2026-10-29):** `go test ./... -count=1` and
 `go test -race ./... -count=1` passed. Reverting either classification correction
@@ -878,6 +836,61 @@ go test ./internal/hbcmp -run '^TestAOTSGSUBBaselines/gsub_context1_next_glyph' 
 go test ./otlayout ./otshape -run 'TestContextProgression|TestClassSequenceStarts' -count=1
 ```
 
+### SHAPE-007 — Mark attachments do not resolve to origins
+
+**Fixed:** implemented, reviewed, and accepted 2026-10-29 within the agreed
+horizontal Latin/Hebrew scope, including the review's overflow correction.
+
+**Cause and fix:** GPOS mark lookups recorded attachment references without
+resolving anchor coordinates or final pen positions. GPOS 4/5/6 now install the
+selected anchor difference, replacing earlier mark placement; later value
+records still add to it. Target Y placement is captured at attachment time using
+`int64` arithmetic and saturation to `int32`, preventing overflow before storage.
+After GPOS and advance policies, [finalization](../otshape/mark_attachments.go)
+adds the target's final X placement and compensates for intervening final
+advances before `PostprocessRun`. Logical sink order is preserved, including
+RTL's different pen interval. This follows
+[HarfBuzz attachment application](https://github.com/harfbuzz/harfbuzz/blob/main/src/OT/Layout/GPOS/MarkArray.hh)
+and [HarfBuzz 15 offset finalization](https://github.com/harfbuzz/harfbuzz/blob/15.0.0/src/OT/Layout/GPOS/GPOS.hh).
+
+A forward pass and prefix sums resolve earlier-target chains in linear time.
+Invalid pending targets fail before positions are mutated; finalization clears
+pending state but retains attachment diagnostics and is idempotent. Lower-level
+`ApplyFeature` retains anchor placement and pending state, including on later
+failure; final nominal metrics and pen compensation remain the shaper's job.
+
+**Permanent regressions:**
+
+- [AOTS GPOS baselines](../internal/hbcmp/aots_gpos_test.go) include unchanged
+  `gpos4_simple.tests:2` and `gpos5.tests:3`. Mark origins now match `(1400,-80)`
+  and `(1401,-79)`, respectively. See [GPOS.md](../testdata/harfbuzz/aots/GPOS.md)
+  for complete sequences and independent provenance. No fonts or oracles changed.
+- [Lookup attachment tests](../otlayout/mark_attachments_test.go) cover GPOS
+  4/5/6, replacement, subsequent placement, nonmatches, partial failure, edit
+  remapping, and Y-offset saturation in both directions, including exact limits
+  and nearby values.
+- [Finalization tests](../otshape/mark_attachments_test.go) cover chains, lookup
+  ordering, final advances, LTR/RTL compensation, long chains, invalid targets,
+  and idempotence. [Public-API tests](../otshape/otcore/mark_attachments_test.go)
+  check complete positions through both entry points in both directions.
+
+**Verification (2026-10-29):** ordinary and race suites passed during review;
+removing finalization through a temporary overlay made public-API and upstream
+regressions fail. Both overflow regressions failed before the arithmetic
+correction and pass afterwards. Focused attachment tests and the full ordinary
+suite passed after that correction. Discovery retained twelve failing top-level
+tests (eleven shaping groups and the deferred parser case).
+
+**Remaining scope:** the full historical `TestKnownBugSHAPE007HebrewMarkOffsets`
+remains tagged for SHAPE-011: Noto Sans Hebrew mark offsets are now exactly 227
+and 539, but order/clusters remain `[96/0,79/1,100/2]` instead of
+`[96/0,100/0,79/0]`. The four SHAPE-011 combining-mark text cases now differ only
+in clusters; full assertions remain intact. Normalization blockers remain
+SHAPE-010/012. Cursive resolution, hinted anchor points, device/variation
+adjustments, ignored-mark preservation/component association (SHAPE-019), and
+streaming/event context (SHAPE-015/016) are outside this fix. Adjacent marks on
+ligatures retain the existing last-component choice.
+
 ### SHAPE-008 — Marks retain nominal advances
 
 **Fixed:** implemented and reviewed 2026-10-29 within the agreed Latin/Hebrew
@@ -922,10 +935,9 @@ Disabling the cancellation through a temporary Go overlay made the internal,
 public-API, and upstream regressions fail. Discovery retained thirteen failing
 top-level tests, without build failures, panics, or timeouts.
 
-**Remaining scope:** SHAPE-007's anchor offsets remain unresolved. Its two AOTS
-cases now emit `[17@0,0 18@1500,0 19@3000,0 17@3000,0]`: the following glyph is
-correct, but the mark's origin is not. Their complete expectations remain tagged.
-SHAPE-019 still deletes an intervening mark before positioning. Missing usable
+**Remaining scope:** SHAPE-007 subsequently resolved anchor offsets within the
+agreed scope; both attached-mark AOTS records now pass unchanged in the ordinary
+suite. SHAPE-019 still deletes an intervening mark before positioning. Missing usable
 GDEF, Unicode fallback, other scripts, normalization/cluster differences, and
 safe streaming boundaries remain separate.
 

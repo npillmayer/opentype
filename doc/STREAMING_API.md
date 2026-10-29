@@ -208,9 +208,15 @@ horizontal advance to the positioning delta. For GPOS-enabled Latin/Hebrew
 plans, the post-GPOS policy sets GDEF marks' deltas to cancel nominal advances,
 so their emitted advances are zero. Missing GDEF/class tables and Unicode-only
 mark inference are outside this policy; offsets and attachments are preserved.
-Mark/cursive anchors are not
-resolved into final coordinates. Attachment indexes are not converted to a
-global sink index during emission.
+Within this horizontal Latin/Hebrew scope, GPOS mark-to-base, mark-to-ligature,
+and mark-to-mark anchors now produce design-unit offsets. Finalization runs
+after GPOS/advance zeroing and before `PostprocessRun`, incorporating target
+placement and final pen differences while retaining logical output order.
+`PosItem.MarkAttachmentPending` is cleared; attachment diagnostics remain.
+Cursive, hint/device/variation adjustments, ligature component association,
+and attachment context lost at buffer/event cuts remain outside this fix.
+Attachment indexes are not converted to a global sink index during emission;
+consumers use the finalized offsets for rendering.
 
 For atomic output, collect records and publish only after success. Raising
 watermarks above a known finite input length allows a whole-input baseline;

@@ -253,6 +253,13 @@ The internal shaping executor calls `otlayout.ApplyFeature`, consumes completed
 edits once to update metadata, and handles isolated-span integration. There is no
 public `ApplyLookups` API matching the earlier design sketch.
 
+GPOS 4/5/6 install design-unit anchor placement in `PosItem` and set
+`MarkAttachmentPending`. Later value records add to that placement. The public
+horizontal Latin/Hebrew shaping executor clears this state after resolving
+mark chains, target placement, and final pen differences, following GPOS and
+advance policies. Lower-level `ApplyFeature` does not add nominal metrics or
+finalize pen positions; attachment references remain diagnostic metadata.
+
 See [Lookup Application and Partial Progress](PARTIAL_PROGRESS.md) for architecture and regression coverage,
 [Shaping Benchmarks](SHAPING_BENCHMARKS.md) for the measured performance baseline,
 and [Code Review](CODE_REVIEW.md) for unresolved work.

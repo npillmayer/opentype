@@ -134,3 +134,46 @@ func TestSHAPE002FeatureRangeUsesInputCoordinates(t *testing.T) {
 		})
 	}
 }
+
+func TestSHAPE011FeatureRangesSelectInitialClusters(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		start, end  int
+		first, last ot.GlyphIndex
+	}{
+		{"start_inside", 1, 3, 18, 20},
+		{"end_inside", 0, 1, 20, 18},
+		{"mark_only", 1, 2, 18, 18},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			params, cp := alternateAPIInput(t)
+			params.Features[0].Start, params.Features[0].End = tc.start, tc.end
+			input := cp + "\u0301" + cp
+			mark, err := otquery.GlyphIndex(params.Font, '\u0301')
+			if err != nil {
+				t.Fatal(err)
+			}
+			shaper := otshape.NewShaper(otcore.New())
+			sink := &glyphCollector{}
+			src := strings.NewReader(input)
+			opts := otshape.BufferOptions{HighWatermark: 8, LowWatermark: 4, MaxBuffer: 8}
+			err = shaper.Shape(params, src, sink, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantIDs := []ot.GlyphIndex{tc.first, mark, tc.last}
+			wantClusters := []uint32{0, 0, 2}
+			if len(sink.glyphs) != 3 {
+				t.Fatalf("glyphs=%+v", sink.glyphs)
+			}
+			for i, g := range sink.glyphs {
+				if g.GID != wantIDs[i] || g.Cluster != wantClusters[i] {
+					t.Errorf("glyph[%d]=%+v, want %d/%d", i, g, wantIDs[i], wantClusters[i])
+				}
+			}
+			if sink.glyphs[0].Mask != sink.glyphs[1].Mask {
+				t.Fatal("base and mark did not share range selection")
+			}
+		})
+	}
+}

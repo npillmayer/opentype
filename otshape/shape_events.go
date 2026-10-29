@@ -243,13 +243,13 @@ func shapeEventCarry(
 		}
 		segRunes := runes[start:end]
 		segClusters := clusters[start:end]
-		segRunes, segClusters = ws.normalize(segRunes, segClusters, params.Font, ctx, engine, pl)
+		segRunes, segClusters, sources := ws.normalize(segRunes, segClusters, params.Font, ctx, engine, pl)
 		if len(segRunes) == 0 {
 			start = end
 			continue
 		}
 		segPlanIDs := ws.spanPlanIDsFor(pid, len(segRunes))
-		segRun := ws.mapSegment(segRunes, segClusters, segPlanIDs, params.Font)
+		segRun := ws.mapSegment(segRunes, segClusters, sources, segPlanIDs, params.Font)
 		if err := shapeMappedRun(segRun, engine, pl); err != nil {
 			return nil, err
 		}

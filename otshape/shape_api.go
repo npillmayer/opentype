@@ -102,8 +102,8 @@ func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts Bu
 		}
 
 		runes, clusters := ws.copyRaw(strState)
-		runes, clusters = ws.normalize(runes, clusters, params.Font, ctx, engine, plan)
-		run := ws.mapMain(runes, clusters, nil, params.Font)
+		runes, clusters, sources := ws.normalize(runes, clusters, params.Font, ctx, engine, plan)
+		run := ws.mapMain(runes, clusters, sources, nil, params.Font)
 		if run.Len() == 0 {
 			ing.compact(len(strState.rawRunes))
 			if strState.eof {
@@ -442,7 +442,9 @@ func composeRuneStreamInto(
 	allowUnicode bool,
 ) ([]rune, []uint32) {
 	if len(runes) <= 1 {
-		return runes, clusters
+		// The workspace retains these slices as reusable scratch. Never lend it
+		// raw input storage: the next event span could overwrite unread input.
+		return append(outRunes[:0], runes...), append(outClusters[:0], clusters...)
 	}
 	outRunes = outRunes[:0]
 	outClusters = outClusters[:0]

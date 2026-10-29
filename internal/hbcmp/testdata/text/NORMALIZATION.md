@@ -9,6 +9,17 @@ logical-order and HarfBuzz level-0 cluster contracts.
 unchanged capture and runs in the ordinary suite. The corpus has 11 passing and
 13 tagged cases. Original discovery diagnostics below retain their dated context.
 
+**Reviewed SHAPE-011 resolution (2026-10-29):** the canonical Latin marks,
+Latin uncomposable mark, explicitly enabled vav/holam, and reordered shin now
+pass complete unchanged captures. The corpus has **15 ordinary / 9 tagged**
+cases. Initial base/mark groups select indexed feature ranges by group start;
+source anchors remain separate for bookkeeping. The historical pointed-shin
+case now agrees on clusters but still differs in internal Hebrew mark order.
+The [resolved finding](../../../../doc/SHAPING_FINDINGS.md#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0)
+retains the agreed scope and review evidence; its full Hebrew order assertion
+remains tagged for the separate follow-up.
+The original diagnostics below describe earlier revisions, not current results.
+
 ## Contract and comparison
 
 The sink receives **logical shaping order**, after normalization and script
@@ -108,10 +119,11 @@ go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 python3 testdata/scripts/capture_harfbuzz_text.py
 ```
 
-Next fixes can address font-aware normalization, canonical/mark ordering,
-level-0 cluster formation, source-coordinate feature masks, and resolved mark
-support independently. Promote complete passing records when all their blockers
-are fixed. Feature ranges *inside* merged clusters and feature events still need
-additional coverage; these new ranges lie wholly after the normalized prefix.
+Remaining fixes can address font-aware normalization, canonical/Hebrew mark
+ordering, and effective mark support independently. Source-coordinate masks
+and Latin/Hebrew base/mark grouping now have ordinary regressions. Promote complete passing records when all their blockers
+are fixed. Initial-group indexed range bounds have focused coverage under
+SHAPE-011; feature events inside groups remain separate. The captured ranged
+ligature examples lie wholly after the normalized prefix.
 Streaming cuts remain the next independent test axis. See
 [SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md) for stable IDs.

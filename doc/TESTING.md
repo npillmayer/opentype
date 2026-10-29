@@ -5,6 +5,23 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## Reviewed SHAPE-011 resolution (2026-10-29)
+
+Latin/Hebrew base/mark groups now share original-scalar cluster starts. Indexed
+ranges select these initial groups by start; source anchors remain separate for
+random selection and edit provenance. Four complete text captures and 32 matrix
+cells are promoted unchanged. The corpus has 15 passing / 9 tagged text cases;
+the streaming matrix has 182 passing / 138 tagged cells. Eight tiny-buffer mark
+cells remain under SHAPE-015, and the historical pointed-shin reproduction still
+needs the separate [Hebrew mark-ordering follow-up](SHAPING_FINDINGS.md#hebrew-internal-mark-ordering-follow-up).
+The [reviewed SHAPE-011 resolution](SHAPING_FINDINGS.md#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0)
+is archived with its stable ID, range decision, and regression links.
+The full ordinary and race suites pass; discovery has ten remaining top-level
+failure groups. Read-only verification confirmed all 24 stored captures against
+HarfBuzz 15.0.0. Temporary overlays independently disabling grouping, cluster
+merging, source-anchor random selection, and scratch isolation triggered their
+regressions. Build and vet checks passed during implementation.
+
 ## Reviewed SHAPE-007 resolution (2026-10-29)
 
 The two attached-mark origin records (`gpos4_simple.tests:2`, `gpos5.tests:3`)
@@ -131,7 +148,7 @@ within the same Go module.
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
-| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. One AOTS record and thirteen real-text cases are behind `shaping_knownbugs`. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. No runner invokes HarfBuzz during tests. |
+| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. One AOTS record and nine real-text cases are behind `shaping_knownbugs`. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. No runner invokes HarfBuzz during tests. |
 | [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and 24 independently captured Latin/Hebrew cases in `text/baselines.json`. Twelve additional records in `text/streaming.json` supply streaming/scope/progress oracles. `text/README.md`, `text/NORMALIZATION.md`, and `text/STREAMING.md` record semantics, commands, and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Fourteen selected records are executed (five GSUB, nine GPOS; thirteen passing, one tagged failure, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
@@ -586,16 +603,21 @@ and HarfBuzz level-0 grouping are the agreed contracts. See the
 [normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.md) for the
 conversion's rendering convention and exact cases.
 
-Eleven cases pass: the original six Latin cases, single shin, plain shalom,
-ranged ligatures after NFC and NFD prefixes, and Hebrew fallback with absent
-mark features in a font retaining GPOS. Thirteen remain tagged for mark
-grouping/order, effective mark-support detection, canonical ordering,
-font-aware normalization, or the explicit no-GPOS parser restriction. The
-combined discovery suite after SHAPE-007 has **twelve failing top-level tests**:
-eleven shaping assertion groups and the deferred SHAPE-014 parser case.
-The historical `TestKnownBugSHAPE007HebrewMarkOffsets` remains tagged with its
-full assertion because clusters and internal mark order still differ; its
-per-glyph offsets now match. Four SHAPE-011 text cases now differ only in clusters.
+Fifteen cases pass, including the four full SHAPE-011 mark-grouping captures
+promoted on 2026-10-29. Nine remain tagged for Hebrew mark order, effective mark
+support, canonical ordering, font-aware normalization, or the explicit no-GPOS
+parser restriction. The combined discovery suite now has **ten failing
+top-level tests**: nine shaping assertion groups and the deferred SHAPE-014
+parser case. The historical `TestKnownBugSHAPE007HebrewMarkOffsets` retains its
+full assertion: clusters now match, but internal Hebrew mark order still differs.
+
+`otshape/clusters_test.go` covers leading marks, adjacent groups, original scalar
+anchors through composition/decomposition, range starts/ends inside groups,
+ligature edits with surviving marks, copy/reorder/append/reuse, and normalization
+scratch isolation across event spans. Public `Shape` tests check the range rule;
+both APIs exercise unchanged HarfBuzz text in the streaming matrix. Random
+alternate regressions verify that grouping does not replace source anchors in
+the seed. No capture or expected output field is weakened.
 
 Focused attachment regressions in `otlayout/mark_attachments_test.go` and
 `otshape/mark_attachments_test.go` verify anchor replacement, subsequent value
@@ -610,17 +632,20 @@ SHAPE-002's ordinary public-API regression verifies source ranges after streamin
 compaction; `latin_range_after_nfd` verifies them after composition against the
 complete HarfBuzz capture. Unit coverage also checks decomposition correspondence,
 reordered anchors, range bounds, and existing mask inheritance through glyph edits.
-Ranges splitting merged source sequences remain outside the agreed fix scope.
+SHAPE-011 subsequently settles indexed ranges inside initial base/mark groups:
+select by the group start; starts inside exclude it and ends inside include it.
+Feature events inside groups remain a separate context issue (SHAPE-016).
 
 The [streaming/scope matrix](../internal/hbcmp/testdata/text/STREAMING.md) adds
 twelve independent captures and reuses four original text cases. Five buffer
 profiles × both public entry points × both flush modes yield 320 executions:
-150 pass, 170 remain tagged. The runner validates actual push/pop schedules
+182 pass, 138 remain tagged. The runner validates actual push/pop schedules
 against the equivalent HB ranges at every scalar and checks complete output,
 EOF consumption, early emission, and bounded source/sink activity. Ten additional
 empty-input and balanced empty-scope checks pass. Remaining findings cover
 streaming context (SHAPE-015), scope context (SHAPE-016), and deletion (SHAPE-017);
-existing SHAPE-011 remains visible; SHAPE-007 offsets now match when context is retained.
+SHAPE-011 promoted 32 mark cells unchanged; eight tiny-buffer mark cells remain
+under SHAPE-015 with complete cluster/position expectations.
 SHAPE-002 promoted eight matrix cells; remaining tiny/forced range failures
 retain full expectations under SHAPE-015. The AOTS streaming range case now
 passes after SHAPE-003 and is an ordinary regression. The reviewed SHAPE-018 fix
@@ -771,9 +796,9 @@ continue to pass, but expanding their coverage is not a current priority.
 3. **Normalization and cluster preservation.** The focused discovery batch now
    covers canonical-equivalent mark orders (SHAPE-012), missing composed cmap
    mappings (SHAPE-013), source ranges after composition (SHAPE-002), and
-   default/enabled/disabled/absent Hebrew mark features (SHAPE-010). Implement
-   the agreed level-0 cluster contract (SHAPE-011), then expand ranges inside
-   merged clusters and additional script-specific mark-order cases. Absence of
+   default/enabled/disabled/absent Hebrew mark features (SHAPE-010). SHAPE-011 now
+   implements Latin/Hebrew base/mark grouping and initial-group range bounds.
+   Canonical normalization and remaining Hebrew mark order need separate fixes. Absence of
    GPOS itself remains outside normal parser scope (SHAPE-014, deferred).
 4. **Remaining mark positioning.** SHAPE-007/008 now resolve design-unit
    mark-to-base/ligature/mark positioning and final mark advances for horizontal
@@ -787,7 +812,7 @@ continue to pass, but expanding their coverage is not a current priority.
    ligatures, pairs, normalization, mark failures, nested push/pop restoration,
    compaction, EOF tails, expansion, contraction, and deletion. Five buffer
    profiles, both APIs, and both flush modes distinguish passing cells from
-   remaining failures (SHAPE-011/015–017). Deletion must work before actual
+   remaining failures (SHAPE-015–017). Deletion must work before actual
    zero-output progress can be verified.
    The [agreed buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented)
    permits a generous required minimum and practical sequence/context limits.

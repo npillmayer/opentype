@@ -16,13 +16,14 @@ type runBuffer struct {
 	Glyphs otlayout.GlyphBuffer
 	Pos    otlayout.PosBuffer // optional until positioning becomes necessary
 
-	Codepoints  []rune   // optional codepoint alignment for normalization/reorder hooks
-	Clusters    []uint32 // optional rune->glyph mapping
-	PlanIDs     []uint16 // optional plan-boundary marker: active plan id per glyph
-	Masks       []uint32 // optional feature/shaping flags
-	UnsafeFlags []uint16 // optional line-break/concat safety flags
-	Syllables   []uint16 // optional pre-segmented syllable ids (contiguous runs)
-	Joiners     []uint8  // optional joiner classes aligned to glyph indices
+	Codepoints    []rune   // optional codepoint alignment for normalization/reorder hooks
+	Clusters      []uint32 // optional output groups anchored to original scalar indexes
+	SourceAnchors []uint32 // optional per-glyph source anchor, independent of grouping
+	PlanIDs       []uint16 // optional plan-boundary marker: active plan id per glyph
+	Masks         []uint32 // optional feature/shaping flags
+	UnsafeFlags   []uint16 // optional line-break/concat safety flags
+	Syllables     []uint16 // optional pre-segmented syllable ids (contiguous runs)
+	Joiners       []uint8  // optional joiner classes aligned to glyph indices
 }
 
 const (
@@ -64,6 +65,9 @@ func (rb *runBuffer) Reset() {
 	if rb.Clusters != nil {
 		rb.Clusters = rb.Clusters[:0]
 	}
+	if rb.SourceAnchors != nil {
+		rb.SourceAnchors = rb.SourceAnchors[:0]
+	}
 	if rb.PlanIDs != nil {
 		rb.PlanIDs = rb.PlanIDs[:0]
 	}
@@ -104,6 +108,7 @@ func (rb *runBuffer) PrepareForMappedRun(withPlanIDs bool, reserve int) {
 
 	rb.UseCodepoints()
 	rb.UseClusters()
+	rb.UseSourceAnchors()
 	if withPlanIDs {
 		rb.UsePlanIDs()
 	} else {
@@ -153,6 +158,20 @@ func (rb *runBuffer) EnsureClusters() {
 	}
 	if len(rb.Clusters) != rb.Len() {
 		rb.Clusters = resizeUint32(rb.Clusters, rb.Len())
+	}
+}
+
+// EnsureSourceAnchors allocates/aligns source-anchor storage.
+func (rb *runBuffer) EnsureSourceAnchors() {
+	if rb == nil {
+		return
+	}
+	if rb.SourceAnchors == nil {
+		rb.SourceAnchors = make([]uint32, rb.Len())
+		return
+	}
+	if len(rb.SourceAnchors) != rb.Len() {
+		rb.SourceAnchors = resizeUint32(rb.SourceAnchors, rb.Len())
 	}
 }
 
@@ -248,6 +267,10 @@ func (rb *runBuffer) ReserveGlyphs(extra int) {
 		assert(len(rb.Clusters) == n, "run buffer alignment violated for Clusters")
 		rb.Clusters = reserveUint32(rb.Clusters, need)
 	}
+	if rb.SourceAnchors != nil {
+		assert(len(rb.SourceAnchors) == n, "run buffer alignment violated for SourceAnchors")
+		rb.SourceAnchors = reserveUint32(rb.SourceAnchors, need)
+	}
 	if rb.PlanIDs != nil {
 		assert(len(rb.PlanIDs) == n, "run buffer alignment violated for PlanIDs")
 		rb.PlanIDs = reserveUint16(rb.PlanIDs, need)
@@ -310,6 +333,19 @@ func (rb *runBuffer) UseClusters() {
 	}
 	n := rb.Len()
 	rb.Clusters = make([]uint32, n, maxInt(cap(rb.Glyphs), n))
+}
+
+// UseSourceAnchors activates per-glyph source-anchor storage.
+func (rb *runBuffer) UseSourceAnchors() {
+	if rb == nil {
+		return
+	}
+	if rb.SourceAnchors != nil {
+		rb.EnsureSourceAnchors()
+		return
+	}
+	n := rb.Len()
+	rb.SourceAnchors = make([]uint32, n, maxInt(cap(rb.Glyphs), n))
 }
 
 // UsePlanIDs activates per-glyph plan id storage.
@@ -394,6 +430,10 @@ func (rb *runBuffer) AppendGlyph(gid ot.GlyphIndex) int {
 		assert(len(rb.Clusters) == n, "run buffer alignment violated for Clusters")
 		rb.Clusters = append(rb.Clusters, 0)
 	}
+	if rb.SourceAnchors != nil {
+		assert(len(rb.SourceAnchors) == n, "run buffer alignment violated for SourceAnchors")
+		rb.SourceAnchors = append(rb.SourceAnchors, 0)
+	}
 	if rb.PlanIDs != nil {
 		assert(len(rb.PlanIDs) == n, "run buffer alignment violated for PlanIDs")
 		rb.PlanIDs = append(rb.PlanIDs, 0)
@@ -428,12 +468,16 @@ func (rb *runBuffer) AppendMappedGlyph(gid ot.GlyphIndex, cp rune, cluster uint3
 	if rb.Clusters == nil {
 		rb.UseClusters()
 	}
+	if rb.SourceAnchors == nil {
+		rb.UseSourceAnchors()
+	}
 	if withPlanID && rb.PlanIDs == nil {
 		rb.UsePlanIDs()
 	}
 	i := rb.AppendGlyph(gid)
 	rb.Codepoints[i] = cp
 	rb.Clusters[i] = cluster
+	rb.SourceAnchors[i] = cluster
 	if withPlanID {
 		rb.PlanIDs[i] = planID
 	}
@@ -457,6 +501,9 @@ func (rb *runBuffer) AppendRun(src *runBuffer) {
 	}
 	if len(src.Clusters) == srcLen {
 		rb.UseClusters()
+	}
+	if len(src.SourceAnchors) == srcLen {
+		rb.UseSourceAnchors()
 	}
 	if len(src.PlanIDs) == srcLen {
 		rb.UsePlanIDs()
@@ -484,6 +531,9 @@ func (rb *runBuffer) AppendRun(src *runBuffer) {
 		}
 		if len(src.Clusters) == srcLen && len(rb.Clusters) == rb.Len() {
 			rb.Clusters[j] = src.Clusters[i]
+		}
+		if len(src.SourceAnchors) == srcLen && len(rb.SourceAnchors) == rb.Len() {
+			rb.SourceAnchors[j] = src.SourceAnchors[i]
 		}
 		if len(src.PlanIDs) == srcLen && len(rb.PlanIDs) == rb.Len() {
 			rb.PlanIDs[j] = src.PlanIDs[i]
@@ -522,6 +572,9 @@ func (rb *runBuffer) ApplyEdit(edit *otlayout.EditSpan) {
 	if rb.Clusters != nil {
 		rb.Clusters = applyEditUint32(rb.Clusters, edit)
 	}
+	if rb.SourceAnchors != nil {
+		rb.SourceAnchors = applyEditUint32(rb.SourceAnchors, edit)
+	}
 	if rb.PlanIDs != nil {
 		rb.PlanIDs = applyEditUint16(rb.PlanIDs, edit)
 	}
@@ -555,12 +608,21 @@ func (rb *runBuffer) InsertGlyphs(index int, glyphs []ot.GlyphIndex) (int, int) 
 	insertLen := len(glyphs)
 
 	clusterSeed := uint32(0)
+	sourceSeed := uint32(0)
 	if len(rb.Clusters) == n {
 		switch {
 		case index > 0:
 			clusterSeed = rb.Clusters[index-1]
 		case n > 0:
 			clusterSeed = rb.Clusters[0]
+		}
+	}
+	if len(rb.SourceAnchors) == n {
+		switch {
+		case index > 0:
+			sourceSeed = rb.SourceAnchors[index-1]
+		case n > 0:
+			sourceSeed = rb.SourceAnchors[0]
 		}
 	}
 	planSeed := uint16(0)
@@ -580,6 +642,11 @@ func (rb *runBuffer) InsertGlyphs(index int, glyphs []ot.GlyphIndex) (int, int) 
 	if len(rb.Clusters) == rb.Len() {
 		for i := index; i < index+insertLen; i++ {
 			rb.Clusters[i] = clusterSeed
+		}
+	}
+	if len(rb.SourceAnchors) == rb.Len() {
+		for i := index; i < index+insertLen; i++ {
+			rb.SourceAnchors[i] = sourceSeed
 		}
 	}
 	if len(rb.PlanIDs) == rb.Len() {
@@ -624,9 +691,14 @@ func (rb *runBuffer) InsertGlyphCopies(index int, source int, count int) (int, i
 		cp = rb.Codepoints[source]
 	}
 	hasClusters := len(rb.Clusters) == n
+	hasSourceAnchors := len(rb.SourceAnchors) == n
+	var sourceAnchor uint32
 	var cluster uint32
 	if hasClusters {
 		cluster = rb.Clusters[source]
+	}
+	if hasSourceAnchors {
+		sourceAnchor = rb.SourceAnchors[source]
 	}
 	hasMasks := len(rb.Masks) == n
 	var mask uint32
@@ -664,6 +736,9 @@ func (rb *runBuffer) InsertGlyphCopies(index int, source int, count int) (int, i
 		}
 		if hasClusters {
 			rb.Clusters[i] = cluster
+		}
+		if hasSourceAnchors {
+			rb.SourceAnchors[i] = sourceAnchor
 		}
 		if hasMasks {
 			rb.Masks[i] = mask

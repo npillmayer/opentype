@@ -9,4 +9,3 @@ import "testing"
 func TestKnownBugSHAPE015StreamingContext(t *testing.T)    { runStreamingMatrix(t, "015") }
 func TestKnownBugSHAPE016FeatureScopeContext(t *testing.T) { runStreamingMatrix(t, "016") }
 func TestKnownBugSHAPE017GSUBDeletion(t *testing.T)        { runStreamingMatrix(t, "017") }
-func TestKnownBugSHAPE011StreamingBaselines(t *testing.T)  { runStreamingMatrix(t, "011") }

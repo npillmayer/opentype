@@ -14,16 +14,10 @@ func TestKnownBugSHAPE010HebrewComposition(t *testing.T) {
 }
 
 // Historical SHAPE-007 reproduction: offsets now agree with HarfBuzz, but
-// clusters and internal mark order still differ (SHAPE-011). Keep the complete
-// oracle and this test tagged until both remaining differences are resolved.
+// internal mark order still differs (SHAPE-011 follow-up). Keep the complete
+// oracle and this test tagged until that remaining difference is resolved.
 func TestKnownBugSHAPE007HebrewMarkOffsets(t *testing.T) {
 	runTextBaselineID(t, "hebrew_shin_pointed")
-}
-
-func TestKnownBugSHAPE011CombiningClusters(t *testing.T) {
-	for _, id := range []string{"latin_marks_canonical", "latin_uncomposable_mark", "hebrew_vav_holam_mark_on", "hebrew_shin_reordered"} {
-		t.Run(id, func(t *testing.T) { runTextBaselineID(t, id) })
-	}
 }
 
 func TestKnownBugSHAPE012CanonicalOrdering(t *testing.T) {

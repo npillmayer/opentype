@@ -262,7 +262,10 @@ func runStreamCase(t *testing.T, c textBaseline, profile streamProfile, entry st
 func streamingFinding(id, profile, entry string) string {
 	switch id {
 	case "latin_uncomposable_mark", "hebrew_vav_holam_mark_on":
-		return "011" // Whole-run grouping still fails; tiny buffers also lose attachment context (SHAPE-015).
+		if profile == "tiny" {
+			return "015" // Attachment context is lost; the full oracle remains unchanged.
+		}
+		return ""
 	case "progress_delete", "progress_all_deleted":
 		return "017"
 	case "scope_pair":

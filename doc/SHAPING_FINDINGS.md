@@ -54,7 +54,7 @@ The remaining shared-API reproduction (SHAPE-004) lives in
 in external package `otcore_test`. They exercise exported `NewShaper`/`Shape`
 and engine hooks. This keeps the base `otshape` tests independent of concrete
 engine imports. The ordinary [`shared_api_test.go`](../otshape/otcore/shared_api_test.go) now
-contains SHAPE-001/002 and the shared fixture/assertion helpers;
+contains SHAPE-001/002/011 and the shared fixture/assertion helpers;
 [`alternate_values_test.go`](../otshape/otcore/alternate_values_test.go) contains
 the ordinary SHAPE-003/018 value/range/scope regressions. These tests reuse
 `loadMiniOTFont` from `gpos_test.go` and `glyphCollector` from `otcore_test.go`.
@@ -74,7 +74,7 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: eighteen failing top-level tests across the two packages.
+# Discovery suite: ten failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Fixed mask regression, covering both public entry points.
@@ -101,7 +101,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
 | [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | fixed (contract resolved) | Logical sink order agreed; plain Hebrew passes after explicit oracle adaptation |
 | [SHAPE-010](#shape-010--default-mark-positioning-is-missed-during-normalization) | reproduced | Hebrew presentation-form fallback ignores default-enabled GPOS mark support |
-| [SHAPE-011](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0) | reproduced | HarfBuzz level-0 grouping agreed; Latin/Hebrew marks still retain individual scalar clusters |
 | [SHAPE-012](#shape-012--canonical-equivalent-mark-orders-shape-differently) | reproduced | Canonical ordering is missing before composition |
 | [SHAPE-013](#shape-013--normalization-ignores-font-coverage) | reproduced | Composition/decomposition ignores available cmap mappings |
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
@@ -118,6 +117,7 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-006 — contextual continuation](#shape-006--contextual-lookup-revisits-matched-input),
 [SHAPE-007 — final mark positioning](#shape-007--mark-attachments-do-not-resolve-to-origins),
 [SHAPE-008 — GDEF mark advances](#shape-008--marks-retain-nominal-advances),
+[SHAPE-011 — base/mark clusters](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0),
 and [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks).
 
 The AOTS baseline batch adds SHAPE-005/006 in
@@ -260,8 +260,7 @@ through its attachment metadata, despite the absence of user feature masks.
 
 **Normalization extension (2026-10-26):** the vav/holam matrix now checks
 default, explicitly enabled, disabled, and absent mark features. With explicit
-`mark=1,mkmk=1`, the two GIDs and, after SHAPE-007, offsets match HarfBuzz;
-SHAPE-011 cluster differences remain. With
+`mark=1,mkmk=1`, the complete output now matches after SHAPE-007/011. With
 `mark=0,mkmk=0`, HarfBuzz uses fallback GID 126 while our output stays
 `[124,46]`: allocating masks is incorrectly treated as enabled support.
 The NoMark fixture removes those features while retaining GPOS. Its default
@@ -272,72 +271,14 @@ are in the [normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.
 
 **Fix scope:** derive effective mark support from resolved font/plan state,
 including enablement, rather than mask allocation alone. Resolving composition
-will not by itself fix grouping or internal mark order; the tagged tests retain
-all position and cluster expectations. SHAPE-007 now resolves mark offsets
-within its agreed scope. Absence of the entire GPOS table is
+will not by itself fix internal mark order; the tagged tests retain all
+position and cluster expectations. SHAPE-007/011 now resolve mark offsets and
+base/mark grouping within their agreed scopes. Absence of the entire GPOS table is
 separately blocked at the parser and deferred under SHAPE-014.
 
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE010' -count=1 -v
 ```
-
-## SHAPE-011 — Combining-mark clusters differ from HarfBuzz level 0
-
-**Status:** reproduced; cluster contract agreed on 2026-10-26.
-**Tests:** `TestKnownBugSHAPE011CombiningClusters`, plus the pointed Hebrew
-cases in `TestKnownBugSHAPE007HebrewMarkOffsets` and
-`TestKnownBugSHAPE010HebrewComposition`.
-**Verified:** real-text batch revision/date above.
-
-**Baseline and reproduction:** pointed shin U+05E9 U+05B8 U+05C1 in Noto Sans
-Hebrew, RTL with default features and buffers `4/1/5`, as in the historical
-SHAPE-007 extension. HarfBuzz cluster level 0 assigns
-the base and both marks cluster 0. Our glyphs 96, 79, 100 retain clusters
-0, 1, 2 respectively. Pointed shalom has the same difference for its initial
-three scalars. This discrepancy is independent of RTL sequence order.
-
-**Implementation evidence:** input clusters start as scalar indexes; normalization
-merges clusters when composing, and selected reordering hooks merge their
-changed spans. The ordinary mapping/output path preserves the remaining
-individual indexes. No general base/combining-mark cluster grouping is applied
-to these inputs. These observations do not imply lost Unicode input: they show
-a different grouping convention.
-
-**Agreed contract:** use HarfBuzz **cluster level 0** grouping/merging, anchored
-at zero-based original Unicode scalar indexes, not UTF-8 byte offsets. Base
-letters and combining marks share a source cluster. Composition, decomposition,
-substitution, and reordering must preserve the appropriate input association.
-Logical sink order is independent of this grouping (SHAPE-009). A cluster
-boundary alone is not proof of a safe shaping/streaming break.
-
-The normalization extension adds canonical `a + dot below + acute`,
-`x + acute`, explicitly enabled Hebrew vav/holam marks, and reordered pointed
-shin. All have correct GID sequences under the logical-order comparison but
-retain individual mark clusters. Final positioning now matches after SHAPE-007.
-`TestKnownBugSHAPE011CombiningClusters` preserves the complete oracle; it does
-not ignore positioning to report partial success. See the
-[normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.md) for exact
-clusters/offsets. Source correspondence must remain available to feature-mask
-assignment even when output clusters merge. SHAPE-002 now resolves ranges
-against retained scalar anchors; ranges splitting merged source sequences remain
-outside that fix's agreed scope.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE011' -count=1 -v
-```
-
-**Streaming matrix extension:** `TestKnownBugSHAPE011StreamingBaselines` repeats
-`x + acute` and explicitly enabled Hebrew vav/holam marks over all five buffer
-profiles, both entry points, and both flush modes. All forty executions fail
-the complete oracle. Since whole-input output already fails grouping, these
-are not isolated streaming-context reproductions; SHAPE-007 has resolved the
-whole-input positioning mismatch.
-
-**SHAPE-007 dependency update (2026-10-29):** whole-input offsets now match
-for all four `TestKnownBugSHAPE011CombiningClusters` cases. Their remaining
-mismatch is the mark cluster. Pointed shin in its other input order still also
-requires internal mark reordering. The streaming variants preserve the full
-expectation; tiny windows additionally lose base/mark context (SHAPE-015).
 
 ## SHAPE-012 — Canonical-equivalent mark orders shape differently
 
@@ -351,9 +292,9 @@ plus this batch's tests. This verification baseline also applies to SHAPE-013/01
 Both inputs are Latn/en/LTR with default features and buffers `4/1/5`.
 
 **Observed:** canonical input gets the expected GIDs, but noncanonical input
-gets `[105,2289]`. Both currently retain clusters `[0,2]` and zero offsets.
-The canonical case therefore isolates the GID discrepancy from the additional
-cluster/position failures; it is not claimed as a fully passing control.
+gets `[105,2289]`. Originally both retained clusters `[0,2]` and zero offsets.
+After SHAPE-007/011 the canonical case passes its complete oracle and runs in
+the ordinary suite; the noncanonical case remains tagged with full expectations.
 
 **Implementation evidence:** `normalizeRuneStreamWithScratch` and
 `composeRuneStreamInto` in [shape_api.go](../otshape/shape_api.go) use adjacent
@@ -593,6 +534,17 @@ remains blocked by SHAPE-017. Whole-input range drift after normalization is
 covered by an ordinary SHAPE-002 regression. Add stable findings here as those
 cases are investigated; do not silently equate missing coverage with a bug.
 
+### Hebrew internal mark ordering follow-up
+
+This remains open independently of the resolved SHAPE-011 grouping fix.
+`TestKnownBugSHAPE007HebrewMarkOffsets` retains the complete pointed-shin oracle:
+Noto Sans Hebrew, U+05E9 U+05B8 U+05C1, RTL with default features. All three glyphs
+now have cluster 0 and correct per-glyph offsets, but glyph order remains
+`[96,79,100]` instead of `[96,100,79]`. The historical SHAPE-011 test attribution
+identifies this remaining follow-up, not a failure of the accepted grouping fix.
+Choose its implementation scope separately; retain the full tagged assertion.
+Tiny-buffer attachment-context failures are tracked under SHAPE-015.
+
 ## Resolved findings
 
 Resolved entries retain stable IDs and heading anchors for reference. Their
@@ -659,8 +611,14 @@ or merged source cluster are not part of this resolution. The user's tentative
 preference is to exclude a combined character when the range starts inside it
 and begin with the next eligible character. Anchor comparison naturally does
 that for a composite anchored before `Start`, but this is not a settled general
-policy for all merged clusters, range ends, or reordering. SHAPE-011 must preserve
-source correspondence when introducing broader level-0 grouping.
+policy for all merged clusters, range ends, or reordering. SHAPE-011 subsequently
+introduced base/mark grouping while preserving separate source correspondence.
+
+**Subsequent SHAPE-011 decision (2026-10-29):** initial base/mark groups now
+use their starting scalar for both bounds: starts inside exclude the group;
+ends inside include it. Source anchors remain separate from output grouping.
+This supersedes the provisional preference above for those groups only;
+feature-event barriers and Hebrew reordering remain separate.
 
 **Verification at SHAPE-002 completion (2026-10-27):** focused
 shaping/lookup/HarfBuzz tests and `go test ./... -count=1` passed. The tagged
@@ -882,10 +840,11 @@ suite passed after that correction. Discovery retained twelve failing top-level
 tests (eleven shaping groups and the deferred parser case).
 
 **Remaining scope:** the full historical `TestKnownBugSHAPE007HebrewMarkOffsets`
-remains tagged for SHAPE-011: Noto Sans Hebrew mark offsets are now exactly 227
-and 539, but order/clusters remain `[96/0,79/1,100/2]` instead of
-`[96/0,100/0,79/0]`. The four SHAPE-011 combining-mark text cases now differ only
-in clusters; full assertions remain intact. Normalization blockers remain
+remains tagged for the [Hebrew mark-ordering follow-up](#hebrew-internal-mark-ordering-follow-up).
+Noto Sans Hebrew mark offsets are exactly 227 and 539. SHAPE-011 subsequently
+fixed grouping: output is now `[96/0,79/0,100/0]` instead of
+`[96/0,100/0,79/0]`. Its four complete combining-mark text cases now pass unchanged
+in the ordinary suite. Normalization blockers remain
 SHAPE-010/012. Cursive resolution, hinted anchor points, device/variation
 adjustments, ignored-mark preservation/component association (SHAPE-019), and
 streaming/event context (SHAPE-015/016) are outside this fix. Adjacent marks on
@@ -945,6 +904,68 @@ safe streaming boundaries remain separate.
 go test ./internal/hbcmp -run '^TestAOTSGPOSBaselines/gpos4_simple' -count=1 -v
 go test ./otshape ./otshape/otcore -run '^TestGDEFMarkAdvance' -count=1
 ```
+
+### SHAPE-011 — Combining-mark clusters differ from HarfBuzz level 0
+
+**Fixed:** implemented and reviewed 2026-10-29 within the agreed Latin/Hebrew
+base/mark grouping scope. No blocking findings; Hebrew internal mark ordering
+and context-safe streaming remain separate.
+
+**Cause and fix:** base letters and combining marks retained separate scalar
+clusters. [Initial grouping](../otshape/shape_runtime.go) now forms groups before
+normalization using Unicode mark categories and ZWJ continuation. Leading marks
+form a leading group; ZWNJ remains a boundary. Normalized source anchors map
+back to these groups. [Cluster merging](../otshape/lookups.go) includes adjacent
+surviving members of the boundary groups, preserving association when a base
+is consumed into a ligature. The contract remains HarfBuzz level-0 grouping,
+anchored to zero-based original Unicode scalar indexes, with logical sink order.
+
+`runBuffer.SourceAnchors` preserves per-glyph provenance separately through
+normalization, mapping, edits, copies, reordering, and event-span append.
+Composition and many-to-one substitution retain the minimum consumed source
+anchor. Random alternates use this provenance; indexed masks use cluster starts.
+The associated normalization correction copies one-rune composition output into
+scratch storage, preventing a later event span from overwriting raw input.
+
+**Range decision (2026-10-29):** select an initial base/mark group by its starting
+scalar. For `x + acute + y`, clusters are `[0,0,2]`: `[1,3)` selects only `y`,
+`[0,1)` selects the whole first group, and `[1,2)` selects neither. Later
+substitutions retain existing mask inheritance. Feature-event boundaries inside
+a group remain separate from indexed `Shape` ranges (SHAPE-016).
+
+**Permanent regressions:**
+
+- [Text baselines](../internal/hbcmp/text_baselines_test.go) include unchanged
+  `latin_marks_canonical`, `latin_uncomposable_mark`, `hebrew_vav_holam_mark_on`,
+  and `hebrew_shin_reordered` captures. The corpus has 15 ordinary / 9 tagged
+  cases. [The streaming matrix](../internal/hbcmp/streaming_baselines_test.go)
+  promotes 32 mark cells unchanged, bringing its totals to 182 ordinary / 138
+  tagged; eight tiny-buffer mark cells remain under SHAPE-015.
+- [Cluster tests](../otshape/clusters_test.go) cover leading marks, normalization
+  provenance, range bounds, surviving marks after ligature edits, metadata
+  copies/reordering/reuse, and event-input scratch isolation.
+- [Public range tests](../otshape/otcore/shared_api_test.go)
+  (`TestSHAPE011FeatureRangesSelectInitialClusters`) verify starts and ends
+  inside groups. [Random-alternate tests](../otshape/alternate_values_test.go)
+  (`TestSHAPE011GroupingPreservesRandomSourceAnchors`) verify that grouping does
+  not replace per-glyph source anchors in random selection.
+
+**Review verification (2026-10-29):** full ordinary and race suites passed.
+Discovery retained ten failing top-level groups (nine shaping groups and the
+no-GPOS parser case). Read-only verification against installed HarfBuzz 15.0.0
+confirmed all 24 stored text captures. Independently disabling grouping, cluster
+merging, source-anchor random selection, or scratch isolation through temporary
+Go overlays triggered their corresponding regressions. No oracle data or
+assertion fields were changed.
+
+**Remaining scope:** the complete historical pointed-shin assertion stays tagged
+for the [Hebrew mark-ordering follow-up](#hebrew-internal-mark-ordering-follow-up).
+Canonical normalization (SHAPE-012), cmap-aware normalization (SHAPE-013),
+effective Hebrew mark support (SHAPE-010), streaming/limits (SHAPE-015), and
+feature-event barriers (SHAPE-016) remain open. General emoji and other
+script-specific sequence rules are not claimed. Conservative partial compaction
+still rejects repeated output clusters; separate source anchors do not prove
+that a prefix is safe to emit.
 
 ### SHAPE-018 — Forward lookup scans bypass feature masks
 

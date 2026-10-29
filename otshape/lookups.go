@@ -62,6 +62,9 @@ func (e *planExecutor) realignSideArrays(pl *plan, st *otlayout.BufferState) {
 	if e.run.Clusters != nil && len(e.run.Clusters) != e.run.Len() {
 		e.run.Clusters = resizeUint32(e.run.Clusters, e.run.Len())
 	}
+	if e.run.SourceAnchors != nil && len(e.run.SourceAnchors) != e.run.Len() {
+		e.run.SourceAnchors = resizeUint32(e.run.SourceAnchors, e.run.Len())
+	}
 	if e.run.UnsafeFlags != nil && len(e.run.UnsafeFlags) != e.run.Len() {
 		e.run.UnsafeFlags = resizeUint16(e.run.UnsafeFlags, e.run.Len())
 	}
@@ -275,7 +278,9 @@ func (e *planExecutor) applyLookupSpanInternal(
 			// Nested lookups share this stream. Forward lookup starts are anchored
 			// to this glyph; a non-match lets the loop check the next candidate.
 			source := uint32(indexBase + st.Index)
-			if len(e.run.Clusters) > indexBase+st.Index {
+			if len(e.run.SourceAnchors) > indexBase+st.Index {
+				source = e.run.SourceAnchors[indexBase+st.Index]
+			} else if len(e.run.Clusters) > indexBase+st.Index {
 				source = e.run.Clusters[indexBase+st.Index]
 			}
 			st.SetRandomSeed(pl.randomSeed, uint64(source)<<32|uint64(op.LookupIndex))
@@ -407,12 +412,18 @@ func (rb *runBuffer) applyLayoutEdit(edit otlayout.EditSpan) {
 		return
 	}
 	var cluster uint32
+	var source uint32
 	var unsafe uint16
 	if rb.Clusters != nil && edit.From < edit.To {
+		// Consuming a base must also merge any surviving marks in its group.
+		mergeClusterRange(rb.Clusters, edit.From, edit.To)
 		cluster = rb.Clusters[edit.From]
-		for _, c := range rb.Clusters[edit.From:edit.To] {
-			if c < cluster {
-				cluster = c
+	}
+	if rb.SourceAnchors != nil && edit.From < edit.To {
+		source = rb.SourceAnchors[edit.From]
+		for _, c := range rb.SourceAnchors[edit.From:edit.To] {
+			if c < source {
+				source = c
 			}
 		}
 	}
@@ -423,6 +434,7 @@ func (rb *runBuffer) applyLayoutEdit(edit otlayout.EditSpan) {
 	}
 	rb.Codepoints = inheritLayoutEdit(rb.Codepoints, edit)
 	rb.Clusters = inheritLayoutEdit(rb.Clusters, edit)
+	rb.SourceAnchors = inheritLayoutEdit(rb.SourceAnchors, edit)
 	rb.PlanIDs = inheritLayoutEdit(rb.PlanIDs, edit)
 	rb.Masks = inheritLayoutEdit(rb.Masks, edit)
 	rb.UnsafeFlags = inheritLayoutEdit(rb.UnsafeFlags, edit)
@@ -432,6 +444,9 @@ func (rb *runBuffer) applyLayoutEdit(edit otlayout.EditSpan) {
 		for i := edit.From; i < edit.From+edit.Len; i++ {
 			if rb.Clusters != nil {
 				rb.Clusters[i] = cluster
+			}
+			if rb.SourceAnchors != nil {
+				rb.SourceAnchors[i] = source
 			}
 			if rb.UnsafeFlags != nil {
 				rb.UnsafeFlags[i] = unsafe

@@ -187,9 +187,9 @@ combining sequences can require context across that boundary.
 
 The sink's agreed order is logical shaping order, also for RTL; the caller owns
 visual ordering. Cluster anchors refer to zero-based original input scalars,
-with HarfBuzz level-0 grouping/merging. General base/mark cluster formation is
-still incomplete (SHAPE-011), and the conservative compaction rules above have
-not been redesigned to accommodate it. Logical ordering does not mean retaining
+with HarfBuzz level-0 grouping/merging. Latin/Hebrew base/mark formation is now
+implemented (SHAPE-011). Per-glyph source anchors are retained separately, but
+the conservative partial-compaction rules still reject repeated output clusters. Logical ordering does not mean retaining
 original scalar order within a cluster after normalization/script reordering.
 
 - `FlushOnRunBoundary` writes the selected prefix in glyph order. The name does
@@ -285,9 +285,10 @@ still requires:
 
 1. A context-retention/boundary policy covering joining, lookback/lookahead,
    normalization, substitutions, and attachments, including max-buffer handling.
-2. Defined range behavior inside merged source sequences and reliable provenance
-   through future cluster grouping. Source-anchor range assignment across
-   compaction and normalization is covered by the SHAPE-002 fix.
+2. Context behavior at feature-event boundaries inside merged source sequences.
+   Indexed `Shape` ranges now select initial base/mark groups by their starting
+   scalar (SHAPE-011); SHAPE-002 covers original coordinates across compaction
+   and normalization. Later substitutions retain existing mask inheritance.
 3. Final attachment resolution and consistent attachment-index semantics across
    spans and emitted prefixes.
 4. Per-plan state isolation and defined context behavior for feature events.

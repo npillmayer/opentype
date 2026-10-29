@@ -149,12 +149,15 @@ resolved lookup stages. The public API has no GPOS pause-registration methods.
 
 For each current raw carry buffer, or each contiguous event-plan span:
 
-1. Normalize runes; consult `Compose` when enabled by normalization mode.
+1. Form initial base/mark clusters, then normalize runes; consult `Compose`
+   when enabled by normalization mode. Retain normalized source anchors
+   separately from output clusters.
 2. Map runes through cmap into a `runBuffer`.
 3. `PreprocessRun`.
 4. `ReorderMarks(run, 0, run.Len())`.
 5. `PrepareGSUB`.
-6. Initialize feature masks and apply indexed ranges.
+6. Initialize feature masks and apply indexed ranges using cluster starts.
+   A start inside an initial base/mark group excludes it; an end inside includes it.
 7. `SetupMasks`.
 8. Enter `planExecutor.apply` with the prepared, engine-customized masks.
 9. Annotate GSUB joiners/syllables and execute GSUB stages and pauses.

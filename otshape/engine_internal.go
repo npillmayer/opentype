@@ -80,15 +80,7 @@ func (rc runContext) MergeClusters(start, end int) {
 	if start >= end {
 		return
 	}
-	minCluster := rc.run.Clusters[start]
-	for i := start + 1; i < end; i++ {
-		if rc.run.Clusters[i] < minCluster {
-			minCluster = rc.run.Clusters[i]
-		}
-	}
-	for i := start; i < end; i++ {
-		rc.run.Clusters[i] = minCluster
-	}
+	mergeClusterRange(rc.run.Clusters, start, end)
 }
 
 func (rc runContext) Pos(i int) otlayout.PosItem {
@@ -148,6 +140,9 @@ func (rc runContext) Swap(i, j int) {
 	}
 	if len(rc.run.Clusters) == rc.run.Len() {
 		rc.run.Clusters[i], rc.run.Clusters[j] = rc.run.Clusters[j], rc.run.Clusters[i]
+	}
+	if len(rc.run.SourceAnchors) == rc.run.Len() {
+		rc.run.SourceAnchors[i], rc.run.SourceAnchors[j] = rc.run.SourceAnchors[j], rc.run.SourceAnchors[i]
 	}
 	if len(rc.run.Masks) == rc.run.Len() {
 		rc.run.Masks[i], rc.run.Masks[j] = rc.run.Masks[j], rc.run.Masks[i]

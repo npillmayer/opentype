@@ -19,8 +19,9 @@ type Params struct {
 // FeatureRange toggles one OpenType feature for an optional span of the original
 // input's Unicode scalars. Indexes are zero-based, not UTF-8 byte offsets or
 // current glyph-buffer positions; they remain fixed across streaming windows.
-// Range boundaries inside composed characters or merged source clusters do not
-// yet have a specified general policy.
+// Initial base/mark groups are selected by their starting scalar index: a range
+// starting inside a group excludes it; a range ending inside it includes it.
+// Subsequent substitutions retain the existing feature-mask inheritance.
 type FeatureRange struct {
 	Feature ot.Tag // Feature is the 4-byte OpenType feature tag.
 	// Arg selects a one-based alternate; zero means first/default and negatives

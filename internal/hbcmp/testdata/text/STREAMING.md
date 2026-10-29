@@ -37,9 +37,9 @@ the captured data remains unchanged. Small-buffer output is never used as an
 oracle, and whole-versus-streaming equality is not the primary assertion.
 
 [streaming.json](streaming.json) adds twelve independently captured records.
-Four existing text records are reused as controls/known whole-run failures.
+Four existing text records are reused as controls and mark-context cases.
 The total matrix is **16 cases × 5 profiles × 2 entry points × 2 flush modes =
-320 executions: 150 passing and 170 tagged failures**. Ten separate empty-input
+320 executions: 182 passing and 138 tagged failures**. Ten separate empty-input
 checks pass, including balanced nested scopes with no rune events. Ordinary
 tests validate every captured record/font, including tagged cases.
 
@@ -62,7 +62,7 @@ an emission with a particular internal safe-cut decision.
 Source read and output budgets abort runaway I/O; recovered panics fail the
 individual case. Use the documented Go timeout to catch loops that perform no
 I/O—these callbacks cannot interrupt such a loop themselves. No hang, panic, or
-budget exhaustion occurred with the final fixtures. All 170 remaining failures are exact
+budget exhaustion occurred with the final fixtures. All 138 remaining failures are exact
 output mismatches. These checks establish progress for tested inputs, not a
 general termination proof.
 
@@ -116,14 +116,15 @@ Changing flush mode alone does not repair any of these mismatches.
 | `progress_contract` | tiny, forced | tiny, forced |
 | `latin_office_liga_off` | none | none |
 | `latin_avatar_kern_off` | none | none |
-| `latin_uncomposable_mark` | all | all |
-| `hebrew_vav_holam_mark_on` | all | all |
+| `latin_uncomposable_mark` | tiny | tiny |
+| `hebrew_vav_holam_mark_on` | tiny | tiny |
 
 The repeated text cases are `office office office`, `AVATAR AVATAR`, three
 decomposed `café` words, and `שלום שלום שלום`. Enabled whole-run results match;
 the reused disabled-ligature/disabled-kerning controls pass all configurations.
-The two mark cases already fail whole-run SHAPE-007/011 and are explicitly
-assigned to existing findings, not presented as new streaming-only defects.
+After SHAPE-007/011, the two mark cases pass 32 complete matrix cells. Their
+eight tiny-buffer cells still lose attachment context and remain tagged under
+SHAPE-015; the original HarfBuzz expectations are unchanged.
 
 The [synthetic font](../../../../testdata/fonts/STREAMING.md) gives independent
 expansion (`abababa`), deletion (`adadada`), all-deletion (`dddddd`), and
@@ -150,10 +151,10 @@ that output only for `progress_all_deleted`, records the original newline as
 output is rejected; other cases cannot silently acquire empty expectations.
 
 ```sh
-# Ordinary tests, including 142 matrix executions and ten empty-input checks:
+# Ordinary tests, including 182 matrix executions and ten empty-input checks:
 go test ./internal/hbcmp -count=1 -timeout=30s
 
-# Complete discovery suite: 22 failing top-level tests, including five matrix groups.
+# Complete discovery suite: 10 failing top-level tests, including three matrix groups.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=30s
 
 # Observe consumption/emission and one whole-input scope failure:
@@ -164,9 +165,8 @@ python3 testdata/scripts/capture_harfbuzz_streaming.py
 python3 testdata/scripts/build_streaming_font.py  # recorded FontTools version required
 ```
 
-The ordinary full suite passes. Four top-level tagged matrix groups cover
-SHAPE-015 (stream context), SHAPE-016 (scope context), SHAPE-017 (deletion), and
-the streaming extension of SHAPE-011. SHAPE-018 forward-scan cells were promoted
+The ordinary full suite passes. Three top-level tagged matrix groups cover
+SHAPE-015 (stream context), SHAPE-016 (scope context), and SHAPE-017 (deletion). SHAPE-018 forward-scan cells were promoted
 or retained under SHAPE-015 as described above. The remaining cells
 are statically assigned by `streamingFinding`; no outcome-driven skip or buggy
 expectation is used. Promote cells when their full independent comparison passes.
@@ -174,6 +174,6 @@ expectation is used. Promote cells when their full independent comparison passes
 This completes the initial runner/event/progress setup. Remaining expansion
 includes scopes inside merged clusters, additional feature values, longer
 combining sequences, error/cancellation scenarios beyond the existing unit
-tests, and broader buffer sweeps. Actual all-deletion progress and successful
-final mark placement remain blocked by recorded production defects. See
+tests, and broader buffer sweeps. Actual all-deletion progress and context-safe
+streaming mark placement remain blocked by recorded production defects. See
 [SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md).

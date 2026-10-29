@@ -159,7 +159,10 @@ For each current raw carry buffer, or each contiguous event-plan span:
 8. Enter `planExecutor.apply` with the prepared, engine-customized masks.
 9. Annotate GSUB joiners/syllables and execute GSUB stages and pauses.
 10. Execute GPOS when the compiled policy enables it.
-11. Apply internal position policies.
+11. Apply internal position policies. GPOS-enabled Latin/Hebrew plans cancel
+    final advances of GDEF-classified marks by storing negative nominal
+    horizontal metrics as adjustments; offsets and attachments are preserved.
+    Missing GDEF/class tables do not trigger Unicode or attachment inference.
 12. `PostprocessRun`.
 13. Select an output prefix and emit `GlyphRecord` values, adding nominal
     horizontal advances during materialization.

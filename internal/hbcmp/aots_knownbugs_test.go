@@ -18,11 +18,3 @@ func TestKnownBugSHAPE007AOTSMarkAttachmentOrigins(t *testing.T) {
 		t.Run(id, func(t *testing.T) { runAOTSGPOSCase(t, id) })
 	}
 }
-
-// These records have no covered base to attach to. The mark's own origin is
-// correct, but its advance incorrectly moves the following glyph.
-func TestKnownBugSHAPE008AOTSUnattachedMarkAdvances(t *testing.T) {
-	for _, id := range []string{"gpos4_simple.tests:3", "gpos4_simple.tests:4"} {
-		t.Run(id, func(t *testing.T) { runAOTSGPOSCase(t, id) })
-	}
-}

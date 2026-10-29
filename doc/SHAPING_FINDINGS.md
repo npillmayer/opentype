@@ -100,7 +100,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | fixed (agreed scope) | Ranges use original scalar anchors across compaction and normalization |
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
 | [SHAPE-007](#shape-007--mark-attachments-do-not-resolve-to-origins) | reproduced | Mark attachment metadata does not become final anchor offsets |
-| [SHAPE-008](#shape-008--marks-retain-nominal-advances) | reproduced | Mark advances shift following glyph origins |
 | [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | fixed (contract resolved) | Logical sink order agreed; plain Hebrew passes after explicit oracle adaptation |
 | [SHAPE-010](#shape-010--default-mark-positioning-is-missed-during-normalization) | reproduced | Hebrew presentation-form fallback ignores default-enabled GPOS mark support |
 | [SHAPE-011](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0) | reproduced | HarfBuzz level-0 grouping agreed; Latin/Hebrew marks still retain individual scalar clusters |
@@ -118,6 +117,7 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-003 — alternate selection](#shape-003--feature-values-do-not-select-alternates),
 [SHAPE-005 — GDEF classification](#shape-005--gdef-classification-prevents-ignoremarks),
 [SHAPE-006 — contextual continuation](#shape-006--contextual-lookup-revisits-matched-input),
+[SHAPE-008 — GDEF mark advances](#shape-008--marks-retain-nominal-advances),
 and [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks).
 
 The AOTS baseline batch adds SHAPE-005/006 in
@@ -215,7 +215,8 @@ The font/source hashes and exact upstream expectations are checked at runtime.
 GID 19 has `AttachTo:1` and the appropriate mark-to-base/mark-to-ligature kind
 and anchor references, but `XOffset/YOffset` remain zero. Its origin is
 `(3000,0)`, rather than `(1400,-80)` for the base or `(1401,-79)` for the ligature.
-The final glyph also has the wrong origin due to SHAPE-008. Complete sequences
+The final glyph also had the wrong origin due to SHAPE-008; that advance defect
+was corrected on 2026-10-29, while the mark origins remain unresolved. Complete sequences
 and independent HarfBuzz checks are in [GPOS.md](../testdata/harfbuzz/aots/GPOS.md).
 
 **Implementation evidence:** `gposLookupType4Fmt1`/`gposLookupType5Fmt1` in
@@ -246,44 +247,6 @@ the oracle's final RTL reversal is undone; internal mark ordering, clusters,
 and offsets remain exact assertions. This font already has zero nominal mark advances, so it
 does not reproduce SHAPE-008. Exact output and provenance are in the
 [real-text report](../internal/hbcmp/testdata/text/README.md).
-
-## SHAPE-008 — Marks retain nominal advances
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE008AOTSUnattachedMarkAdvances`.
-**Verified:** 2026-10-26, source revision
-`f560698c2ecf09ed0c317a78327862707e5d8f46` plus new tests.
-
-**Expected behavior and basis:** active upstream `gpos4_simple.tests:3` and `:4`
-place an unattached mark and the following glyph at `(3000,0)`. The mark must
-not add its nominal 1500-unit horizontal advance in these cases. This expectation
-comes from the synthetic font's upstream baseline, not from treating its control
-codepoint as a Unicode combining character.
-
-**Reproduction:** `gpos4_simple_1.otf`, input `U+0011 U+0011 U+0013 U+0011` or
-`U+0019 U+0019 U+0013 U+0011`, core engine, Latin/English/LTR, global `test`,
-buffers `5/1/6`. Neither input has a covered attachment base for GID 19.
-
-**Observed:** nil errors; GIDs and the mark's own origin match. The following
-GID 17 starts at `(4500,0)`, not `(3000,0)`. Emitted GID 19 has `XAdvance:1500`,
-zero offsets, and no attachment. These controls isolate the extra displacement
-from SHAPE-007's unresolved anchor problem. Attached marks in SHAPE-007 also
-retain 1500-unit advances. See [GPOS.md](../testdata/harfbuzz/aots/GPOS.md) for
-the full outputs and supplementary HarfBuzz advance diagnostics.
-
-**Implementation evidence:** `compileShapePlanWithFeatures` in
-[shape_api.go](../otshape/shape_api.go) enables GPOS but leaves `ZeroMarks` false.
-The helpers in [plan.go](../otshape/plan.go) can zero internal position values
-when that policy is set, but the public output path later adds each glyph's
-nominal metric in `materializeGlyphRecord`. Merely enabling that helper is
-therefore not enough to establish zero final advances. GDEF classification
-(SHAPE-005) was another prerequisite; its correction leaves these advance tests
-failing. A fix must coordinate the zero-mark policy with the
-nominal-versus-adjustment representation, using the corrected classification.
-This finding does not prescribe zero advances for every mark in every script.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE008' -count=1 -v
-```
 
 ## SHAPE-009 — RTL output order differs from HarfBuzz
 
@@ -646,7 +609,8 @@ That replacement deletes the skipped glyph as well as the consumed components.
 correspondence during ligature substitution. Component association needs
 verification once the mark survives: current GPOS defaults to the last ligature
 component, but this failing output alone does not establish the required repair.
-Final attachment origins and mark advances remain SHAPE-007/008. Keep the full
+Final attachment origins remain SHAPE-007; SHAPE-008 now cancels advances for
+surviving GDEF marks in the agreed scope. Keep the full
 oracle tagged until all its blockers are resolved; a future mark-preservation
 fix should also have an isolated regression that can pass independently of GPOS.
 This differs from SHAPE-017, where an intentional empty substitution is ignored.
@@ -912,6 +876,62 @@ not establish complete contextual shaping conformance.
 ```sh
 go test ./internal/hbcmp -run '^TestAOTSGSUBBaselines/gsub_context1_next_glyph' -count=1 -v
 go test ./otlayout ./otshape -run 'TestContextProgression|TestClassSequenceStarts' -count=1
+```
+
+### SHAPE-008 — Marks retain nominal advances
+
+**Fixed:** implemented and reviewed 2026-10-29 within the agreed Latin/Hebrew
+scope. No blocking defects found.
+
+**Cause and fix:** runs store positioning adjustments; output materialization
+adds nominal horizontal metrics. Zeroing an internal adjustment alone therefore
+leaves the nominal mark advance intact. Public Latin/Hebrew plans whose engine
+permits GPOS now enable `ZeroGDEFMarks`. After GPOS,
+[the position policy](../otshape/plan.go) sets each GDEF mark's horizontal
+adjustment to minus its nominal metric and its vertical adjustment to zero.
+Materialization then yields zero final advances, including for unattached marks.
+The current output path adds no nominal vertical metric; this is not vertical
+shaping support.
+
+The policy replaces existing advance adjustments, preserves offsets and all
+attachment metadata, and is idempotent. It requires a GDEF glyph-class table;
+Unicode category or attachment metadata alone does not opt a glyph in.
+Other scripts and GPOS-disabled requests retain their previous policy. The older
+internal `ZeroMarks`/fallback-positioning mechanism is unchanged.
+
+**Permanent regressions:**
+
+- [AOTS GPOS baselines](../internal/hbcmp/aots_gpos_test.go) now include unchanged
+  [`gpos4_simple.tests:3` and `:4`](../testdata/harfbuzz/aots/tests/gpos4_simple.tests).
+  These unattached-mark controls place both the mark and following glyph at
+  `(3000,0)`; previously the following glyph started at `(4500,0)`. They isolate
+  advance cancellation from SHAPE-007. No fonts, hashes, or captures changed.
+- [Internal policy tests](../otshape/gdef_mark_advances_test.go) cover script/GPOS
+  scope, missing classification, positive/negative adjustments, nonmark controls,
+  offsets/attachments, repeated execution, and materialized output.
+- [Public-API tests](../otshape/otcore/mark_advances_test.go) cover both entry
+  points, Latin attached/unattached marks, Hebrew policy selection, and an
+  unchanged out-of-scope script control. The synthetic Hebrew fixture does not
+  establish script-specific attachment or full Hebrew conformance.
+- [The GPOS-single public test](../otshape/otcore/gpos_test.go) now expects zero
+  final advances for GDEF marks while retaining independently decoded placement
+  expectations. Lower-level GPOS value-record behavior is unchanged.
+
+**Review verification (2026-10-29):** full ordinary and race suites passed.
+Disabling the cancellation through a temporary Go overlay made the internal,
+public-API, and upstream regressions fail. Discovery retained thirteen failing
+top-level tests, without build failures, panics, or timeouts.
+
+**Remaining scope:** SHAPE-007's anchor offsets remain unresolved. Its two AOTS
+cases now emit `[17@0,0 18@1500,0 19@3000,0 17@3000,0]`: the following glyph is
+correct, but the mark's origin is not. Their complete expectations remain tagged.
+SHAPE-019 still deletes an intervening mark before positioning. Missing usable
+GDEF, Unicode fallback, other scripts, normalization/cluster differences, and
+safe streaming boundaries remain separate.
+
+```sh
+go test ./internal/hbcmp -run '^TestAOTSGPOSBaselines/gpos4_simple' -count=1 -v
+go test ./otshape ./otshape/otcore -run '^TestGDEFMarkAdvance' -count=1
 ```
 
 ### SHAPE-018 — Forward lookup scans bypass feature masks

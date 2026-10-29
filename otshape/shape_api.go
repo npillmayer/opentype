@@ -267,6 +267,9 @@ func compileShapePlanWithFeatures(params Params, ctx SelectionContext, engine Sh
 	if ep, ok := engine.(ShapingEnginePolicy); ok {
 		policy.ApplyGPOS = ep.ApplyGPOS()
 	}
+	// This late advance policy is deliberately limited to the agreed scripts
+	// and GDEF classification. Unicode fallback and other scripts are separate.
+	policy.ZeroGDEFMarks = policy.ApplyGPOS && (ctx.ScriptTag == ot.T("latn") || ctx.ScriptTag == ot.T("hebr"))
 	req := planRequest{
 		Font:      params.Font,
 		Props:     segmentProps{Direction: params.Direction, Script: params.Script, Language: params.Language},

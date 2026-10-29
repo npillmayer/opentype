@@ -55,6 +55,8 @@ updates metadata through `applyLayoutEdit`. Runtime hook edits use `RunContext`.
 The public output is `GlyphRecord`: GID, `otlayout.PosItem`, cluster, mask, and
 unsafe flags. It is richer than legacy `ShapedGlyph{Index, Advance}`.
 Position materialization adds nominal horizontal advance to layout deltas.
+After GPOS in Latin/Hebrew plans, GDEF marks receive a delta that cancels this
+metric, producing zero final advances without changing placement offsets.
 Mark/cursive attachment references are still unresolved, so the output is not
 fully positioned for those cases.
 

@@ -204,7 +204,11 @@ original scalar order within a cluster after normalization/script reordering.
   rather than failing validation.
 
 Materialization copies glyph/position/cluster/mask/unsafe data and adds nominal
-horizontal advance to the positioning delta. Mark/cursive anchors are not
+horizontal advance to the positioning delta. For GPOS-enabled Latin/Hebrew
+plans, the post-GPOS policy sets GDEF marks' deltas to cancel nominal advances,
+so their emitted advances are zero. Missing GDEF/class tables and Unicode-only
+mark inference are outside this policy; offsets and attachments are preserved.
+Mark/cursive anchors are not
 resolved into final coordinates. Attachment indexes are not converted to a
 global sink index during emission.
 

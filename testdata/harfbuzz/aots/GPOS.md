@@ -1,12 +1,24 @@
 # AOTS positioning baseline batch
 
+**Reviewed SHAPE-008 resolution (2026-10-29):** the
+[advance fix](../../../doc/SHAPING_FINDINGS.md#shape-008--marks-retain-nominal-advances)
+is accepted. `gpos4_simple.tests:3` and `:4` now pass
+unchanged as ordinary `TestAOTSGPOSBaselines` cases. Late GDEF mark-advance
+zeroing applies to GPOS-enabled Latin/Hebrew requests. The attached cases
+`gpos4_simple.tests:2` and `gpos5.tests:3` now both emit
+`[17|18@1500,0|19@3000,0|17@3000,0]`: the following glyph origin is correct,
+but mark-anchor offsets remain SHAPE-007. Their full expectations stay tagged;
+`gpos5.tests:2` remains blocked by SHAPE-019 mark deletion. The tables below
+retain the original discovery snapshot. No upstream expectations changed.
+
 **SHAPE-005 update (2026-10-29):** classification now permits the ligature in
 `gpos5.tests:2`, but replacement deletes the ignored mark. Actual origins are
 `[17|18@1500,0|17@3000,0]`; the complete upstream expectation remains unchanged
 and tagged under the historical `TestKnownBugSHAPE005AOTSLigatureAcrossMark`
 name, now tracking [SHAPE-019](../../../doc/SHAPING_FINDINGS.md#shape-019--ligature-substitution-deletes-ignored-marks).
-Mark preservation/component association and final SHAPE-007/008 positioning
-require separate work. The flagged pair case in [PAIR.md](PAIR.md)
+Mark preservation/component association and final SHAPE-007 anchor positioning
+require separate work. SHAPE-008 now cancels advances for surviving GDEF marks
+within its agreed scope. The flagged pair case in [PAIR.md](PAIR.md)
 now passes and has been promoted. The dated results below are historical.
 
 Verified on 2026-10-26 at repository revision
@@ -132,8 +144,8 @@ case has `(0,0)`. These extra fields are not silently added to the stored oracle
 # Passing positioning baseline and origin-adapter checks; no external runtime.
 go test ./internal/hbcmp -run '^TestAOTS(GPOS|Origin)' -count=1 -v
 
-# Recorded GPOS/GSUB-blocked failures: three failing top-level tests.
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE(007|008|005AOTSLigature)' -count=1 -v
+# Recorded GPOS/GSUB-blocked failures: two failing top-level tests.
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE(007|005AOTSLigature)' -count=1 -v
 ```
 
 At the end of this initial GPOS batch, the full ordinary suite passed and the

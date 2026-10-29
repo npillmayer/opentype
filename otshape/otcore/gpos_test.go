@@ -37,6 +37,12 @@ func TestShapeAppliesGPOSSingleAdjust(t *testing.T) {
 	}
 	want := valueDelta(payload.Values[covInx], payload.ValueFormat)
 	want.XAdvance += int32(otquery.GlyphMetrics(font, gid).Advance)
+	// Public Latin positioning cancels final advances of GDEF marks after
+	// GPOS. The independently decoded placement adjustments still apply.
+	if font.Layout.GDef != nil && font.Layout.GDef.Header().GlyphClassDefOffset != 0 &&
+		font.Layout.GDef.GlyphClassDef.Lookup(gid) == 3 {
+		want.XAdvance, want.YAdvance = 0, 0
+	}
 
 	got := shapeRunes(t, font, []rune{cp}, []otshape.FeatureRange{
 		{Feature: ot.T("mark"), On: true},

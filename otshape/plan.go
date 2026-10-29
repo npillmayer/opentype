@@ -140,6 +140,7 @@ type planPolicy struct {
 	Strict          bool // fail early on unsupported/incomplete OT data
 	ApplyGPOS       bool // run GPOS stage at execution time
 	ZeroMarks       bool // zero mark advances if enabled by script policy
+	ZeroGDEFMarks   bool // cancel final advances of GDEF marks after GPOS (Latin/Hebrew)
 	FallbackMarkPos bool // optional fallback mark positioning
 }
 
@@ -1061,7 +1062,7 @@ func (e *planExecutor) applyPositionPolicies(pl *plan, appliedGPOS bool) {
 	if e == nil || e.run == nil || pl == nil {
 		return
 	}
-	if !pl.Policy.ZeroMarks && !pl.Policy.FallbackMarkPos {
+	if !pl.Policy.ZeroMarks && !pl.Policy.ZeroGDEFMarks && !pl.Policy.FallbackMarkPos {
 		return
 	}
 	e.run.EnsurePos()
@@ -1071,6 +1072,27 @@ func (e *planExecutor) applyPositionPolicies(pl *plan, appliedGPOS bool) {
 	if pl.Policy.ZeroMarks {
 		adjustOffsets := !appliedGPOS && pl.Props.Direction == bidi.LeftToRight
 		e.zeroMarkAdvances(pl, adjustOffsets)
+	}
+	if pl.Policy.ZeroGDEFMarks && appliedGPOS {
+		e.zeroGDEFMarkAdvances(pl)
+	}
+}
+
+// zeroGDEFMarkAdvances preserves the run's adjustment-only representation.
+// Materialization adds the nominal horizontal metric, so cancel that metric
+// rather than setting the adjustment to zero. Placement and attachment data
+// are independent of advance zeroing. The older fallback policy below remains
+// separate: this policy does not infer marks from Unicode or attachments.
+func (e *planExecutor) zeroGDEFMarkAdvances(pl *plan) {
+	if pl.font == nil || pl.font.Layout.GDef == nil || pl.font.Layout.GDef.Header().GlyphClassDefOffset == 0 {
+		return
+	}
+	for i, gid := range e.run.Glyphs {
+		if ot.GlyphClassDefEnum(pl.font.Layout.GDef.GlyphClassDef.Lookup(gid)) != ot.MarkGlyph {
+			continue
+		}
+		e.run.Pos[i].XAdvance = -int32(otquery.GlyphMetrics(pl.font, gid).Advance)
+		e.run.Pos[i].YAdvance = 0 // materialization currently adds no vertical metric
 	}
 }
 

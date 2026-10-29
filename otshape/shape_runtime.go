@@ -1,27 +1,37 @@
 package otshape
 
-import "github.com/npillmayer/opentype/ot"
+import (
+	"math/rand/v2"
+
+	"github.com/npillmayer/opentype/ot"
+)
 
 type streamIngestor struct {
 	st *streamingState
 }
 
 type planCompiler struct {
-	params Params
-	ctx    SelectionContext
-	engine ShapingEngine
+	params     Params
+	ctx        SelectionContext
+	engine     ShapingEngine
+	randomSeed uint64
 }
 
 func newPlanCompiler(params Params, ctx SelectionContext, engine ShapingEngine) planCompiler {
 	return planCompiler{
-		params: params,
-		ctx:    ctx,
-		engine: engine,
+		params:     params,
+		ctx:        ctx,
+		engine:     engine,
+		randomSeed: rand.Uint64(),
 	}
 }
 
 func (pc planCompiler) compile(features []FeatureRange) (*plan, error) {
-	return compileShapePlanWithFeatures(pc.params, pc.ctx, pc.engine, features)
+	pl, err := compileShapePlanWithFeatures(pc.params, pc.ctx, pc.engine, features)
+	if pl != nil {
+		pl.randomSeed = pc.randomSeed
+	}
+	return pl, err
 }
 
 func (pc planCompiler) compileDefault() (*plan, error) {

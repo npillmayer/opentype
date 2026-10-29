@@ -61,6 +61,7 @@ type maskSpec struct {
 	Mask         uint32
 	Shift        uint8
 	DefaultValue uint32
+	Values       []int // mask codes: zero is off, one is default; remaining codes retain requested values
 }
 
 type maskLayout struct {
@@ -195,7 +196,8 @@ type planNote struct {
 }
 
 type plan struct {
-	font *ot.Font
+	randomSeed uint64 // shared by all plans of one shaping request
+	font       *ot.Font
 
 	Props     segmentProps
 	ScriptTag ot.Tag
@@ -514,50 +516,76 @@ func featureAtConcreteIndex(fg *ot.FeatureList, inx int) (*ot.Feature, ot.Tag) {
 	return nil, 0
 }
 
+// featureValue canonicalizes equivalent requests without narrowing int values.
+func featureValue(value int) int {
+	if value < 0 {
+		return -1
+	}
+	if value == 0 {
+		return 1
+	}
+	return value
+}
+
+func (s maskSpec) encode(value int) uint32 {
+	value = featureValue(value)
+	if s.Values == nil {
+		// Engine-only and manually constructed internal layouts use raw bits.
+		return uint32(value)
+	}
+	for code, v := range s.Values {
+		if code != 0 && v == value {
+			return uint32(code)
+		}
+	}
+	panic("feature value absent from compiled mask layout")
+}
+
+func (s maskSpec) decode(mask uint32) int {
+	code := (mask & s.Mask) >> s.Shift
+	if s.Values == nil {
+		return int(code)
+	}
+	if int(code) >= len(s.Values) {
+		return 0
+	}
+	return s.Values[code]
+}
+
 func compileUserFeatureMasks(features []FeatureRange) (maskLayout, error) {
-	layout := maskLayout{
-		GlobalMask: 0,
-		ByFeature:  make(map[ot.Tag]maskSpec),
+	layout := maskLayout{ByFeature: make(map[ot.Tag]maskSpec)}
+	type state struct {
+		values                                       []int
+		hasGlobal, globalOn, hasRangeOn, hasRangeOff bool
+		globalArg                                    int
 	}
-	if len(features) == 0 {
-		return layout, nil
-	}
-	type featureMaskState struct {
-		tag         ot.Tag
-		maxValue    uint32
-		hasGlobal   bool
-		globalOn    bool
-		globalArg   int
-		hasRangeOn  bool
-		hasRangeOff bool
-	}
-	states := make(map[ot.Tag]*featureMaskState)
-	order := make([]ot.Tag, 0, len(features))
+	states := make(map[ot.Tag]*state)
+	var order []ot.Tag
 	for _, f := range features {
 		if f.Feature == 0 {
 			continue
 		}
-		st, ok := states[f.Feature]
-		if !ok {
-			st = &featureMaskState{
-				tag:      f.Feature,
-				maxValue: 1,
-			}
+		st := states[f.Feature]
+		if st == nil {
+			st = &state{values: []int{0, 1}}
 			states[f.Feature] = st
 			order = append(order, f.Feature)
 		}
-		maxValue := uint32(1)
-		if f.Arg > 0 {
-			maxValue = uint32(f.Arg)
+		if f.On {
+			v := featureValue(f.Arg)
+			found := false
+			for _, existing := range st.values {
+				if existing == v {
+					found = true
+					break
+				}
+			}
+			if !found {
+				st.values = append(st.values, v)
+			}
 		}
-		if maxValue > st.maxValue {
-			st.maxValue = maxValue
-		}
-		isGlobal := f.Start == 0 && f.End == 0
-		if isGlobal {
-			st.hasGlobal = true
-			st.globalOn = f.On
-			st.globalArg = f.Arg
+		if f.Start == 0 && f.End == 0 {
+			st.hasGlobal, st.globalOn, st.globalArg = true, f.On, f.Arg
 		} else if f.On {
 			st.hasRangeOn = true
 		} else {
@@ -567,43 +595,18 @@ func compileUserFeatureMasks(features []FeatureRange) (maskLayout, error) {
 	var nextBit uint8
 	for _, tag := range order {
 		st := states[tag]
-		if st == nil {
-			continue
-		}
-		if nextBit >= 31 {
-			return maskLayout{}, errShaper("too many user features for uint32 mask layout")
-		}
-		bitsNeeded := bitStorage32(st.maxValue)
-		if bitsNeeded == 0 {
-			bitsNeeded = 1
-		}
-		if bitsNeeded > 8 {
-			bitsNeeded = 8
-		}
+		bitsNeeded := bitStorage32(uint32(len(st.values) - 1))
 		if int(nextBit)+bitsNeeded > 31 {
 			return maskLayout{}, errShaper("mask bit budget exhausted")
 		}
-		mask := uint32((1<<bitsNeeded)-1) << nextBit
-		def := uint32(0)
-		if st.hasGlobal {
-			if st.globalOn {
-				if st.globalArg > 0 {
-					def = uint32(st.globalArg)
-				} else {
-					def = 1
-				}
-			}
-		} else if st.hasRangeOff && !st.hasRangeOn {
-			def = 1
+		spec := maskSpec{Mask: uint32((1<<bitsNeeded)-1) << nextBit, Shift: nextBit, Values: st.values}
+		if st.hasGlobal && st.globalOn {
+			spec.DefaultValue = spec.encode(st.globalArg)
+		} else if !st.hasGlobal && st.hasRangeOff && !st.hasRangeOn {
+			spec.DefaultValue = 1
 		}
-		if def != 0 {
-			layout.GlobalMask |= (def << nextBit) & mask
-		}
-		layout.ByFeature[tag] = maskSpec{
-			Mask:         mask,
-			Shift:        nextBit,
-			DefaultValue: def,
-		}
+		layout.GlobalMask |= spec.DefaultValue << nextBit
+		layout.ByFeature[tag] = spec
 		nextBit += uint8(bitsNeeded)
 	}
 	return layout, nil

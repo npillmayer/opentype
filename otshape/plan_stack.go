@@ -28,7 +28,7 @@ func newFeatureSet(base []FeatureRange) featureSet {
 			continue
 		}
 		value := f.Arg
-		if f.On && value <= 0 {
+		if f.On && value == 0 {
 			value = 1
 		}
 		fs.byTag[f.Feature] = featureAssignment{
@@ -54,7 +54,7 @@ func (fs featureSet) applyPush(settings []FeatureSetting) featureSet {
 			continue
 		}
 		val := s.Value
-		if s.Enabled && val <= 0 {
+		if s.Enabled && val == 0 {
 			val = 1
 		}
 		next.byTag[s.Tag] = featureAssignment{

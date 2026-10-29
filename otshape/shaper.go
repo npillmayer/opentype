@@ -23,8 +23,11 @@ type Params struct {
 // yet have a specified general policy.
 type FeatureRange struct {
 	Feature ot.Tag // Feature is the 4-byte OpenType feature tag.
-	Arg     int    // Arg is an optional feature value (0 means default-on value when On is true).
-	On      bool   // On enables (true) or disables (false) the feature for the selected range.
-	Start   int    // Start is the inclusive original scalar index; values <= 0 mean start of input.
-	End     int    // End is the exclusive original scalar index; values <= 0 mean end of input.
+	// Arg selects a one-based alternate; zero means first/default and negatives
+	// request random selection. Oversized positives leave the glyph unchanged
+	// by that alternate substitution. Arg is ignored when On is false.
+	Arg   int
+	On    bool // On enables (true) or disables (false) the feature for the selected range.
+	Start int  // Start is the inclusive original scalar index; values <= 0 mean start of input.
+	End   int  // End is the exclusive original scalar index; values <= 0 mean end of input.
 }

@@ -61,6 +61,12 @@ alternates at positions 3 and 11. Its complete upstream expectation still fails
 for values 2 and 3 (SHAPE-003), so it remains tagged as
 `TestKnownBugSHAPE003AOTSAlternatesStreaming`. No expected glyphs were changed.
 
+**SHAPE-003 update (2026-10-27):** both simple-alternate executions now match
+the complete unchanged upstream glyph sequence. The whole-input record is in
+`TestAOTSGSUBBaselines`; the streaming execution is
+`TestSHAPE003AOTSAlternatesStreaming`. The flagged record retains its full
+expectation under SHAPE-005. No upstream data or capture was regenerated.
+
 ## Explicit adapter contract
 
 - The quoted `--features` list supports the `test` tag, an optional `-` prefix,

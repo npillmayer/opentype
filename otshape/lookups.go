@@ -262,7 +262,24 @@ func (e *planExecutor) applyLookupSpanInternal(
 		}
 		prevIndex := st.Index
 		prevLen := st.Len()
-		_, applied, err := otlayout.ApplyFeature(pl.font, feat, st, alt)
+		selection := alt
+		if !op.Flags.has(lookupRandom) {
+			if spec, ok := pl.maskForFeature(op.FeatureTag); ok && spec.Mask != 0 {
+				selection = spec.decode(e.run.Masks[indexBase+st.Index])
+			}
+		}
+		if selection < 0 {
+			// Rebuilt carry must draw the same choice on subsequent passes. Seed
+			// by the original source anchor and outer lookup, never chunk offset.
+			// Nested lookups share this stream. Forward scans past this starting
+			// glyph remain subject to SHAPE-018's mask/value gating limitation.
+			source := uint32(indexBase + st.Index)
+			if len(e.run.Clusters) > indexBase+st.Index {
+				source = e.run.Clusters[indexBase+st.Index]
+			}
+			st.SetRandomSeed(pl.randomSeed, uint64(source)<<32|uint64(op.LookupIndex))
+		}
+		_, applied, err := otlayout.ApplyFeature(pl.font, feat, st, selection)
 		for _, edit := range st.AppliedEdits() {
 			edit.From += indexBase
 			edit.To += indexBase
@@ -365,11 +382,7 @@ func applyFeatureRangesToMasks(dst, clusters []uint32, specs map[ot.Tag]maskSpec
 		}
 		val := uint32(0)
 		if r.On {
-			if r.Arg > 0 {
-				val = uint32(r.Arg)
-			} else {
-				val = 1
-			}
+			val = spec.encode(r.Arg)
 		}
 		valueBits := (val << spec.Shift) & spec.Mask
 		for i, cluster := range clusters {

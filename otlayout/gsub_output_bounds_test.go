@@ -106,8 +106,8 @@ func TestOutputBoundsSelection(t *testing.T) {
 		wantErr, wantApplied bool
 	}{
 		{"unused alternate", "alternate", 0, false, true},
-		{"selected last alternate", "alternate", -1, true, false},
-		{"unavailable alternate", "alternate", 2, false, false},
+		{"selected last alternate", "alternate", 2, true, false},
+		{"unavailable alternate", "alternate", 3, false, false},
 		{"unmatched ligature", "ligature", 0, false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

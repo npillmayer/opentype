@@ -135,7 +135,8 @@ func gsubLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 // GSUB LookupSubtable Type 3 Format 1: For each glyph, an AlternateSet subtable contains a
 // count of the alternative glyphs (glyphCount) and an array of their glyph indices
 // (alternateGlyphIDs). Parameter `alt` selects an alternative glyph from this array.
-// Having `alt` set to -1 will selected the last alternative glyph from the array.
+// Positive values are one-based, zero selects the first alternate, and all
+// negative values request random selection. Oversized positive values do not apply.
 func gsubLookupType3Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos, alt int) (
 	int, bool, GlyphBuffer, *EditSpan, error) {
 	mpos, inx, ok := matchCoverageForward(ctx, buf, pos, sub.Coverage)
@@ -159,7 +160,9 @@ func gsubLookupType3Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		return pos, false, buf, nil, nil
 	}
 	if alt < 0 {
-		alt = len(glyphs) - 1
+		alt = ctx.buf.randomAlternate(len(glyphs))
+	} else if alt > 0 {
+		alt--
 	}
 	if alt >= len(glyphs) {
 		return pos, false, buf, nil, nil

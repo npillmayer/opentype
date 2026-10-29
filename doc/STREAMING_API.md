@@ -75,6 +75,15 @@ Call `(*Shaper).Shape(Params, RuneSource, GlyphSink, BufferOptions)`, or
 There is no current `ShapeOptions` type. Font, script, language, and direction
 are fixed for a request; events change feature scopes only.
 
+Enabled alternate values use one-based positive selections, zero for the first
+alternate, and negatives for random selection; oversized positives leave the
+glyph unchanged by that substitution. A request-local seed is shared by all
+event plans. Random lookup attempts derive their generator from that seed, the
+original scalar anchor, and the outer lookup index, so reshaping the same carry
+anchor repeats the choice. Separate requests can differ. This does not repair
+context loss or SHAPE-018's scans to a later glyph with a different mask/value
+or source anchor; see [SHAPE-003](SHAPING_FINDINGS.md#shape-003--feature-values-do-not-select-alternates).
+
 The source must return `io.EOF` to terminate. Rune byte sizes are ignored by
 ordinary ingestion; cluster IDs are monotonically assigned codepoint indexes.
 The sink receives individual records, not batches or flush notifications.

@@ -3,6 +3,7 @@ package otlayout
 import (
 	"errors"
 	"fmt"
+	"math/rand/v2"
 
 	"github.com/npillmayer/opentype/ot"
 )
@@ -187,6 +188,9 @@ func (f feature) LookupIndex(i int) int {
 // Each leaf validates all its selected outputs before mutation. Unmatched rules
 // and unselected alternatives are not sanitized. Invalid outputs return errors,
 // not ordinary non-matches, and do not trigger subtable fallback.
+// Alternate values are one-based; zero selects the first/default alternate,
+// negatives select randomly, and oversized positives leave the glyph unchanged.
+// Use BufferState.SetRandomSeed for repeatable random selection.
 // Each call permits at most 64 simultaneously active lookup invocations and
 // 65536 work units (lookup entries plus sequence-record visits). Exceeding either
 // limit returns an error wrapping ErrLookupLimit; no table is disabled.
@@ -349,9 +353,29 @@ type BufferState struct {
 	Pos          PosBuffer
 	Index        int
 	glyphsShared bool
+	random       *rand.PCG // optional reproducible alternate-selection stream
 	posShared    bool
 	execution    *lookupExecution // transient per-application limits, shared by nested calls
 	edits        []EditSpan       // ordered mutations, in coordinates immediately before each edit
+}
+
+// SetRandomSeed resets the alternate-selection generator for subsequent calls.
+// Without an explicit seed, random alternates use math/rand/v2's default source.
+// This generator is for typography, not security; a BufferState is not safe for
+// concurrent mutation. Nested lookups consume the same stream.
+func (b *BufferState) SetRandomSeed(seed1, seed2 uint64) {
+	if b.random == nil {
+		b.random = rand.NewPCG(seed1, seed2)
+	} else {
+		b.random.Seed(seed1, seed2)
+	}
+}
+
+func (b *BufferState) randomAlternate(n int) int {
+	if b.random != nil {
+		return rand.New(b.random).IntN(n)
+	}
+	return rand.IntN(n)
 }
 
 // AppliedEdits returns a copy of the ordered glyph edits from the latest
@@ -389,8 +413,14 @@ func (b *BufferState) CloneShared() *BufferState {
 	}
 	b.glyphsShared = true
 	b.posShared = true
+	var random *rand.PCG
+	if b.random != nil {
+		copy := *b.random
+		random = &copy
+	}
 	return &BufferState{
 		Glyphs:       b.Glyphs,
+		random:       random,
 		Pos:          b.Pos,
 		Index:        b.Index,
 		glyphsShared: true,

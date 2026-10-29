@@ -1,6 +1,9 @@
 package otlayout
 
 import (
+	"fmt"
+	"math"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -78,13 +81,13 @@ func TestGSUBAlternateSimple(t *testing.T) {
 			name:     "alt1",
 			input:    []ot.GlyphIndex{18},
 			alt:      1,
-			expected: []ot.GlyphIndex{21},
+			expected: []ot.GlyphIndex{20},
 			applied:  true,
 		},
 		{
-			name:     "alt-last",
+			name:     "alt3",
 			input:    []ot.GlyphIndex{18},
-			alt:      -1,
+			alt:      3,
 			expected: []ot.GlyphIndex{22},
 			applied:  true,
 		},
@@ -161,6 +164,47 @@ func TestGSUBContextSubstFmt1IgnoreMarks(t *testing.T) {
 				if out[i] != gid {
 					t.Fatalf("glyph[%d]: expected %d, got %d", i, gid, out[i])
 				}
+			}
+		})
+	}
+}
+
+// The paired TTX gives GID 18 the alternatives [20, 21, 22]. These exercise
+// the exported entry point, including values that previously wrapped in masks.
+func TestApplyFeatureAlternateValues(t *testing.T) {
+	font := loadTestFont(t, "gsub3_1_simple_f1.otf")
+	feat := errorTestFeature{GSubFeatureType, []int{0}}
+	for _, tc := range []struct {
+		value int
+		want  ot.GlyphIndex
+	}{
+		{0, 20}, {1, 20}, {2, 21}, {3, 22}, {4, 18}, {256, 18}, {257, 18}, {math.MaxInt, 18},
+	} {
+		t.Run(fmt.Sprint(tc.value), func(t *testing.T) {
+			st := NewBufferState(GlyphBuffer{18}, nil)
+			_, applied, err := ApplyFeature(font, feat, st, tc.value)
+			if err != nil || applied != (tc.want != 18) || st.Glyphs[0] != tc.want {
+				t.Fatalf("value %d: glyphs=%v applied=%v err=%v; want %d", tc.value, st.Glyphs, applied, err, tc.want)
+			}
+		})
+	}
+	for _, value := range []int{-1, -2, math.MinInt} {
+		t.Run(fmt.Sprint(value), func(t *testing.T) {
+			st := NewBufferState(nil, nil)
+			st.SetRandomSeed(42, 19)
+			oracle := rand.New(rand.NewPCG(42, 19))
+			seen := map[ot.GlyphIndex]bool{}
+			for i := 0; i < 32; i++ {
+				st.Glyphs, st.Index = GlyphBuffer{18}, 0
+				want := []ot.GlyphIndex{20, 21, 22}[oracle.IntN(3)]
+				_, applied, err := ApplyFeature(font, feat, st, value)
+				if err != nil || !applied || st.Glyphs[0] != want {
+					t.Fatalf("value %d draw %d: got %v, %v, %v; want %d", value, i, st.Glyphs, applied, err, want)
+				}
+				seen[want] = true
+			}
+			if len(seen) != 3 {
+				t.Fatal("fixed seed must exercise all three alternatives")
 			}
 		})
 	}

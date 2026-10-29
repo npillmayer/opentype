@@ -49,15 +49,17 @@ findings, without production fixes or new external test dependencies.
 
 ## Test location and execution
 
-The remaining shared-API reproductions (SHAPE-003/004) live in
+The remaining shared-API reproductions (SHAPE-004/018) live in
 [`otshape/otcore/shared_api_knownbugs_test.go`](../otshape/otcore/shared_api_knownbugs_test.go),
 in external package `otcore_test`. They exercise exported `NewShaper`/`Shape`
 and engine hooks. This keeps the base `otshape` tests independent of concrete
 engine imports. The ordinary [`shared_api_test.go`](../otshape/otcore/shared_api_test.go) now
-contains SHAPE-001/002 and the shared fixture/assertion helpers. They reuse
+contains SHAPE-001/002 and the shared fixture/assertion helpers;
+[`alternate_values_test.go`](../otshape/otcore/alternate_values_test.go) contains
+the ordinary SHAPE-003 value/range/scope regressions. These tests reuse
 `loadMiniOTFont` from `gpos_test.go` and `glyphCollector` from `otcore_test.go`.
 
-Those four cases use
+These shared-API cases use
 [`gsub3_1_simple_f1.otf`](../testdata/fonttools/gsub3_1_simple_f1.otf).
 The helper finds the cmap-backed rune for GID 18 and verifies that it maps back
 to 18; missing/broken fixtures fail the test. The paired
@@ -72,14 +74,14 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: twenty-two failing top-level tests across the two packages.
+# Discovery suite: twenty failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Fixed mask regression, covering both public entry points.
 go test ./otshape/otcore -run '^TestSHAPE001' -count=1 -v
 
-# Inspect an unresolved shared-API finding (003 or 004).
-go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE003' -count=1 -v
+# Inspect an unresolved shared-API finding.
+go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE018AlternateValueAtMatchedGlyph$' -count=1 -v
 ```
 
 Original shared-API batch verification baseline: production source at
@@ -96,7 +98,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | ID | Status | Finding |
 | --- | --- | --- |
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | fixed (agreed scope) | Ranges use original scalar anchors across compaction and normalization |
-| [SHAPE-003](#shape-003--feature-values-do-not-select-alternates) | reproduced | Ignored values; contract agreed: one-based positives, zero default, negatives random |
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
 | [SHAPE-005](#shape-005--gdef-classification-prevents-ignoremarks) | reproduced | GDEF range endpoints and class constants break IgnoreMarks/IgnoreBaseGlyphs filtering |
 | [SHAPE-006](#shape-006--contextual-lookup-revisits-matched-input) | reproduced | Contextual lookup progression applies overlapping matches |
@@ -113,8 +114,10 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-017](#shape-017--gsub-deletion-is-ignored) | reproduced | Empty GSUB multiple-substitution sequences leave glyphs unchanged |
 | [SHAPE-018](#shape-018--forward-lookup-scans-bypass-feature-masks) | reproduced | A lookup enabled at its starting index can match a later disabled glyph |
 
-Archived fix: [SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
-in [Resolved findings](#resolved-findings).
+Archived fixes in [Resolved findings](#resolved-findings):
+[SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
+[SHAPE-002 — source ranges](#shape-002--feature-ranges-use-chunk-local-coordinates),
+and [SHAPE-003 — alternate selection](#shape-003--feature-values-do-not-select-alternates).
 
 The AOTS baseline batch adds SHAPE-005/006 in
 [`internal/hbcmp/aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go).
@@ -166,103 +169,6 @@ top-level tests**. The full ordinary suite passes; all new failures are output
 assertions, with complete input consumption, nil shaping errors, and no panic
 or timeout. No production behavior changed. Each new finding below uses this
 verification baseline.
-
-## SHAPE-003 — Feature values do not select alternates
-
-**Status:** reproduced; selection contract agreed on 2026-10-26. Production
-fixes and the full contract-test expansion are reserved for a separate session.
-**Test:** `TestKnownBugSHAPE003FeatureValueSelectsAlternate`.
-
-**Agreed contract:**
-
-- Positive alternate-selection values are **one-based**: `1` selects the first
-  alternate, `2` the second, and so on.
-- Zero means **default/first alternate** in both APIs, including
-  `ApplyFeature(..., alt=0)` and enabled `FeatureRange.Arg == 0`.
-- Any negative value requests **random selection** from the glyph's available
-  alternates. Negative values are an explicit exception to the out-of-range
-  rule, not invalid indexes or requests for the last alternate.
-- An out-of-range positive selection leaves the glyph unchanged by that alternate
-  substitution. It must not clamp to an available alternate or wrap around.
-  The range is determined by the alternate set for the particular glyph;
-  other applicable shaping operations may still change that glyph.
-- Both public `FeatureRange.Arg` and lower-level `ApplyFeature` must use these
-  same value semantics. Updating only the public pipeline to translate into
-  the existing zero-based implementation would not fulfill this decision.
-
-`FeatureRange.Arg == 0` retains its documented default-on meaning when `On` is
-true; `On: false` disables the feature. For this fixture, the public API should
-therefore select GID 20 for `0` and `1`, GID 21 for `2`, GID 22 for `3`, and
-leave input GID 18 unchanged for values above `3`.
-
-**Implementation consequences:** the value categories above are settled.
-The shaping pipeline already passes `-1` for `lookupRandom`, but the lower-level
-implementation currently selects the **last** alternate for every negative
-value. That is not actual random selection and does not fulfill the agreed
-contract. The implementation session must provide random selection and a
-reproducible way to test it; no particular random generator, seed policy, or
-distribution has been specified by this decision.
-
-The future implementation should update lower-level callers, comments, and
-tests together with the public pipeline. Add boundary tests for each glyph's
-alternate count, negative/random and oversized values, and the default-zero behavior.
-Preserve values through mask encoding without truncating them into a different
-valid selection or losing the negative/random request. Overlapping feature ranges and event scopes need further
-coverage but are not additional alternate-indexing decisions in this finding.
-
-**Reproduction:** shape one fixture rune with `Arg` values `0`, `1`, `2`, and
-`3`, using default buffer options. Each case asserts its agreed public GID and
-cluster zero against the alternatives in the paired TTX.
-The existing test covers neither out-of-range/random values nor the requested
-lower-level API migration; those extensions remain for the implementation session.
-
-**Observed:** all values emit GID 20. The `arg_0` and `arg_1` controls pass;
-`arg_2` and `arg_3` fail. The public pipeline cannot select the later alternates
-in this fixture regardless of which positive-index convention is chosen.
-
-**Implementation evidence:** `applyLookups` in [lookups.go](../otshape/lookups.go)
-passes `alt=0` for ordinary lookups rather than translating the requested
-feature value. The lower-level `ApplyFeature` execution currently uses zero-based
-alternate indexes; [feature_functional_test.go](../otlayout/feature_functional_test.go)
-exercises that existing convention successfully. Those assertions describe the
-current implementation and must change with the agreed contract. See also
-`gsubLookupType3Fmt1` in [gsub.go](../otlayout/gsub.go) for the negative sentinel
-and out-of-range handling.
-
-**Reproduce:** use the individual command above with `SHAPE003`.
-
-**Independent AOTS extension (2026-10-26):**
-`TestKnownBugSHAPE003AOTSAlternates` uses active upstream
-[`gsub3_1_simple.tests:2`](../testdata/harfbuzz/aots/tests/gsub3_1_simple.tests),
-whose input alternates U+0011 and U+0012 over 13 scalars. Features are exactly
-`-test[1],test[3],test[5]=2,test[7]=3,-test[9],test[11]`: zero-based scalar
-indexes, one-based positive alternate values, no global enable request.
-The public API receives each `[i]` as `[i,i+1)`, with `On:false` for a minus
-prefix and `Arg:1/2/3` for enabled requests. With Latin/English/LTR, the core
-engine, and whole-input watermarks `14/1/15`, expected GIDs are
-`[17,18,17,20,17,21,17,22,17,18,17,20,17]`; actual GIDs are
-`[17,18,17,20,17,20,17,20,17,18,17,20,17]`, with nil error. Ranges select the
-correct positions, but values 2 and 3 still produce the first alternate.
-
-**Streaming regression after SHAPE-002 (2026-10-27):**
-`TestKnownBugSHAPE003AOTSAlternatesStreaming` retains the full upstream output
-with buffers `2/1/4`. It now reaches the same selected source positions as the
-whole-input run, including first-alternate positions 3 and 11. Only values 2/3
-still mismatch: actual GIDs are `[17,18,17,20,17,20,17,20,17,18,17,20,17]`.
-This was formerly `TestKnownBugSHAPE002AOTSAlternateRangesStreaming`; its oracle
-is unchanged and it stays tagged until alternate selection is fixed.
-
-This upstream case adds independent evidence for the positive-value contract;
-it does not cover enabled zero/default, out-of-range positives, random selection,
-or the lower-level API. Adapter mapping tests are separate from shaping-contract
-tests. The other recovered alternate record is currently blocked by SHAPE-005's
-classification defect and is tracked there rather than treated as an isolated
-alternate-value failure. Exact provenance and results are in
-[ADAPTER.md](../testdata/harfbuzz/aots/ADAPTER.md#alternate-substitution-batch).
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE003AOTS' -count=1 -v
-```
 
 ## SHAPE-004 — Zero-confidence engines are selected
 
@@ -347,8 +253,8 @@ incorrectly equals zero, `skipGlyph` filters the unclassified GID 19, preventing
 both requested substitutions. The singleton defect also affects GID 18, but
 the record never enables substitution at its positions, so it cannot establish
 correct base filtering. Once classification is fixed, this case will also
-exercise SHAPE-003's second-alternate selection; do not assume a single fix
-will make it pass. See the [adapter report](../testdata/harfbuzz/aots/ADAPTER.md#alternate-substitution-batch)
+exercise the now-implemented SHAPE-003 second-alternate selection; preserve
+the full expectation until that combination passes. See the [adapter report](../testdata/harfbuzz/aots/ADAPTER.md#alternate-substitution-batch)
 for the verification revision and unchanged upstream oracle.
 
 **Interleaved-mark ligature extension (2026-10-26):**
@@ -856,7 +762,16 @@ go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE017' -c
 
 ## SHAPE-018 — Forward lookup scans bypass feature masks
 
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE018MaskedLookupScan`.
+**Status:** reproduced. **Tests:** `TestKnownBugSHAPE018MaskedLookupScan` and
+`TestKnownBugSHAPE018AlternateValueAtMatchedGlyph`.
+
+**SHAPE-003 dependency (2026-10-27):** the scan also bypasses value selection.
+With GIDs `[17,18]`, global `test=1`, and `test[1:2]=3`, the first uncovered
+glyph starts a lookup that reaches GID 18 using value 1. Output is `[17,20]`
+instead of the TTX-derived `[17,22]`. The new public-API regression retains
+both glyph and original-cluster assertions. Random selection has the same
+starting-versus-matched-anchor limitation. The user chose to keep this scan
+fix separate from SHAPE-003.
 
 **Expected behavior and basis:** a disabled feature range must prevent a lookup
 from starting a substitution within that range, even when an earlier glyph
@@ -962,8 +877,9 @@ Eight streaming-matrix cells moved to the ordinary suite: the `lookahead` and
 `carry` rune profiles for both `stream_range` and `scope_nested`, in both flush
 modes. All compare complete independent output. The tiny/forced `stream_range`
 cases still split ligature context (SHAPE-015); their complete assertions now
-live in that tagged group. The AOTS streaming alternate case remains fully
-asserted under SHAPE-003. No production fix for either blocker is included.
+live in that tagged group. The AOTS streaming alternate case subsequently
+passed with SHAPE-003 and was promoted unchanged to
+`TestSHAPE003AOTSAlternatesStreaming`; SHAPE-015 remains unresolved.
 
 **Limitations and provisional preference:** ranges splitting a composed character
 or merged source cluster are not part of this resolution. The user's tentative
@@ -973,12 +889,76 @@ that for a composite anchored before `Start`, but this is not a settled general
 policy for all merged clusters, range ends, or reordering. SHAPE-011 must preserve
 source correspondence when introducing broader level-0 grouping.
 
-**Verification:** focused shaping/lookup/HarfBuzz tests and `go test ./... -count=1`
-pass. The tagged suite has 22 remaining top-level failures, with no unexpected
+**Verification at SHAPE-002 completion (2026-10-27):** focused
+shaping/lookup/HarfBuzz tests and `go test ./... -count=1` passed. The tagged
+suite then had 22 remaining top-level failures, with no unexpected
 top-level passes; the matrix has 142 passing and 178 failing executions. Captures
 are unchanged and no assertions were weakened.
 
 ```sh
 go test ./otshape/otcore -run '^TestSHAPE002' -count=1 -v
 go test ./internal/hbcmp -run '^TestHarfBuzzTextBaselines/latin_range_after_nfd$' -count=1 -v
+```
+
+### SHAPE-003 — Feature values do not select alternates
+
+**Fixed:** implemented 2026-10-27; reviewed and accepted 2026-10-29, with the
+separate forward-scan dependency retained under SHAPE-018.
+
+**Agreed contract:** positive values are one-based; zero selects the first/default
+alternate; every negative value requests random selection. Out-of-range positive
+values leave the glyph unchanged by that alternate substitution, without clamping
+or wrapping. Other shaping operations may still change it. This applies equally
+to `ApplyFeature`, enabled `FeatureRange.Arg`, and enabled `FeatureSetting.Value`;
+`On:false` / `Enabled:false` disables the feature.
+
+**Cause and fix:** public lookup execution ignored per-glyph values; lower-level
+selection was zero-based and treated negatives as “last”. Mask fields now encode
+references to retained `int` values, avoiding truncation of large requests, and
+execution decodes them before applying the lookup. Code zero is off, code one is
+default; equivalent default/random requests share codes. Allocation respects the
+31-bit mask budget. Event scopes preserve negative values. The lower-level API
+implements the same selection contract and retains selected-output validation.
+
+**Random selection:** a fresh request seed is shared by its event plans. Random
+lookup attempts seed PCG from that seed, the original scalar anchor, and outer
+lookup index; nested lookups share the stream. Rebuilding the same carry repeats
+choices. Shared anchors can correlate choices; independent draws per output glyph
+are not guaranteed. `BufferState.SetRandomSeed` enables repeatable lower-level
+checks; unseeded direct calls use Go's default random source. Tests inject a
+fixed request seed internally; there is no public shaper seed option. Randomness
+is for typography, not cryptography.
+
+**Permanent regressions:**
+
+- [Public value, overlapping-range, and nested-scope tests](../otshape/otcore/alternate_values_test.go)
+  cover both APIs, default/one-based/random/oversized values, clusters, disabling,
+  and restoration. The fixture TTX supplies the independent alternate list.
+- [Lower-level selection tests](../otlayout/feature_functional_test.go) check the
+  same contract and fixed-seed draws, including `MinInt`; existing
+  [output-bounds tests](../otlayout/gsub_output_bounds_test.go) still validate
+  selected outputs.
+- [Carry/scoped-plan and mask-value tests](../otshape/alternate_values_test.go)
+  check repeatable choices, inherited/pushed negatives, more than 255 distinct
+  requests, and `MaxInt` without wraparound.
+- [AOTS regressions](../internal/hbcmp/aots_gsub_test.go) compare the unchanged
+  `gsub3_1_simple.tests:2` oracle in whole-input and streaming configurations,
+  completing the alternate-value dependency left by SHAPE-002.
+
+**Remaining dependencies:** [SHAPE-018](#shape-018--forward-lookup-scans-bypass-feature-masks)
+can select a value or random seed at an attempted start rather than the later
+matched glyph. Its full desired-behavior regression remains tagged; carry
+equivalence for such scans is not established. The flagged AOTS alternate case
+remains blocked by [SHAPE-005](#shape-005--gdef-classification-prevents-ignoremarks).
+Neither dependency is claimed fixed here.
+
+**Review verification (2026-10-29):** the full ordinary suite and
+`go test -race ./otlayout ./otshape/... ./internal/hbcmp -count=1` pass.
+The discovery suite has 20 remaining top-level failures, without build failures,
+panics, or timeouts. Restoring the old lower-level selector through a temporary
+Go overlay makes the positive-value and fixed-seed random regressions fail.
+No captured expectations were changed or weakened.
+
+```sh
+go test ./otlayout ./otshape/... ./internal/hbcmp -run 'SHAPE003|ApplyFeatureAlternateValues|AOTSGSUBBaselines|OutputBoundsSelection' -count=1
 ```

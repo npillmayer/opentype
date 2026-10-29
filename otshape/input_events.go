@@ -21,7 +21,7 @@ const (
 // FeatureSetting is one feature assignment used by push events.
 type FeatureSetting struct {
 	Tag     ot.Tag // OpenType feature tag.
-	Value   int    // Feature value; values <= 0 default to 1 when Enabled is true.
+	Value   int    // Feature value; zero defaults to 1; negative values request random alternates.
 	Enabled bool   // Whether the feature should be enabled for the pushed frame.
 }
 

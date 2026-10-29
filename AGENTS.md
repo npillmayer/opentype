@@ -70,7 +70,7 @@ from a guarantee that the current code actually provides.
   first alternate; negative values request random selection; out-of-range
   positive values leave the glyph unchanged by that alternate substitution.
   Public feature values and lower-level `ApplyFeature` must agree. See the
-  finding for remaining implementation/testing decisions.
+  finding for regression coverage and the remaining forward-scan dependency.
 - Buffering may require a generous minimum capacity and practical sequence/
   context limits. Prefer simpler safe-boundary logic over supporting tiny
   buffers. Emit only final output; reject invalid capacity or fail explicitly

@@ -109,9 +109,10 @@ streaming mechanics, error/partial-progress tests, and benchmarks.
 
 Known limitations include:
 
-- Feature values do not select alternate glyphs correctly. Mask preservation
-  and source-coordinate range assignment are covered by SHAPE-001/002 ordinary
-  regressions; ranges splitting merged source sequences remain unresolved.
+- Forward lookup scans can bypass masks and alternate values at the matched
+  glyph (SHAPE-018). Mask preservation, source-coordinate ranges, and alternate
+  selection have SHAPE-001/002/003 ordinary regressions; ranges splitting merged
+  source sequences remain unresolved.
 - Streaming can discard needed shaping context; forced flushing does not prove
   equivalence to a complete run.
 - GPOS attachments lack final coordinate resolution; direction handling and

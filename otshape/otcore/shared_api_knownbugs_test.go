@@ -4,7 +4,6 @@ package otcore_test
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -17,25 +16,16 @@ import (
 // doc/SHAPING_FINDINGS.md for evidence and promotion into the default suite.
 // Shared fixture and assertion helpers live in shared_api_test.go.
 
-func TestKnownBugSHAPE003FeatureValueSelectsAlternate(t *testing.T) {
+// SHAPE-018 also blocks values when a lookup scans from an uncovered glyph
+// into a different feature range. Keep the complete source/value expectation.
+func TestKnownBugSHAPE018AlternateValueAtMatchedGlyph(t *testing.T) {
 	params, cp := alternateAPIInput(t)
-	// The paired TTX lists g20, g21, g22 as g18's alternatives.
-	// Intended public convention: 0 while On means default (first), and positive
-	// values select the one-based alternative. Lower-level ApplyFeature uses a
-	// separate zero-based alt parameter; the public pipeline must translate it.
-	for _, tc := range []struct {
-		arg  int
-		want ot.GlyphIndex
-	}{
-		{0, 20}, {1, 20}, {2, 21}, {3, 22},
-	} {
-		t.Run(fmt.Sprintf("arg_%d", tc.arg), func(t *testing.T) {
-			p := params
-			p.Features = []otshape.FeatureRange{{Feature: ot.T("test"), On: true, Arg: tc.arg}}
-			got := shapeAPIRecords(t, p, cp, otshape.BufferOptions{}, otcore.New())
-			assertAPIGlyphs(t, got, []ot.GlyphIndex{tc.want})
-		})
+	params.Features = []otshape.FeatureRange{
+		{Feature: ot.T("test"), On: true, Arg: 1},
+		{Feature: ot.T("test"), On: true, Arg: 3, Start: 1, End: 2},
 	}
+	got := shapeAPIRecords(t, params, string(rune(17))+cp, otshape.BufferOptions{}, otcore.New())
+	assertAPIGlyphs(t, got, []ot.GlyphIndex{17, 22})
 }
 
 type confidenceEngine struct {

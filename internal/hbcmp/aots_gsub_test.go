@@ -327,6 +327,7 @@ func runAOTSCaseWithBuffers(t *testing.T, id, expectedFields string, opts otshap
 func TestAOTSGSUBBaselines(t *testing.T) {
 	for _, id := range []string{
 		"classdef2.tests:2",
+		"gsub3_1_simple.tests:2",
 	} {
 		t.Run(id, func(t *testing.T) { runAOTSGSUBCase(t, id) })
 	}
@@ -412,4 +413,9 @@ func TestAOTSFeatureMapping(t *testing.T) {
 	if err != nil || len(c.features) != 2 || c.features[1].Start != 1 || c.features[1].End != 2 {
 		t.Fatalf("scalar range mapping: %+v, %v", c, err)
 	}
+}
+
+// SHAPE-002/003: unchanged upstream ranges and one-based alternate values.
+func TestSHAPE003AOTSAlternatesStreaming(t *testing.T) {
+	runAOTSGSUBCaseWithBuffers(t, "gsub3_1_simple.tests:2", otshape.BufferOptions{HighWatermark: 2, LowWatermark: 1, MaxBuffer: 4})
 }

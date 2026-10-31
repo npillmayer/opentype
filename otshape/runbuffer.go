@@ -883,3 +883,70 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
+
+// applyLayoutEdit updates metadata only. Layout already owns glyph/position edits.
+// Replacement slots inherit the first input's annotations; clusters merge to the
+// minimum input cluster and unsafe flags accumulate across the consumed range.
+func (rb *runBuffer) applyLayoutEdit(edit otlayout.EditSpan) {
+	if edit.From+1 == edit.To && edit.Len == 1 {
+		return
+	}
+	var cluster uint32
+	var source uint32
+	var unsafe uint16
+	if rb.Clusters != nil && edit.From < edit.To {
+		// Consuming a base must also merge any surviving marks in its group.
+		mergeClusterRange(rb.Clusters, edit.From, edit.To)
+		cluster = rb.Clusters[edit.From]
+	}
+	if rb.SourceAnchors != nil && edit.From < edit.To {
+		source = rb.SourceAnchors[edit.From]
+		for _, c := range rb.SourceAnchors[edit.From:edit.To] {
+			if c < source {
+				source = c
+			}
+		}
+	}
+	if rb.UnsafeFlags != nil {
+		for _, f := range rb.UnsafeFlags[edit.From:edit.To] {
+			unsafe |= f
+		}
+	}
+	rb.Codepoints = inheritLayoutEdit(rb.Codepoints, edit)
+	rb.Clusters = inheritLayoutEdit(rb.Clusters, edit)
+	rb.SourceAnchors = inheritLayoutEdit(rb.SourceAnchors, edit)
+	rb.PlanIDs = inheritLayoutEdit(rb.PlanIDs, edit)
+	rb.Masks = inheritLayoutEdit(rb.Masks, edit)
+	rb.UnsafeFlags = inheritLayoutEdit(rb.UnsafeFlags, edit)
+	rb.Syllables = inheritLayoutEdit(rb.Syllables, edit)
+	rb.Joiners = inheritLayoutEdit(rb.Joiners, edit)
+	if edit.From < edit.To {
+		for i := edit.From; i < edit.From+edit.Len; i++ {
+			if rb.Clusters != nil {
+				rb.Clusters[i] = cluster
+			}
+			if rb.SourceAnchors != nil {
+				rb.SourceAnchors[i] = source
+			}
+			if rb.UnsafeFlags != nil {
+				rb.UnsafeFlags[i] = unsafe
+			}
+		}
+	}
+}
+
+func inheritLayoutEdit[T any](s []T, edit otlayout.EditSpan) []T {
+	if s == nil {
+		return nil
+	}
+	var seed T
+	if edit.From < edit.To {
+		seed = s[edit.From]
+	}
+	replacement := make([]T, edit.Len)
+	for i := range replacement {
+		replacement[i] = seed
+	}
+	out := append(s[:edit.From:edit.From], replacement...)
+	return append(out, s[edit.To:]...)
+}

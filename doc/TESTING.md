@@ -175,7 +175,7 @@ err = shaper.ShapeEvents(params, eventSource, sink, options)
 
 See [shape_api.go](../otshape/shape_api.go),
 [shape_events.go](../otshape/shape_events.go),
-[shaper.go](../otshape/shaper.go), and [pipeline.go](../otshape/pipeline.go).
+[params.go](../otshape/params.go), and [pipeline.go](../otshape/pipeline.go).
 
 - `NewShaper` accepts candidate engines; there is no global registration step.
   Selection uses confidence and name tie-breaking, then calls the engine's `New`.
@@ -251,7 +251,7 @@ review probes outside that first regression batch.
   across combining sequences or the older font-aware representation search.
   Unicode composition is not conditioned on availability of the composed glyph.
   See `normalizeRuneStreamWithScratch`, `decomposeRuneStreamInto`, and
-  `composeRuneStreamInto` in [shape_api.go](../otshape/shape_api.go).
+  `composeRuneStreamInto` in [normalize.go](../otshape/normalize.go).
 - **Script support is selective.** Arabic joining uses a hand-maintained
   classification and selected fallback operations. Hebrew implements selected
   composition/reordering cases. Their presence and unit coverage do not establish

@@ -29,7 +29,10 @@ additional plans for event feature pushes. There is no cross-request plan cache.
 | --- | --- |
 | [shape_api.go](../otshape/shape_api.go) | Selects an engine and creates the internal plan request from public parameters. |
 | [shape_runtime.go](../otshape/shape_runtime.go) | Internal concrete `planCompiler` adapter used by ordinary and event input. |
-| [plan.go](../otshape/plan.go) | Plan types, feature discovery, mask allocation, lookup scheduling, validation, and stage executor. |
+| [plan.go](../otshape/plan.go) | Plan types and validation. |
+| [plan_compile.go](../otshape/plan_compile.go) | Feature discovery, mask allocation, and lookup scheduling. |
+| [plan_exec.go](../otshape/plan_exec.go) | Stage executor. |
+| [position_policies.go](../otshape/position_policies.go) | Post-GPOS position policies such as GDEF mark advance zeroing. |
 | [plan_hooks.go](../otshape/plan_hooks.go) | Feature intents, fallback metadata, and direct/anchored pause adapters. |
 | [lookups.go](../otshape/lookups.go) | Runtime mask filtering, lookup traversal, syllable isolation, and metadata edit propagation. |
 | [plan_stack.go](../otshape/plan_stack.go) | Nested feature sets and plans for event input. |

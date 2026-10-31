@@ -101,7 +101,8 @@ Suggested work: remove the replacement if unused, or move local development over
 ## Follow-up: profile edit bookkeeping costs
 
 Locations: `otlayout/feature.go` (execution state and edit journal),
-`otlayout/feature.go:555` (position replacement), `otshape/lookups.go` (metadata replay).
+`otlayout/feature.go:555` (position replacement), `otshape/lookups.go` and
+`otshape/runbuffer.go` (metadata replay).
 
 The exploratory [shaping benchmarks](SHAPING_BENCHMARKS.md) show increased
 allocation and execution costs in substitution-heavy cases relative to the

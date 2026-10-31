@@ -2,7 +2,6 @@ package otshape
 
 import (
 	"math/rand/v2"
-	"unicode"
 
 	"github.com/npillmayer/opentype/ot"
 )
@@ -198,43 +197,4 @@ func (ws *shapeWorkspace) normalize(
 		ws.outputGroups[i] = ws.inputGroups[int(source-clusters[0])]
 	}
 	return r, ws.outputGroups, c
-}
-
-// formInputClusters implements the shared base/mark grouping needed by Latin
-// and Hebrew at cluster level 0. A leading mark starts its own group; following
-// marks (including variation selectors) and ZWJ continue the preceding group.
-// ZWNJ remains a boundary. Script-specific and emoji sequence rules are separate.
-func formInputClusters(dst []uint32, runes []rune, sources []uint32) []uint32 {
-	for i, r := range runes {
-		cluster := sources[i]
-		if i > 0 && (unicode.Is(unicode.M, r) || r == '\u200D') {
-			cluster = dst[i-1]
-		}
-		dst = append(dst, cluster)
-	}
-	return dst
-}
-
-// mergeClusterRange includes adjacent members of either boundary group. A
-// substitution or reorder must not split an existing base/mark association.
-// SourceAnchors and already-assigned feature masks are intentionally unchanged.
-func mergeClusterRange(clusters []uint32, start, end int) {
-	if start >= end {
-		return
-	}
-	for start > 0 && clusters[start-1] == clusters[start] {
-		start--
-	}
-	for end < len(clusters) && clusters[end] == clusters[end-1] {
-		end++
-	}
-	minimum := clusters[start]
-	for _, c := range clusters[start:end] {
-		if c < minimum {
-			minimum = c
-		}
-	}
-	for i := start; i < end; i++ {
-		clusters[i] = minimum
-	}
 }

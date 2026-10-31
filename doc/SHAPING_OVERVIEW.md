@@ -28,14 +28,16 @@ font shaping. Layout execution uses GSUB/GPOS; there is no legacy kern fallback.
 
 | Files / packages | Current responsibility |
 | --- | --- |
-| [doc.go](../otshape/doc.go), [shaper.go](../otshape/shaper.go) | Package documentation, helpers, `Params`, and `FeatureRange`. |
+| [doc.go](../otshape/doc.go), [helpers.go](../otshape/helpers.go), [params.go](../otshape/params.go) | Package documentation, helpers, `Params`, and `FeatureRange`. |
 | [pipeline.go](../otshape/pipeline.go) | Rune input, glyph sink/record, flush modes, and buffering options. |
-| [shape_api.go](../otshape/shape_api.go) | Orchestrator construction, engine selection, ordinary streaming loop, normalization/mapping, hook execution, and output materialization. |
+| [shape_api.go](../otshape/shape_api.go) | Orchestrator construction, engine selection, ordinary streaming loop, and hook execution. |
+| [normalize.go](../otshape/normalize.go), [glyph_mapping.go](../otshape/glyph_mapping.go), [output.go](../otshape/output.go) | Normalization, rune→glyph cmap mapping, and output materialization. |
 | [shape_events.go](../otshape/shape_events.go), [input_events.go](../otshape/input_events.go), [plan_stack.go](../otshape/plan_stack.go) | Event source adapter/validation, nested feature scopes, plan IDs, and event-shaped spans. |
 | [shape_streaming.go](../otshape/shape_streaming.go), [shape_runtime.go](../otshape/shape_runtime.go) | Watermarks, raw carry, cut selection, compaction, shared adapters, and reusable workspace. |
-| [plan.go](../otshape/plan.go), [plan_hooks.go](../otshape/plan_hooks.go) | Private plan structures, feature/mask compilation, stages, pauses, fallback metadata, and execution. |
+| [plan.go](../otshape/plan.go), [plan_compile.go](../otshape/plan_compile.go), [plan_exec.go](../otshape/plan_exec.go), [position_policies.go](../otshape/position_policies.go), [plan_hooks.go](../otshape/plan_hooks.go) | Private plan structures, feature/mask compilation, stages, pauses, fallback metadata, execution, and position policies. |
 | [lookups.go](../otshape/lookups.go), [annotate.go](../otshape/annotate.go) | Lookup traversal/mask gating, metadata edits, cluster-derived syllables, and glyph-based joiner annotations. |
 | [runbuffer.go](../otshape/runbuffer.go) | Internal glyph/position storage with aligned metadata arrays and edit/insertion support. |
+| [clusters.go](../otshape/clusters.go) | Initial base/mark cluster formation, cluster merging, and cluster spans. |
 | [engine_api.go](../otshape/engine_api.go), [engine_internal.go](../otshape/engine_internal.go) | Public engine hooks and narrow context interfaces; adapters to private pipeline state. |
 | [language.go](../otshape/language.go) | Script/language tag mapping and default decomposition preferences. |
 | [buffer.go](../otshape/buffer.go) | Legacy `Buffer` mapping/representation helpers; not the active shaping pipeline. |
@@ -75,7 +77,7 @@ See [STREAMING_API.md](STREAMING_API.md) for exact cut semantics and limitations
 
 ## Normalization and the legacy mapper
 
-Active normalization is in `shape_api.go`. Engine policy selects auto, none,
+Active normalization is in `normalize.go`. Engine policy selects auto, none,
 composed, or decomposed mode. Auto defaults to composed, with decomposition
 preferences for `dev2` and `bng2`. Decomposition operates per rune; composition
 uses adjacent pairs and optional engine composition hooks.

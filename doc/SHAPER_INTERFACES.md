@@ -130,7 +130,7 @@ as a complete font capability query.
 
 ## Actual plan-time order
 
-In [plan.go](../otshape/plan.go):
+In [plan_compile.go](../otshape/plan_compile.go):
 
 1. Seed base feature defaults and user toggles.
 2. `CollectFeatures`, then `OverrideFeatures`.
@@ -172,8 +172,11 @@ For each current raw carry buffer, or each contiguous event-plan span:
 14. Select an output prefix and emit `GlyphRecord` values, adding nominal
     horizontal advances during materialization.
 
-This order is taken from [shape_api.go](../otshape/shape_api.go) and
-[plan.go](../otshape/plan.go), not from the earlier proposed hook order.
+This order is taken from [shape_api.go](../otshape/shape_api.go),
+[normalize.go](../otshape/normalize.go), [output.go](../otshape/output.go),
+[plan_exec.go](../otshape/plan_exec.go), and
+[position_policies.go](../otshape/position_policies.go), not from the earlier
+proposed hook order.
 There is no general combining-class sort before the reorder hook, dotted-circle
 prelude, default-ignorable cleanup, or direction-restore phase here.
 Horizontal Latin/Hebrew mark anchors are finalized before `PostprocessRun`.

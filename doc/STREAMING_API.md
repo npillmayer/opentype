@@ -92,7 +92,9 @@ The sink receives individual records, not batches or flush notifications.
 
 | Source | Responsibility |
 | --- | --- |
-| [shape_api.go](../otshape/shape_api.go) | Ordinary streaming loop, shared shaping hooks, and output materialization. |
+| [shape_api.go](../otshape/shape_api.go) | Ordinary streaming loop and shared shaping hooks. |
+| [output.go](../otshape/output.go) | Output materialization. |
+| [clusters.go](../otshape/clusters.go) | Cluster formation, merging, and the cluster spans used for cuts and flushing. |
 | [shape_events.go](../otshape/shape_events.go) | Event ingestion, feature-plan spans, and the event streaming loop. |
 | [shape_streaming.go](../otshape/shape_streaming.go) | Configuration, raw carry, cut selection, safety checks, and compaction. |
 | [shape_runtime.go](../otshape/shape_runtime.go) | Shared ingestor/compiler adapters and reusable scratch workspace. |

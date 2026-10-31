@@ -249,8 +249,8 @@ but receives six. All exact records are in the
 [real-text report](../internal/hbcmp/testdata/text/README.md).
 
 **Implementation evidence:** `planHasGposMark` in
-[shape_api.go](../otshape/shape_api.go) tests `plan.Masks.ByFeature` for a nonzero
-`mark`/`mkmk` mask. `compileUserFeatureMasks` in [plan.go](../otshape/plan.go)
+[normalize.go](../otshape/normalize.go) tests `plan.Masks.ByFeature` for a nonzero
+`mark`/`mkmk` mask. `compileUserFeatureMasks` in [plan_compile.go](../otshape/plan_compile.go)
 allocates those masks only for explicit user features. Default GPOS features
 can execute with mask zero and therefore do not satisfy this check. The
 result reaches `NormalizeContext.HasGposMark`, permitting `hebrewCompose` in
@@ -297,7 +297,7 @@ After SHAPE-007/011 the canonical case passes its complete oracle and runs in
 the ordinary suite; the noncanonical case remains tagged with full expectations.
 
 **Implementation evidence:** `normalizeRuneStreamWithScratch` and
-`composeRuneStreamInto` in [shape_api.go](../otshape/shape_api.go) use adjacent
+`composeRuneStreamInto` in [normalize.go](../otshape/normalize.go) use adjacent
 pair composition without a preceding general canonical ordering pass.
 Composed mode also does not first decompose existing composites. `ComposeUnicode`
 in [engine_internal.go](../otshape/engine_internal.go) NFC-normalizes only the
@@ -333,7 +333,7 @@ available composite, while the independent NoEacute capture establishes the
 required fallback path.
 
 **Implementation evidence:** the composed-mode path in
-[shape_api.go](../otshape/shape_api.go) does not decompose a mapped-missing
+[normalize.go](../otshape/normalize.go) does not decompose a mapped-missing
 composite. `normalizeContext.ComposeUnicode` in
 [engine_internal.go](../otshape/engine_internal.go) and acceptance of composition
 results do not check cmap coverage. Fixes must preserve original cluster anchors
@@ -558,7 +558,7 @@ is available in Git.
 **Cause and fix:** `planExecutor.apply` initialized masks a second time, erasing
 `SetupMasks` decisions. Masks are now initialized once in
 [shapeMappedRun](../otshape/shape_api.go) before the hook;
-[the executor](../otshape/plan.go) consumes the prepared masks. Preserving them
+[the executor](../otshape/plan_exec.go) consumes the prepared masks. Preserving them
 also exposed nondeterministic engine feature-bit allocation. Engine-only
 requests are now sorted by tag, retaining user order/precedence.
 
@@ -586,7 +586,7 @@ It now compares unchanged `FeatureRange` bounds against each glyph's retained
 original Unicode-scalar anchor in `run.Clusters`. Nonpositive bounds retain their
 start/end-of-input meaning. Masks are assigned before `SetupMasks` and inherited
 through lookup edits; no ranges are reinterpreted after substitutions. The
-input-coordinate contract is explicit in [FeatureRange](../otshape/shaper.go).
+input-coordinate contract is explicit in [FeatureRange](../otshape/params.go).
 
 **Permanent regressions:**
 [TestSHAPE002FeatureRangeUsesInputCoordinates](../otshape/otcore/shared_api_test.go)
@@ -859,7 +859,7 @@ scope. No blocking defects found.
 adds nominal horizontal metrics. Zeroing an internal adjustment alone therefore
 leaves the nominal mark advance intact. Public Latin/Hebrew plans whose engine
 permits GPOS now enable `ZeroGDEFMarks`. After GPOS,
-[the position policy](../otshape/plan.go) sets each GDEF mark's horizontal
+[the position policy](../otshape/position_policies.go) sets each GDEF mark's horizontal
 adjustment to minus its nominal metric and its vertical adjustment to zero.
 Materialization then yields zero final advances, including for unattached marks.
 The current output path adds no nominal vertical metric; this is not vertical
@@ -912,10 +912,10 @@ base/mark grouping scope. No blocking findings; Hebrew internal mark ordering
 and context-safe streaming remain separate.
 
 **Cause and fix:** base letters and combining marks retained separate scalar
-clusters. [Initial grouping](../otshape/shape_runtime.go) now forms groups before
+clusters. [Initial grouping](../otshape/clusters.go) now forms groups before
 normalization using Unicode mark categories and ZWJ continuation. Leading marks
 form a leading group; ZWNJ remains a boundary. Normalized source anchors map
-back to these groups. [Cluster merging](../otshape/lookups.go) includes adjacent
+back to these groups. [Cluster merging](../otshape/clusters.go) includes adjacent
 surviving members of the boundary groups, preserving association when a base
 is consumed into a ligature. The contract remains HarfBuzz level-0 grouping,
 anchored to zero-based original Unicode scalar indexes, with logical sink order.

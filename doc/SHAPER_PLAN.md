@@ -153,8 +153,9 @@ Important limits:
 - The executor initializes masks again after `SetupMasks`, overwriting script
   masks. Ordinary feature arguments also do not reach alternate selection, and
   indexed ranges are applied in chunk-local coordinates.
-- Internal `Strict`, `ZeroMarks`, and `FallbackMarkPos` policies and tests
-  exist, but the public compile path does not enable them.
+- An internal `Strict` policy and its test exist, but the public compile path
+  does not enable it. The former `ZeroMarks` and `FallbackMarkPos` policies
+  were removed as unused on 2026-11-01.
 - `ApplyGPOS() == false` becomes an all-zero internal policy in the public path;
   `compile` replaces an all-zero policy with `ApplyGPOS=true`. The hook cannot
   currently reliably disable GPOS. This follows from source inspection.

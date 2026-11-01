@@ -103,9 +103,8 @@ script-specific streaming-boundary hook. Normalization modes are `Auto`,
 `None`, `Composed`, and `Decomposed` (with the `Normalization` prefix).
 
 The public path reads `ApplyGPOS`, but a false value produces an all-zero
-internal policy that compilation resets to GPOS-on. Internal strictness,
-mark-zeroing, and fallback-positioning switches are not exposed by the policy
-interface. See [SHAPER_PLAN.md](SHAPER_PLAN.md).
+internal policy that compilation resets to GPOS-on. The internal strictness
+switch is not exposed by the policy interface. See [SHAPER_PLAN.md](SHAPER_PLAN.md).
 
 ## Context interfaces
 

@@ -30,34 +30,6 @@ func (f planLookupFeature) LookupIndex(i int) int {
 	return f.lookupInx
 }
 
-func (e *planExecutor) realignSideArrays(pl *plan, st *otlayout.BufferState) {
-	assert(e != nil, "executor is nil")
-	assert(e.run != nil, "run buffer is nil")
-	assert(pl != nil, "plan is nil")
-	assert(st != nil, "buffer state is nil")
-	e.run.Glyphs = st.Glyphs
-	e.run.Pos = st.Pos
-	if e.run.Codepoints != nil && len(e.run.Codepoints) != e.run.Len() {
-		e.run.Codepoints = resizeRunes(e.run.Codepoints, e.run.Len())
-	}
-	if e.run.Clusters != nil && len(e.run.Clusters) != e.run.Len() {
-		e.run.Clusters = resizeUint32(e.run.Clusters, e.run.Len())
-	}
-	if e.run.SourceAnchors != nil && len(e.run.SourceAnchors) != e.run.Len() {
-		e.run.SourceAnchors = resizeUint32(e.run.SourceAnchors, e.run.Len())
-	}
-	if e.run.UnsafeFlags != nil && len(e.run.UnsafeFlags) != e.run.Len() {
-		e.run.UnsafeFlags = resizeUint16(e.run.UnsafeFlags, e.run.Len())
-	}
-	if e.run.Syllables != nil && len(e.run.Syllables) != e.run.Len() {
-		e.run.Syllables = resizeUint16(e.run.Syllables, e.run.Len())
-	}
-	if e.run.Joiners != nil && len(e.run.Joiners) != e.run.Len() {
-		e.run.Joiners = resizeUint8(e.run.Joiners, e.run.Len())
-	}
-	e.ensureRunMasks(pl)
-}
-
 func (e *planExecutor) applyLookups(pl *plan, table planTable, lookups []lookupOp) error {
 	assert(e.owns(), "plan executor does not own run buffer")
 	assert(pl != nil, "plan is nil")

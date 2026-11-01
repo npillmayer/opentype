@@ -132,11 +132,9 @@ func (tp tableProgram) validate(maxPauseID pauseHookID) error {
 }
 
 type planPolicy struct {
-	Strict          bool // fail early on unsupported/incomplete OT data
-	ApplyGPOS       bool // run GPOS stage at execution time
-	ZeroMarks       bool // zero mark advances if enabled by script policy
-	ZeroGDEFMarks   bool // cancel final advances of GDEF marks after GPOS (Latin/Hebrew)
-	FallbackMarkPos bool // optional fallback mark positioning
+	Strict        bool // fail early on unsupported/incomplete OT data
+	ApplyGPOS     bool // run GPOS stage at execution time
+	ZeroGDEFMarks bool // cancel final advances of GDEF marks after GPOS (Latin/Hebrew)
 }
 
 type planHookSet struct {

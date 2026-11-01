@@ -1002,7 +1002,8 @@ The policy replaces existing advance adjustments, preserves offsets and all
 attachment metadata, and is idempotent. It requires a GDEF glyph-class table;
 Unicode category or attachment metadata alone does not opt a glyph in.
 Other scripts and GPOS-disabled requests retain their previous policy. The older
-internal `ZeroMarks`/fallback-positioning mechanism is unchanged.
+internal `ZeroMarks`/fallback-positioning mechanism was unchanged by this fix;
+it was removed as unused on 2026-11-01.
 
 **Permanent regressions:**
 

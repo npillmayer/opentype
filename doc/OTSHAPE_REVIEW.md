@@ -12,7 +12,7 @@ and line counts in them describe the code as it was at `9760035`.
 
 | Step | Status |
 |---|---|
-| 1. Cheap cleanup | **Partly done** — legacy `buffer.go` and `ShapeEventsRequest` removed; remaining items listed below |
+| 1. Cheap cleanup | **Partly done** — legacy `buffer.go`, `ShapeEventsRequest`, `realignSideArrays`, and the `ZeroMarks`/`FallbackMarkPos` policies removed; remaining items listed below |
 | 2. Split files | **Done** — reorganization by responsibility, including the `lookups.go`, `shape_runtime.go`, `shaper.go`, and `doc.go` issues from section 1 |
 | 3. Expand the package doc | **Done** — `doc.go` rewritten (concepts, guarantees vs. limitations, plain references to `doc/*.md`); runnable examples for `Shaper.Shape` and `Shaper.ShapeEvents` checked against HarfBuzz captures; engine package docs (`otcore`, `othebrew`, `otarabic`) expanded with matching, behavior, and known gaps. |
 | 4. Investigate correctness observations | **In progress** — observations 1 and 2 reproduced as SHAPE-020 and SHAPE-021; the Arabic observation below is still open |
@@ -65,9 +65,20 @@ vague name for the I/O types. The `runbuffer.go` repetition remains;
   only change in the `shaping_knownbugs` run is that the skipped
   `TestBufferFunctions` no longer exists.
 
-Still open in step 1: the unused wrappers, `realignSideArrays`,
-`lookupsForStage`, `stageCount`, `runBuffer.front`/`end`, the unused
-`planPolicy` fields, `streamIngestor`, and the comment fixes.
+Also removed (2026-11-01): `planExecutor.realignSideArrays` (test-only, and it
+would have overwritten engine masks) with its test, and the never-enabled
+`planPolicy.ZeroMarks`/`FallbackMarkPos` with the code only they activated
+(`zeroMarkAdvances`, `applyFallbackMarkPosition`, `prevBaseGlyph`,
+`isMarkGlyph`, `isMarkByClass`) and their two tests. `ZeroGDEFMarks` behavior
+is unchanged.
+
+Still open in step 1: the other unused wrappers (`writeRunBufferRange`,
+`normalizeRuneStream`, `decomposeRuneStream`, `composeRuneStream`,
+`mapRunesToRunBuffer[WithPlanIDs]`, `lookupsForStage`, `stageCount`, and the
+test-only `writeRunBufferToSink*`, `writeRunBufferPrefixToSink`,
+`lookupCount`), `runBuffer.front`/`end`, `planNoteInfo`, the remaining
+`planPolicy.Strict` and `VarIndex` (`Notes` proposed to keep),
+`streamIngestor`, and the comment fixes.
 
 ### Step 4: findings
 

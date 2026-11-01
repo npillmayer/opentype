@@ -8,7 +8,6 @@ import (
 
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otlayout"
-	"github.com/npillmayer/opentype/otquery"
 	"golang.org/x/text/unicode/bidi"
 )
 
@@ -423,96 +422,6 @@ func TestPlanExecutorStagePauseOrder(t *testing.T) {
 	}
 }
 
-func TestPlanExecutorZeroMarksByAttachment(t *testing.T) {
-	run := newRunBuffer(0)
-	run.Glyphs = append(run.Glyphs, 10, 11)
-	run.Pos = otlayout.NewPosBuffer(2)
-	run.Pos[0].XAdvance = 500
-	run.Pos[1].XAdvance = 80
-	run.Pos[1].YAdvance = 12
-	run.Pos[1].AttachKind = otlayout.AttachMarkToBase
-	run.Pos[1].AttachTo = 0
-
-	exec := &planExecutor{}
-	exec.acquireBuffer(run)
-	defer exec.releaseBuffer()
-
-	p := &plan{
-		Masks: maskLayout{ByFeature: map[ot.Tag]maskSpec{}},
-		Hooks: newPlanHookSet(),
-		Policy: planPolicy{
-			ApplyGPOS: true,
-			ZeroMarks: true,
-		},
-	}
-	exec.ensureRunMasks(p)
-	if err := exec.apply(p); err != nil {
-		t.Fatalf("executor apply failed: %v", err)
-	}
-	if run.Pos[0].XAdvance != 500 {
-		t.Fatalf("base advance changed unexpectedly: got %d, want 500", run.Pos[0].XAdvance)
-	}
-	if run.Pos[1].XAdvance != 0 || run.Pos[1].YAdvance != 0 {
-		t.Fatalf("mark advances not zeroed: got xa=%d ya=%d, want 0/0",
-			run.Pos[1].XAdvance, run.Pos[1].YAdvance)
-	}
-}
-
-func TestPlanExecutorFallbackMarkPositionAndZeroing(t *testing.T) {
-	otf := loadLocalFont(t, "Calibri.ttf")
-	base, lookupErr := otquery.GlyphIndex(otf, 'A')
-	if lookupErr != nil {
-		t.Fatalf("glyph lookup: %v", lookupErr)
-	}
-	mark, lookupErr := otquery.GlyphIndex(otf, '\u0301')
-	if lookupErr != nil {
-		t.Fatalf("glyph lookup: %v", lookupErr)
-	}
-	if base == NOTDEF || mark == NOTDEF {
-		t.Skip("font does not expose expected base/mark glyphs for fallback test")
-	}
-
-	run := newRunBuffer(0)
-	run.Glyphs = append(run.Glyphs, base, mark)
-	run.Pos = otlayout.NewPosBuffer(2)
-	run.Pos[0].XAdvance = 620
-	run.Pos[1].XAdvance = 40
-
-	exec := &planExecutor{}
-	exec.acquireBuffer(run)
-	defer exec.releaseBuffer()
-
-	p := &plan{
-		font:  otf,
-		Masks: maskLayout{ByFeature: map[ot.Tag]maskSpec{}},
-		Hooks: newPlanHookSet(),
-		Props: segmentProps{
-			Direction: bidi.LeftToRight,
-		},
-		Policy: planPolicy{
-			ApplyGPOS:       false,
-			ZeroMarks:       true,
-			FallbackMarkPos: true,
-		},
-	}
-	exec.ensureRunMasks(p)
-	if err := exec.apply(p); err != nil {
-		t.Fatalf("executor apply failed: %v", err)
-	}
-	markPos := run.Pos[1]
-	if markPos.AttachKind != otlayout.AttachMarkToBase || markPos.AttachTo != 0 {
-		t.Fatalf("fallback mark attachment not applied: kind=%d to=%d",
-			markPos.AttachKind, markPos.AttachTo)
-	}
-	if markPos.XAdvance != 0 || markPos.YAdvance != 0 {
-		t.Fatalf("mark advances not zeroed: got xa=%d ya=%d, want 0/0",
-			markPos.XAdvance, markPos.YAdvance)
-	}
-	if markPos.XOffset != -40 {
-		t.Fatalf("mark offset not adjusted while zeroing: got %d, want -40", markPos.XOffset)
-	}
-}
-
 type fakeFeature struct {
 	tag     ot.Tag
 	typ     otlayout.LayoutTagType
@@ -819,43 +728,6 @@ func TestFeatureRangesFollowSourceAnchors(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestRealignSideArraysAfterLengthChange(t *testing.T) {
-	run := newRunBuffer(0)
-	run.Glyphs = append(run.Glyphs, 10, 11)
-	run.Clusters = []uint32{0, 1}
-	run.Masks = []uint32{7, 7}
-	run.UnsafeFlags = []uint16{1, 1}
-	run.Syllables = []uint16{3, 4}
-	run.Joiners = []uint8{0, joinerClassZWJ}
-
-	exec := &planExecutor{run: run}
-	st := otlayout.NewBufferState(otlayout.GlyphBuffer{10, 11, 12, 13}, nil)
-	pl := &plan{
-		Masks: maskLayout{
-			GlobalMask: 5,
-			ByFeature:  map[ot.Tag]maskSpec{},
-		},
-	}
-
-	exec.realignSideArrays(pl, st)
-	if run.Len() != 4 {
-		t.Fatalf("run length = %d, want 4", run.Len())
-	}
-	if len(run.Clusters) != 4 || len(run.Masks) != 4 || len(run.UnsafeFlags) != 4 {
-		t.Fatalf("side array lengths = clusters:%d masks:%d unsafe:%d, want all 4",
-			len(run.Clusters), len(run.Masks), len(run.UnsafeFlags))
-	}
-	if len(run.Syllables) != 4 || len(run.Joiners) != 4 {
-		t.Fatalf("side array lengths = syllables:%d joiners:%d, want both 4",
-			len(run.Syllables), len(run.Joiners))
-	}
-	for i, m := range run.Masks {
-		if m != 5 {
-			t.Fatalf("mask[%d] = 0x%x, want 0x5", i, m)
-		}
 	}
 }
 

@@ -14,7 +14,7 @@ and line counts in them describe the code as it was at `9760035`.
 |---|---|
 | 1. Cheap cleanup | **Partly done** — legacy `buffer.go` and `ShapeEventsRequest` removed; remaining items listed below |
 | 2. Split files | **Done** — reorganization by responsibility, including the `lookups.go`, `shape_runtime.go`, `shaper.go`, and `doc.go` issues from section 1 |
-| 3. Expand the package doc | **Done** — `doc.go` rewritten (concepts, guarantees vs. limitations, plain references to `doc/*.md`); runnable examples for `Shaper.Shape` and `Shaper.ShapeEvents` checked against HarfBuzz captures. Engine package docs not expanded. |
+| 3. Expand the package doc | **Done** — `doc.go` rewritten (concepts, guarantees vs. limitations, plain references to `doc/*.md`); runnable examples for `Shaper.Shape` and `Shaper.ShapeEvents` checked against HarfBuzz captures; engine package docs (`otcore`, `othebrew`, `otarabic`) expanded with matching, behavior, and known gaps. |
 | 4. Investigate correctness observations | Open |
 | 5. API decisions | Open |
 

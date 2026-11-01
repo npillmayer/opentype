@@ -15,7 +15,7 @@ and line counts in them describe the code as it was at `9760035`.
 | 1. Cheap cleanup | **Partly done** — legacy `buffer.go` and `ShapeEventsRequest` removed; remaining items listed below |
 | 2. Split files | **Done** — reorganization by responsibility, including the `lookups.go`, `shape_runtime.go`, `shaper.go`, and `doc.go` issues from section 1 |
 | 3. Expand the package doc | **Done** — `doc.go` rewritten (concepts, guarantees vs. limitations, plain references to `doc/*.md`); runnable examples for `Shaper.Shape` and `Shaper.ShapeEvents` checked against HarfBuzz captures; engine package docs (`otcore`, `othebrew`, `otarabic`) expanded with matching, behavior, and known gaps. |
-| 4. Investigate correctness observations | Open |
+| 4. Investigate correctness observations | **In progress** — observations 1 and 2 reproduced as SHAPE-020 and SHAPE-021; the Arabic observation below is still open |
 | 5. API decisions | Open |
 
 ### Step 2: new file layout
@@ -45,6 +45,12 @@ tests pass and the `shaping_knownbugs` results are unchanged.
 
 File links in the `doc/` guides were updated to match.
 
+Still open from section 1 (not file moves, so deferred to the cleanup):
+`streamIngestor` adds nothing over `shape_streaming.go`, and `pipeline.go` is a
+vague name for the I/O types. The `runbuffer.go` repetition remains;
+`inheritLayoutEdit[T]` now sits in the same file as the four typed
+`applyEdit*` copies.
+
 ### Step 1 (partial): legacy API removed
 
 - Deleted `buffer.go` and its always-skipped `buffer_test.go`: `Buffer`,
@@ -63,11 +69,40 @@ Still open in step 1: the unused wrappers, `realignSideArrays`,
 `lookupsForStage`, `stageCount`, `runBuffer.front`/`end`, the unused
 `planPolicy` fields, `streamIngestor`, and the comment fixes.
 
-Still open from section 1 (not file moves, so deferred to the cleanup):
-`streamIngestor` adds nothing over `shape_streaming.go`, and `pipeline.go` is a
-vague name for the I/O types. The `runbuffer.go` repetition remains;
-`inheritLayoutEdit[T]` now sits in the same file as the four typed
-`applyEdit*` copies.
+### Step 4: findings
+
+- Observation 1 (lookup order across features) is reproduced and recorded as
+  **SHAPE-020** in `doc/SHAPING_FINDINGS.md`, with repository-authored
+  lookup-order fonts, HarfBuzz captures, a `shaping_knownbugs` test, and a
+  passing control.
+- Observation 2 (engine features overriding user settings) is reproduced and
+  recorded as **SHAPE-021**, after the precedence contract was agreed: user
+  settings override `CollectFeatures`, and `OverrideFeatures` overrides user
+  settings. The original observation was only partly right: a user's "off"
+  does win against `CollectFeatures`, because the user's setting alone
+  decides the glyph mask. The actual defect is that "off" always wins: an
+  engine's `DisableFeature` beats a user's "on", and `OverrideFeatures`
+  cannot enable a feature the user disabled.
+
+#### Additional observation (unverified)
+
+Found while documenting `otarabic` (2026-11-01); it adds a third item to the
+two correctness observations in section 1. It needs a reproduction and an ID
+before becoming a finding. Arabic remains deferred scope.
+
+3. **Engine feature order is not applied.** `planFeaturePlanner.AddFeature`
+   appends a tag to the default feature list only if it is not already there,
+   and `compileTableProgram` assigns stages in that list's order. The Arabic
+   engine's `CollectFeatures` order (stch, ccmp/locl, isol … init, rlig,
+   calt/rclt, liga/clig, mset) is therefore lost: locl, ccmp, rlig, rclt, calt,
+   clig, and liga keep their default positions, and the form features run
+   after rlig, calt, and liga. Direct `AddGSUBPause` calls do not separate the
+   stages either, because they are appended after the last lookup. HarfBuzz
+   applies the form features before rlig and calt. No Arabic font or HarfBuzz
+   capture is in the repository, so a reproduction needs a new fixture. This
+   is related to observation 1 (one stage per feature instead of LookupList
+   order within a stage); both concern stage construction in
+   `compileTableProgram`.
 
 ## Summary
 

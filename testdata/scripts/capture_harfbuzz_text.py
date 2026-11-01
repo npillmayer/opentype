@@ -41,6 +41,8 @@ CASES = [
     ("hebrew_vav_holam_no_mark", "ShaperTestHebrew-NoMark.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", []),
     ("hebrew_vav_holam_no_mark_requested", "ShaperTestHebrew-NoMark.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", ["mark=1", "mkmk=1"]),
     ("hebrew_shin_reordered", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05e9\u05c1\u05b8", ["mark=1", "mkmk=1"]),
+    ("latin_lookup_order_liga_first", "ShaperTestLookupOrder-LigaFirst.ttf", "Latn", "en", "ltr", "fi", []),
+    ("latin_lookup_order_calt_first", "ShaperTestLookupOrder-CaltFirst.ttf", "Latn", "en", "ltr", "fi", []),
 ]
 
 

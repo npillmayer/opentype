@@ -10,12 +10,12 @@ No expected value comes from the repository shaper.
 The later [streaming/scope extension](STREAMING.md) adds twelve captures in
 [streaming.json](streaming.json), reuses four of these cases, and tests both
 public APIs across buffer profiles and flush modes. Its event/progress driver
-uses the same comparison contract. The 24-case counts below refer specifically
+uses the same comparison contract. The 26-case counts below refer specifically
 to `baselines.json` and its whole-input runner.
 
 ## Files and execution
 
-- [baselines.json](baselines.json) contains 24 cases, exact Unicode inputs,
+- [baselines.json](baselines.json) contains 26 cases, exact Unicode inputs,
   complete HarfBuzz output, font hashes, capture command arguments, and the
   version and SHA-256 of the capturing executable.
 - [capture_harfbuzz_text.py](../../../../testdata/scripts/capture_harfbuzz_text.py)
@@ -24,11 +24,11 @@ to `baselines.json` and its whole-input runner.
   replaces the snapshot. It rejects a different HarfBuzz version, incomplete
   output, and missing-glyph results.
 - [text_baselines_test.go](../../text_baselines_test.go) validates all cases and
-  font hashes, including the tagged cases, and runs ten passing comparisons.
+  font hashes, including the tagged cases, and runs sixteen passing comparisons.
   It reuses `fixture` parameter conversion, `glyphCollector`, and the exact
   positioned-glyph comparison from `hb_compare.go`.
-- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs thirteen failing cases
-  in seven top-level tests under `shaping_knownbugs`. Raw expectations remain the
+- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs ten failing cases
+  in six top-level tests under `shaping_knownbugs`. Raw expectations remain the
   original HarfBuzz output; comparison explicitly converts RTL to logical order; promote cases as their blockers are resolved.
 - [Noto font provenance](../../../../testdata/fonts/NotoSansHebrew-README.md)
   pins the new Hebrew font and its OFL license. Latin uses the existing
@@ -85,11 +85,12 @@ bidi layout, streaming cuts, events, or general Latin/Hebrew conformance.
 
 ## Results
 
-Eleven cases pass every output field; thirteen remain tagged. The NFD ranged
+Sixteen cases pass every output field; ten remain tagged. The NFD ranged
 ligature case was promoted after the SHAPE-002 fix on 2026-10-27. All calls reaching
 `Shape` return nil. The NoGPOS font is rejected by the normal parser before
 shaping (a documented library scope restriction). The original eleven cases
-are listed below; [NORMALIZATION.md](NORMALIZATION.md) lists the thirteen additions.
+are listed below; [NORMALIZATION.md](NORMALIZATION.md) lists the thirteen normalization
+additions, and [Lookup-order cases](#lookup-order-cases) the two SHAPE-020 cases.
 
 | Case ID | Text / context | Features | Result |
 | --- | --- | --- | --- |
@@ -129,6 +130,20 @@ This one-base case isolates the composition mismatch from the rest of the word.
 55/3 (0,522), 79/0 (227,0), 100/0 (539,0), 96/0 (0,730)`;
 actual `96/0 (0,730), 79/1 (0,0), 100/2 (0,0), 55/3 (0,522),
 126/4 (0,301), 23/6 (0,684)`. Fixing only order cannot make it pass.
+
+## Lookup-order cases
+
+Added on **2026-11-01** with the same installed `hb-shape (HarfBuzz) 15.0.0`
+binary (unchanged executable hash; the 24 earlier records were verified
+byte-identical before the additions). Both use repository-authored
+[lookup-order fonts](../../../../testdata/fonts/LOOKUP_ORDER.md) with the same
+`liga` (`f i` → `fi`) and `calt` (`f` → `f.alt`) rules and swapped LookupList
+order. Input `fi`, Latn/en/LTR, default features.
+
+| Case ID | LookupList order | HarfBuzz output | Result |
+| --- | --- | --- | --- |
+| `latin_lookup_order_liga_first` | `liga` = 0, `calt` = 1 | `3/0 (0,600)`: the `fi` ligature | SHAPE-020: actual `4/0 (0,600), 2/1 (0,600)` (`f.alt i`) |
+| `latin_lookup_order_calt_first` | `calt` = 0, `liga` = 1 | `4/0 (0,600), 2/1 (0,600)` | Pass (control) |
 
 See [SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md) for diagnosis
 and agreed contracts. This work changes tests and public contract comments,

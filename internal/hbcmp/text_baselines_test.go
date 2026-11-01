@@ -44,6 +44,8 @@ var textBaselineFindings = map[string]string{
 	"hebrew_vav_holam_no_gpos": "SHAPE-014",
 	"hebrew_vav_holam_no_mark": "", "hebrew_vav_holam_no_mark_requested": "SHAPE-010",
 	"hebrew_shin_reordered": "",
+	// Same rules, swapped LookupList order; the control runs calt first in both.
+	"latin_lookup_order_liga_first": "SHAPE-020", "latin_lookup_order_calt_first": "",
 }
 
 // Load every record even for a filtered run: missing fonts, fields or cases
@@ -142,6 +144,14 @@ func loadTextBaselineFile(t *testing.T, path string, assignments map[string]stri
 
 func runTextBaseline(t *testing.T, c textBaseline) {
 	t.Helper()
+	runTextBaselineWith(t, c, c.Fixture.Context.Features, otcore.New(), othebrew.New())
+}
+
+// runTextBaselineWith shapes c's input with the given feature specifications
+// and engines, and compares against c's unmodified HarfBuzz output. Callers
+// using other features or engines must justify why the oracle still applies.
+func runTextBaselineWith(t *testing.T, c textBaseline, features []string, engines ...otshape.ShapingEngine) {
+	t.Helper()
 	font, err := ot.Parse(c.fontData)
 	if err != nil {
 		t.Fatalf("%s: parse font: %v", c.ID, err)
@@ -154,7 +164,7 @@ func runTextBaseline(t *testing.T, c textBaseline) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	params.Features, err = parseTextFeatures(c.Fixture.Context.Features, len(c.Fixture.Input))
+	params.Features, err = parseTextFeatures(features, len(c.Fixture.Input))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,14 +172,14 @@ func runTextBaseline(t *testing.T, c textBaseline) {
 	n := len(c.Fixture.Input)
 	opts := otshape.BufferOptions{HighWatermark: n + 1, LowWatermark: 1, MaxBuffer: n + 2, FlushBoundary: otshape.FlushOnRunBoundary}
 	sink := &glyphCollector{}
-	err = otshape.NewShaper(otcore.New(), othebrew.New()).Shape(params, strings.NewReader(c.Text), sink, opts)
+	err = otshape.NewShaper(engines...).Shape(params, strings.NewReader(c.Text), sink, opts)
 	got := make([]hbShapedGlyph, len(sink.glyphs))
 	for i, g := range sink.glyphs {
 		got[i] = glyphRecord2hbShapedGlyph(g)
 	}
 	want := textLogicalOutput(c.Fixture)
 	if mismatch := comparePositionedGlyphs(got, want); err != nil || mismatch != nil {
-		t.Fatalf("%s font=%s context=%+v buffers=%+v\nshape error=%v; comparison=%v\ngot=%+v\nwant logical=%+v\nraw HarfBuzz=%+v\nrecords=%+v", c.ID, c.FontPath, c.Fixture.Context, opts, err, mismatch, got, want, c.Fixture.Output, sink.glyphs)
+		t.Fatalf("%s font=%s context=%+v features=%v buffers=%+v\nshape error=%v; comparison=%v\ngot=%+v\nwant logical=%+v\nraw HarfBuzz=%+v\nrecords=%+v", c.ID, c.FontPath, c.Fixture.Context, features, opts, err, mismatch, got, want, c.Fixture.Output, sink.glyphs)
 	}
 }
 
@@ -253,11 +263,16 @@ func TestHarfBuzzTextBaselines(t *testing.T) {
 
 func runTextBaselineID(t *testing.T, id string) {
 	t.Helper()
+	runTextBaseline(t, textBaselineByID(t, id))
+}
+
+func textBaselineByID(t *testing.T, id string) textBaseline {
+	t.Helper()
 	for _, c := range loadTextBaselines(t) {
 		if c.ID == id {
-			runTextBaseline(t, c)
-			return
+			return c
 		}
 	}
 	t.Fatalf("text baseline %q not found", id)
+	return textBaseline{}
 }

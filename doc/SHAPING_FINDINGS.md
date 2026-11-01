@@ -74,7 +74,7 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: ten failing top-level tests across the two packages.
+# Discovery suite: twelve failing top-level tests across the two packages.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Fixed mask regression, covering both public entry points.
@@ -108,6 +108,8 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-016](#shape-016--feature-scopes-sever-unrelated-lookup-context) | reproduced | Feature-event spans break kerning across scope boundaries |
 | [SHAPE-017](#shape-017--gsub-deletion-is-ignored) | reproduced | Empty GSUB multiple-substitution sequences leave glyphs unchanged |
 | [SHAPE-019](#shape-019--ligature-substitution-deletes-ignored-marks) | reproduced | Ligature span replacement deletes skipped marks; component association remains to be verified |
+| [SHAPE-020](#shape-020--default-features-run-in-feature-order-instead-of-lookup-order) | reproduced | Each feature gets its own stage, so lookups of different default features run in feature order instead of LookupList order |
+| [SHAPE-021](#shape-021--engine-and-user-feature-settings-combine-as-off-wins) | reproduced | Engine and user feature settings combine so that "off" wins, contrary to the agreed precedence |
 
 Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
@@ -526,6 +528,131 @@ not change the fifteen failing top-level discovery tests.
 ```sh
 # Historical test name; current finding is SHAPE-019.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE005AOTSLigatureAcrossMark$' -count=1 -v
+```
+
+## SHAPE-020 — Default features run in feature order instead of lookup order
+
+**Status:** reproduced 2026-11-01. Originally an inspection note in the
+`otshape` code review. **Test:** `TestKnownBugSHAPE020LookupOrder` in
+[text_knownbugs_test.go](../internal/hbcmp/text_knownbugs_test.go); ordinary
+control `latin_lookup_order_calt_first` in `TestHarfBuzzTextBaselines`.
+
+**Expected behavior and basis:** the OpenType LookupList order determines the
+order in which lookups are applied. HarfBuzz places the default shaper's common
+and horizontal features (`ccmp`, `locl`, `rlig`, `calt`, `clig`, `liga`,
+`rclt`, …) and user features into one GSUB stage, and applies the lookups of a
+stage in LookupList index order. An independent `hb-shape` 15.0.0 capture of
+the fixture below forms the ligature: GID 3, cluster 0, advance 600.
+
+**Reproduction:** repository-authored
+[lookup-order fonts](../testdata/fonts/LOOKUP_ORDER.md) with the same GSUB rules,
+`liga` (`f i` → `fi`) and `calt` (`f` → `f.alt`), in swapped LookupList order.
+Input `fi`, Latn/en/LTR, default features, core and Hebrew engines registered,
+whole-input buffers `3/1/4`. With `ShaperTestLookupOrder-LigaFirst.ttf`
+(`liga` = lookup 0), HarfBuzz emits `[3/0 (0,600)]`.
+
+**Observed:** `Shape` returns nil and emits `[4/0 (0,600), 2/1 (0,600)]`
+(`f.alt i`): `calt` runs first and prevents the ligature. The control font
+(`calt` = lookup 0) yields `f.alt i` in both shapers and passes, so the
+difference comes from lookup order alone.
+
+**Implementation evidence:** `compileTableProgram` in
+[plan_compile.go](../otshape/plan_compile.go) assigns a new stage number to
+every active default feature in the order of `defaultGSUBFeatures` (and of the
+GPOS defaults), then one stage per remaining feature sorted by tag. Lookups are
+sorted by index only within a stage. For the LigaFirst font, the compiled plan
+has GSUB stage 0 = `calt` (lookup 1) and stage 1 = `liga` (lookup 0); this was
+checked with a temporary in-package probe that was not committed.
+
+**Scope and related observations:** GPOS defaults (`abvm`, `blwm`, `mark`,
+`mkmk`, `curs`, `dist`, `kern`) are staged by the same code; that variant is
+not reproduced here. Engine-collected features are affected as well: for the
+Arabic engine, the code review records (inspection only) that its collected
+feature order is lost and form features run after `rlig`, `calt`, and `liga`.
+A fix must group features into stages the way HarfBuzz does, with explicit
+pauses (including engine `AddGSUBPause` calls, which currently all follow the
+last lookup) as the only stage boundaries, while keeping required-feature and
+mask handling. This finding prescribes no implementation.
+
+**Verification:** at revision `0a12e65` plus the new fixture, capture, and
+tests. The 24 existing text captures were verified byte-identical with the same
+`hb-shape` binary before the two cases were added.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE020' -count=1 -v
+```
+
+## SHAPE-021 — Engine and user feature settings combine as "off wins"
+
+**Status:** reproduced 2026-11-01. Originally an inspection note in the
+`otshape` code review, which predicted that engine settings replace user
+settings; the reproduction shows a different pattern. **Test:**
+`TestKnownBugSHAPE021FeaturePrecedence` in
+[feature_precedence_knownbugs_test.go](../internal/hbcmp/feature_precedence_knownbugs_test.go);
+ordinary controls in `TestFeaturePrecedence` in
+[feature_precedence_test.go](../internal/hbcmp/feature_precedence_test.go).
+They live in `internal/hbcmp` rather than with the other shared-API cases in
+`otshape/otcore`, because they reuse its HarfBuzz text captures and runner.
+
+**Contract decision (2026-11-01):** feature settings made in an engine's
+`CollectFeatures` are defaults that the user's feature settings override.
+`OverrideFeatures` runs after the user settings and may override them. This
+mirrors HarfBuzz's `collect_features` and `override_features` and the order of
+the two hooks.
+
+**Expected behavior and basis:** the contract above determines the effective
+`liga` setting; the expected output is the existing independent capture with
+that effective setting. `latin_office_liga_off` is HarfBuzz's output with `liga`
+disabled; `latin_office_liga_on` with it enabled, which is also HarfBuzz's
+default.
+
+**Reproduction:** Gentium Plus, `office`, Latn/en/LTR, whole-input buffers
+`7/1/8`, a test engine that wraps the core engine and calls `EnableFeature` or
+`DisableFeature` for `liga` in one hook:
+
+| Engine hook | User setting | Contract result | Observed |
+| --- | --- | --- | --- |
+| `CollectFeatures` enables | none | on | on (pass) |
+| `CollectFeatures` enables | `liga=0` | off | off (pass) |
+| `CollectFeatures` disables | `liga=1` | on | **off**: 6 glyphs, no ligature |
+| `OverrideFeatures` disables | `liga=1` | off | off (pass) |
+| `OverrideFeatures` enables | `liga=0` | on | **off**: 6 glyphs, no ligature |
+
+All calls return nil. Whoever disables the feature wins.
+
+**Implementation evidence:** two independent channels decide a feature, and
+both must allow it.
+
+- *Plan membership:* `planFeaturePlanner.AddFeature` and `DisableFeature` in
+  [plan_hooks.go](../otshape/plan_hooks.go) replace the user's toggle for the
+  tag; `compileTableProgram` in [plan_compile.go](../otshape/plan_compile.go)
+  includes a feature's lookups only if that toggle is on. An engine's
+  `DisableFeature` therefore removes the lookups regardless of the user, in
+  either hook.
+- *Glyph mask:* `compileUserFeatureMasks` builds the mask layout from the user
+  features plus `planFeaturePlanner.maskFeatures()`, which skips tags the user
+  mentioned. A user's global "off" gives the feature a default mask value of 0,
+  so its lookups never apply, even when an engine enabled it in
+  `OverrideFeatures`.
+
+A temporary in-package probe (not committed) confirmed the compiled plans: with
+an engine `DisableFeature` and the user's `liga=1`, the plan has no `liga`
+lookups while the global mask has the `liga` bit; with an engine
+`EnableFeature` and the user's `liga=0`, the lookups are present but the global
+mask lacks the bit.
+
+**Scope:** among the supplied engines, only `otarabic` calls these planner
+methods, so Latin and Hebrew shaping with the supplied engines is unaffected.
+Custom engines and Arabic are affected. Ranged user settings and feature values
+other than on/off were not examined. A fix must resolve both channels from one
+precedence order.
+
+**Verification:** at revision `0a12e65` plus the SHAPE-020 and SHAPE-021 test
+changes. The runner refactoring that lets a test supply engines and features
+leaves the existing text baselines unchanged.
+
+```sh
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE021' -count=1 -v
 ```
 
 ## Remaining discovery work

@@ -1600,6 +1600,104 @@
           }
         ]
       }
+    },
+    {
+      "id": "latin_lookup_order_liga_first",
+      "text": "fi",
+      "font_path": "testdata/fonts/ShaperTestLookupOrder-LigaFirst.ttf",
+      "font_sha256": "f4365dfbce8cb7e7484909da6d4f14955b0aae9097f60155c9cee3778c6bca6a",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestLookupOrder-LigaFirst.ttf",
+        "--unicodes=U+0066,U+0069",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestLookupOrder-LigaFirst.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          102,
+          105
+        ],
+        "output": [
+          {
+            "g": 3,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_lookup_order_calt_first",
+      "text": "fi",
+      "font_path": "testdata/fonts/ShaperTestLookupOrder-CaltFirst.ttf",
+      "font_sha256": "a862ada9ebb2aad26fc68cc7084c0350dd315100980f091f40d12af78591bcb9",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestLookupOrder-CaltFirst.ttf",
+        "--unicodes=U+0066,U+0069",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestLookupOrder-CaltFirst.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          102,
+          105
+        ],
+        "output": [
+          {
+            "g": 4,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 2,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          }
+        ]
+      }
     }
   ]
 }

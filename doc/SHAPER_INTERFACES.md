@@ -139,6 +139,13 @@ In [plan_compile.go](../otshape/plan_compile.go):
 6. `InitPlan`, followed by `ValidatePlan` when both interfaces are implemented.
 7. Validate the internal plan.
 
+**Agreed feature precedence (2026-11-01; not yet implemented):** settings made
+in `CollectFeatures` are engine defaults that the user's feature settings
+override; `OverrideFeatures` runs after the user settings and may override
+them. Currently the planner toggles and the user-derived glyph masks combine so
+that "off" wins regardless of its source; see
+[SHAPE-021](SHAPING_FINDINGS.md#shape-021--engine-and-user-feature-settings-combine-as-off-wins).
+
 `PauseHook` is `func(PauseContext) error`; an error stops execution.
 Direct pauses currently append empty stages after all GSUB lookups. They are
 not interleaved at their collection call sites. Anchored pauses attach to

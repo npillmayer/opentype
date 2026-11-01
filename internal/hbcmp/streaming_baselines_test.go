@@ -18,6 +18,7 @@ var streamingCases = map[string]string{
 	"stream_ligatures": "", "stream_kerning": "", "stream_accents": "", "stream_hebrew": "",
 	"stream_range": "", "scope_nested": "", "scope_pair": "", "scope_accent": "",
 	"progress_expand": "", "progress_delete": "", "progress_all_deleted": "", "progress_contract": "",
+	"progress_delete_edges": "",
 }
 
 func loadStreamingBaselines(t *testing.T) []textBaseline {
@@ -266,8 +267,13 @@ func streamingFinding(id, profile, entry string) string {
 			return "015" // Attachment context is lost; the full oracle remains unchanged.
 		}
 		return ""
-	case "progress_delete", "progress_all_deleted":
-		return "017"
+	case "progress_delete", "progress_all_deleted", "progress_delete_edges":
+		if profile == "tiny" || profile == "forced" {
+			// Full output remains the oracle. Mixed deletion still loses pair
+			// context at cuts; zero output at capacity now fails explicitly.
+			return "015"
+		}
+		return ""
 	case "scope_pair":
 		if entry == "events" {
 			return "016"

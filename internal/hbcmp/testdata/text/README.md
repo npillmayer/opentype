@@ -7,7 +7,7 @@ The initial eleven-case batch was verified at `f1deff457223a87754f86d8e17ab13368
 These are new independent captures, separate from the recovered AOTS records.
 No expected value comes from the repository shaper.
 
-The later [streaming/scope extension](STREAMING.md) adds twelve captures in
+The later [streaming/scope extension](STREAMING.md) contains thirteen captures in
 [streaming.json](streaming.json), reuses four of these cases, and tests both
 public APIs across buffer profiles and flush modes. Its event/progress driver
 uses the same comparison contract. The 31-case counts below refer specifically

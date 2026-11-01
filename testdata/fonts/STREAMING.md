@@ -34,3 +34,9 @@ See the [streaming report](../../internal/hbcmp/testdata/text/STREAMING.md).
 All glyphs have nonempty outlines to keep this fixture focused on shaping and
 progress. An initial empty-outline prototype encountered `GlyphMetrics`' unchecked
 glyf bounding-box read; empty-outline metrics are outside this batch's coverage.
+
+SHAPE-017 adds the independent `progress_delete_edges` capture on 2026-11-01
+without changing this font: `ddaadd` shapes to two `a` glyphs at clusters 0 and 3,
+with advances 580 and 600. This tests cluster inheritance after leading deletion,
+consecutive/trailing deletion, and pair positioning on surviving glyphs. The
+original twelve streaming records and their capture metadata remain unchanged.

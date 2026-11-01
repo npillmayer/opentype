@@ -130,6 +130,14 @@ error, while clearing it on the clone does not alter its source. Earlier edits
 still follow the journal rules above. Public callers can identify the shaping
 error with `errors.Is(err, otshape.ErrConflictingAlternates)` (SHAPE-020).
 
+GSUB 2 empty sequences now produce a zero-length replacement edit and successful
+application. Direct continuation stays at the deletion index; contextual input
+maps mark deleted targets unavailable and update the matched-input end. Earlier
+deletions survive later errors. Shaping removes side-array entries and preserves
+level-0 cluster coverage by merging a disappearing cluster into a survivor,
+without replacing the survivor's source anchor or feature mask. Regressions are
+in `otlayout/deletion_test.go` and `otshape/deletion_test.go` (SHAPE-017).
+
 ### Isolated spans and attachments
 
 `applyLookupIsolatedSpan` works on detached glyph/position slices, for example
@@ -182,6 +190,11 @@ return a partial shaped-result object. A lookup failure withholds the current
 in-progress chunk. Previously emitted prefixes remain in the sink, and input
 may already have been consumed. A sink error can itself leave partially written
 output.
+
+Zero-output carry is finalized only at known EOF. At capacity before EOF,
+`ErrZeroOutputBufferFull` preserves earlier sink output and withholds the current
+carry; smaller provisional empty results retain input for more context.
+`internal/hbcmp/deletion_test.go` verifies this for both public APIs.
 
 Applications requiring atomic delivery must stage sink output and commit only
 after success. Retrying requires retained input and an appropriate sink; neither

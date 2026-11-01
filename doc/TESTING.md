@@ -5,6 +5,39 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## SHAPE-017 resolution (2026-11-01)
+
+GSUB 2 empty sequences delete their input and journal the edit. Regression tests
+cover contextual targets/continuation, partial errors, shared positions, and
+survivor metadata. Leading deletion carries the disappearing cluster start
+forward, with surviving source anchors and masks unchanged. Both public APIs
+retain zero-output raw carry until EOF; capacity before known EOF returns the
+agreed `ErrZeroOutputBufferFull`, including exact-cap input. Separate tests cover
+lookahead changing an initially empty result, scope closure, and prior sink output.
+
+Twenty-four existing whole/lookahead/carry deletion matrix cells are promoted
+with unchanged HarfBuzz expectations. One new `ddaadd` capture verifies clusters
+`[0,3]`, surviving glyphs `[1,1]`, and advances `[580,600]`, adding twelve passing
+cells. The original twelve streaming captures, their capture metadata, and the
+progress font remain unchanged. The matrix now has thirteen captures plus four
+reused text cases: 340 comparisons, 218 ordinary and 122 tagged.
+
+Sixteen old tiny/forced deletion comparisons and eight new edge-deletion
+comparisons remain under SHAPE-015 with complete full-output expectations.
+They expose cut-related context loss or the deliberate zero-output capacity
+limit. Ordinary contract tests separately assert the specific error; the
+independent oracle is not replaced with an error expectation. The former
+SHAPE-017 tagged wrapper is removed. General buffer limits remain separate.
+
+Recorded implementation verification: `go test ./... -count=1`,
+`go test -race ./... -count=1`,
+`go build ./...`, and `go vet ./...` passed. Discovery with `shaping_knownbugs`
+and a 30-second timeout has ten failing top-level tests (previously eleven),
+without new non-deletion failures, fixture errors, panics, or timeouts. Read-only
+`capture_harfbuzz_streaming.py` verifies all thirteen independent captures.
+SHAPE-017 is accepted and archived in
+[Resolved findings](SHAPING_FINDINGS.md#shape-017--gsub-deletion-is-ignored).
+
 ## Reviewed SHAPE-020 resolution (2026-11-01)
 
 The shared GSUB/GPOS compiler now groups features by explicit pause boundaries
@@ -112,7 +145,8 @@ The shared endpoint fix covers GSUB 5/6 and GPOS 7/8, all three formats. Focused
 checks cover ignored marks, lookahead boundaries, nested expansion/contraction,
 partial failures, and whole/isolated-run progression. The approved forward
 class-matching offset correction has a separate forward/backward regression.
-Empty-record/no-applying-child behavior and SHAPE-017/019 remain separate.
+Empty-record/no-applying-child behavior and SHAPE-019 remain separate.
+Intentional deletion was subsequently resolved under SHAPE-017.
 
 ## Reviewed SHAPE-005 resolution (2026-10-29)
 
@@ -188,11 +222,11 @@ within the same Go module.
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
 | [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. One AOTS record and ten real-text cases are behind `shaping_knownbugs`. `feature_precedence_test.go` reuses two Gentium captures with a probe engine to check engine/user feature precedence; two of its five cases are tagged (SHAPE-021). The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. No runner invokes HarfBuzz during tests. |
-| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and 31 independently captured Latin/Hebrew cases in `text/baselines.json`. Twelve additional records in `text/streaming.json` supply streaming/scope/progress oracles. `text/README.md`, `text/NORMALIZATION.md`, and `text/STREAMING.md` record semantics, commands, and results. |
+| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and 31 independently captured Latin/Hebrew cases in `text/baselines.json`. Thirteen additional records in `text/streaming.json` supply streaming/scope/progress oracles. `text/README.md`, `text/NORMALIZATION.md`, and `text/STREAMING.md` record semantics, commands, and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Fourteen selected records are executed (five GSUB, nine GPOS; thirteen passing, one tagged failure, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
 | [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Three derived normalization fonts remove a cmap mapping, mark features, or GPOS; `fonts/NORMALIZATION.md` records their generation and licenses. The repository-authored `ShaperTestProgress.ttf` isolates expansion, deletion, and contraction; `fonts/STREAMING.md` records its reproducible construction. The five repository-authored `ShaperTestLookupOrder-*.ttf` fonts isolate GSUB/GPOS lookup order and shared alternate selection; `fonts/LOOKUP_ORDER.md` records their construction. Also contains Calibri and Go fonts. |
-| [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` prepares fonts; `recover_harfbuzz_aots.py` recovers upstream records; `capture_harfbuzz_text.py` captures/checks complete text output with HarfBuzz 15.0.0. `build_normalization_fonts.py` reproducibly derives capability-reduced fixtures with FontTools. `build_streaming_font.py` builds the progress fixture; `build_lookup_order_fonts.py` builds the lookup-order fixtures; `capture_harfbuzz_streaming.py` captures/checks the twelve additional oracles. These are not Go test drivers. |
+| [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` prepares fonts; `recover_harfbuzz_aots.py` recovers upstream records; `capture_harfbuzz_text.py` captures/checks complete text output with HarfBuzz 15.0.0. `build_normalization_fonts.py` reproducibly derives capability-reduced fixtures with FontTools. `build_streaming_font.py` builds the progress fixture; `build_lookup_order_fonts.py` builds the lookup-order fixtures; `capture_harfbuzz_streaming.py` captures/checks the thirteen additional oracles. These are not Go test drivers. |
 | [`ot-tools/`](../ot-tools/) | Manual diagnostics: `shape` prints glyph output, `view` renders glyph proofs, and `font` inspects tables. Useful for investigation; visual inspection does not replace output assertions. |
 | [`internal/fontload/`](../internal/fontload/) | Shared font-byte/SFNT loading support. It does not select or execute shaping features. |
 
@@ -670,14 +704,14 @@ SHAPE-011 subsequently settles indexed ranges inside initial base/mark groups:
 select by the group start; starts inside exclude it and ends inside include it.
 Feature events inside groups remain a separate context issue (SHAPE-016).
 
-The [streaming/scope matrix](../internal/hbcmp/testdata/text/STREAMING.md) adds
-twelve independent captures and reuses four original text cases. Five buffer
-profiles × both public entry points × both flush modes yield 320 executions:
-182 pass, 138 remain tagged. The runner validates actual push/pop schedules
+The [streaming/scope matrix](../internal/hbcmp/testdata/text/STREAMING.md) contains
+thirteen independent captures and reuses four original text cases. Five buffer
+profiles × both public entry points × both flush modes yield 340 executions:
+218 pass, 122 remain tagged. The runner validates actual push/pop schedules
 against the equivalent HB ranges at every scalar and checks complete output,
 EOF consumption, early emission, and bounded source/sink activity. Ten additional
 empty-input and balanced empty-scope checks pass. Remaining findings cover
-streaming context (SHAPE-015), scope context (SHAPE-016), and deletion (SHAPE-017);
+streaming context/capacity (SHAPE-015) and scope context (SHAPE-016);
 SHAPE-011 promoted 32 mark cells unchanged; eight tiny-buffer mark cells remain
 under SHAPE-015 with complete cluster/position expectations.
 SHAPE-002 promoted eight matrix cells; remaining tiny/forced range failures
@@ -687,7 +721,8 @@ promoted eight more complete matrix cells: whole nested scopes and whole/lookahe
 accented scopes, rune input with both flush modes. Eight remaining tiny/forced
 scope cells retain their full expectations under SHAPE-015.
 Run with `-timeout=30s` to bound loops without source/sink activity. Actual
-zero-output progress remains blocked because deletion currently does nothing.
+zero-output progress and explicit capacity errors are covered by SHAPE-017;
+whole/lookahead/carry deletion captures pass unchanged.
 
 Go tests require neither HarfBuzz nor Python/FontTools. HarfBuzz is needed only
 for capture/check preparation; FontTools is needed only to derive/check the
@@ -847,8 +882,8 @@ continue to pass, but expanding their coverage is not a current priority.
    ligatures, pairs, normalization, mark failures, nested push/pop restoration,
    compaction, EOF tails, expansion, contraction, and deletion. Five buffer
    profiles, both APIs, and both flush modes distinguish passing cells from
-   remaining failures (SHAPE-015–017). Deletion must work before actual
-   zero-output progress can be verified.
+   remaining failures (SHAPE-015/016). SHAPE-017 now covers deletion,
+   zero-output completion at EOF, and explicit capacity errors before known EOF.
    The [agreed buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented)
    permits a generous required minimum and practical sequence/context limits.
    When implemented, test explicit rejection below the minimum, specific errors

@@ -41,6 +41,25 @@ func mergeClusterRange(clusters []uint32, start, end int) {
 	}
 }
 
+// mergeDeletionClusters preserves level-0 cluster coverage when the last glyph
+// of a cluster disappears. Prefer the preceding surviving group; at the start
+// of a run merge into the following group. An already surviving cluster needs
+// no change. Source anchors and feature masks are deliberately untouched.
+// This follows HarfBuzz 15 hb_buffer_t::delete_glyph's cluster merge rules.
+func mergeDeletionClusters(clusters []uint32, start, end int) {
+	cluster := clusters[start] // the consumed range has already been merged
+	if start > 0 && clusters[start-1] == cluster || end < len(clusters) && clusters[end] == cluster {
+		return
+	}
+	if start > 0 {
+		if cluster < clusters[start-1] {
+			mergeClusterRange(clusters, start-1, end)
+		}
+	} else if end < len(clusters) {
+		mergeClusterRange(clusters, start, end+1)
+	}
+}
+
 type runSpan struct {
 	start int
 	end   int

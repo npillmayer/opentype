@@ -102,16 +102,22 @@ func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts Bu
 		runes, clusters := ws.copyRaw(strState)
 		runes, clusters, sources := ws.normalize(runes, clusters, params.Font, ctx, engine, plan)
 		run := ws.mapMain(runes, clusters, sources, nil, params.Font)
-		if run.Len() == 0 {
-			ing.compact(len(strState.rawRunes))
-			if strState.eof {
-				return nil
-			}
-			continue
-		}
-
 		if err := shapeMappedRun(run, engine, plan); err != nil {
 			return err
+		}
+		if run.Len() == 0 {
+			if strState.eof {
+				ing.compact(len(strState.rawRunes))
+				return nil
+			}
+			// Zero output is not proof that more input cannot affect shaping.
+			if len(strState.rawRunes) >= strState.cfg.maxBuffer {
+				return ErrZeroOutputBufferFull
+			}
+			if _, err := ing.fillRunesLimit(src, strState.cfg.maxBuffer); err != nil {
+				return err
+			}
+			continue
 		}
 		cut := findFlushCut(run, strState)
 		if !cut.ready {

@@ -147,11 +147,21 @@ reading. It then:
    postprocessing. Masks are initialized before `SetupMasks`, and its changes
    are preserved during execution (SHAPE-001 fixed). The exact hook order is described in
    [SHAPER_INTERFACES.md](SHAPER_INTERFACES.md).
-4. Calls `findFlushCut`.
+4. Handles zero output as described below; otherwise calls `findFlushCut`.
 5. If no cut is ready, fills up to max and reshapes.
 6. Emits the selected glyph prefix, then removes the corresponding raw prefix
    with `compactCarry`.
 7. Repeats until EOF and no carry remains.
+
+For an empty shaped result, both APIs retain raw carry until EOF is known.
+They fill up to `MaxBuffer` and reshape, because later context can change an
+initially empty result. At EOF they consume the raw carry without emitting
+anything; event mode also validates scope closure. If raw capacity is reached
+before EOF is known and output is still empty, they return
+`ErrZeroOutputBufferFull`, detectable with `errors.Is`. Input ending exactly at
+the cap is included: no extra read is made to discover EOF. Earlier sink writes
+remain. This SHAPE-017 rule also handles empty normalized/mapped results; it does
+not establish a general safe-cut rule for nonempty output (SHAPE-015).
 
 Compaction preserves global raw cluster IDs. It copies the unconsumed suffix
 within the existing slices; it does not renumber clusters or simply remove
@@ -265,10 +275,11 @@ configuration validity, raw buffer size, and emitted cut bounds. It does not
 assert a complete semantic context-safety invariant or prove progress for every
 possible engine transformation.
 
-In particular, ordinary `Shape` checks for empty mapped output before GSUB,
-but has no equivalent consume-carry branch when shaping later deletes all
-glyphs. `findFlushCut` returns no decision for an empty run. That path needs a
-termination regression; the event loop does have an empty-shaped-output branch.
+SHAPE-017 now tests all-deletion through both public APIs, including bounded
+source activity, EOF completion, exact-cap and over-cap errors, preservation of
+previous output, and retention of lookahead after an initially empty result.
+`findFlushCut` still returns no decision for empty output; both loops handle
+that case explicitly before calling it.
 
 The review reproduced:
 

@@ -91,9 +91,17 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 			return err
 		}
 		if run.Len() == 0 {
-			ing.compact(len(st.rawRunes))
 			if st.eof {
+				ing.compact(len(st.rawRunes))
 				return stack.ensureClosed()
+			}
+			// Match Shape: retain raw context until EOF is known, or fail at
+			// the hard cap rather than silently discarding a provisional result.
+			if len(st.rawRunes) >= st.cfg.maxBuffer {
+				return ErrZeroOutputBufferFull
+			}
+			if _, err := ing.fillEventsLimit(src, stack, plansByID, build, st.cfg.maxBuffer); err != nil {
+				return err
 			}
 			continue
 		}

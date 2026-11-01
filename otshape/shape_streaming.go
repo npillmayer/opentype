@@ -1,9 +1,17 @@
 package otshape
 
 import (
+	"errors"
 	"fmt"
 	"io"
 )
+
+// ErrZeroOutputBufferFull means shaping produced no glyphs, but the raw input
+// reached MaxBuffer before EOF was known. The carry cannot be discarded safely:
+// additional context may change the result. Earlier sink writes are retained.
+// This conservative limit also applies when input ends exactly at MaxBuffer,
+// since discovering EOF would require another source read.
+var ErrZeroOutputBufferFull = errors.New("otshape: buffer full before zero-output shaping can be finalized")
 
 const (
 	defaultHighWatermark = 3500

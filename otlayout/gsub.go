@@ -80,8 +80,8 @@ func gsubLookupType1Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 
 // LookupType 2: Multiple Substitution Subtable
 //
-// A Multiple Substitution (MultipleSubst) subtable replaces a single glyph with more
-// than one glyph, as when multiple glyphs replace a single ligature.
+// A Multiple Substitution (MultipleSubst) subtable replaces a single glyph with
+// zero or more glyphs. An empty sequence deletes it.
 
 // GSUB LookupSubtable Type 2 Format 1 defines a count of offsets in the sequenceOffsets
 // array (sequenceCount), and an array of offsets to Sequence tables that define the output
@@ -109,9 +109,8 @@ func gsubLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		return pos, false, buf, nil, nil
 	}
 	glyphs := payload.Sequences[inx]
-	if len(glyphs) == 0 {
-		return pos, false, buf, nil, nil
-	}
+	// An empty sequence is a successful deletion. ReplaceGlyphs journals it
+	// and keeps positions aligned; the next candidate shifts into mpos.
 	for i, glyph := range glyphs {
 		if err := ctx.env.validateOutputGlyph(glyph); err != nil {
 			return pos, false, buf, nil, fmt.Errorf("GSUB 2|1 output %d: %w", i, err)

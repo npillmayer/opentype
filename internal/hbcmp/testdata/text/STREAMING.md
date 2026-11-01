@@ -26,6 +26,23 @@ are lost at cuts; the tiny accented case also splits normalization. Nested
 output counts are 34/31 instead of 28, accented counts 16/14 instead of 13.
 No captures, feature schedules, or assertions changed.
 
+**SHAPE-017 resolution (2026-11-01):** empty GSUB 2 sequences
+now delete glyphs. Twenty-four existing deletion comparisons are promoted
+unchanged (whole/lookahead/carry, both APIs, both flush modes). One new `ddaadd`
+capture adds twelve passing comparisons and verifies leading/trailing deletion,
+clusters `[0,3]`, and kerning advances `[580,600]`. It uses the existing progress
+font, same HarfBuzz 15.0.0 executable and capture options; all previous twelve
+records and capture metadata are unchanged. The exact command is stored in JSON.
+
+Tiny/forced full-output expectations remain under SHAPE-015: mixed deletion loses
+context at cuts; all-deleted buffers now return `ErrZeroOutputBufferFull` when
+capacity is reached before EOF is known. This conservative error, including
+exact-cap input, has separate ordinary contract tests. The historical full-output
+oracles are retained, without asserting that these small profiles are supported.
+Both APIs retain provisional empty carry for more context and finalize it only
+at EOF. Additional tests cover lookahead changing the empty result, scope closure,
+and preservation of earlier output. No general streaming safety fix is claimed.
+
 ## What is now implemented
 
 [streaming_baselines_test.go](../../streaming_baselines_test.go) applies the same
@@ -36,10 +53,10 @@ records are converted to logical order by the existing `textLogicalOutput`;
 the captured data remains unchanged. Small-buffer output is never used as an
 oracle, and whole-versus-streaming equality is not the primary assertion.
 
-[streaming.json](streaming.json) adds twelve independently captured records.
+[streaming.json](streaming.json) contains thirteen independently captured records.
 Four existing text records are reused as controls and mark-context cases.
-The total matrix is **16 cases × 5 profiles × 2 entry points × 2 flush modes =
-320 executions: 182 passing and 138 tagged failures**. Ten separate empty-input
+The total matrix is **17 cases × 5 profiles × 2 entry points × 2 flush modes =
+340 executions: 218 passing and 122 tagged comparisons**. Ten separate empty-input
 checks pass, including balanced nested scopes with no rune events. Ordinary
 tests validate every captured record/font, including tagged cases.
 
@@ -62,7 +79,7 @@ an emission with a particular internal safe-cut decision.
 Source read and output budgets abort runaway I/O; recovered panics fail the
 individual case. Use the documented Go timeout to catch loops that perform no
 I/O—these callbacks cannot interrupt such a loop themselves. No hang, panic, or
-budget exhaustion occurred with the final fixtures. All 138 remaining failures are exact
+budget exhaustion occurred with the final fixtures. The original 138 remaining failures were exact
 output mismatches. These checks establish progress for tested inputs, not a
 general termination proof.
 
@@ -111,8 +128,9 @@ Changing flush mode alone does not repair any of these mismatches.
 | `scope_pair` | tiny, forced | all |
 | `scope_accent` | all | tiny, forced |
 | `progress_expand` | none | none |
-| `progress_delete` | all | all |
-| `progress_all_deleted` | all | all |
+| `progress_delete` | tiny, forced | tiny, forced |
+| `progress_all_deleted` | tiny, forced (capacity error) | tiny, forced (capacity error) |
+| `progress_delete_edges` | tiny, forced | tiny, forced |
 | `progress_contract` | tiny, forced | tiny, forced |
 | `latin_office_liga_off` | none | none |
 | `latin_avatar_kern_off` | none | none |
@@ -129,9 +147,9 @@ SHAPE-015; the original HarfBuzz expectations are unchanged.
 The [synthetic font](../../../../testdata/fonts/STREAMING.md) gives independent
 expansion (`abababa`), deletion (`adadada`), all-deletion (`dddddd`), and
 contraction (`afifiafifi`) expectations. Expansion passes all configurations;
-contraction passes whole/lookahead/carry. Deletion is currently a no-op
-(SHAPE-017). Consequently the all-deletion oracle is present, but execution of
-the actual zero-glyph output branch remains blocked until deletion works.
+contraction and deletion pass whole/lookahead/carry. All-deletion now exercises
+actual zero-output completion at EOF (SHAPE-017). The new `ddaadd` case covers
+cluster inheritance after leading deletion and unchanged kerning after deletion.
 Empty input and empty balanced scopes do pass; they are direct API identity
 tests, not mislabelled HarfBuzz captures.
 
@@ -165,8 +183,8 @@ python3 testdata/scripts/capture_harfbuzz_streaming.py
 python3 testdata/scripts/build_streaming_font.py  # recorded FontTools version required
 ```
 
-The ordinary full suite passes. Three top-level tagged matrix groups cover
-SHAPE-015 (stream context), SHAPE-016 (scope context), and SHAPE-017 (deletion). SHAPE-018 forward-scan cells were promoted
+The ordinary full suite passes. Two top-level tagged matrix groups cover
+SHAPE-015 (stream context/capacity) and SHAPE-016 (scope context). SHAPE-018 forward-scan cells were promoted
 or retained under SHAPE-015 as described above. The remaining cells
 are statically assigned by `streamingFinding`; no outcome-driven skip or buggy
 expectation is used. Promote cells when their full independent comparison passes.
@@ -174,6 +192,7 @@ expectation is used. Promote cells when their full independent comparison passes
 This completes the initial runner/event/progress setup. Remaining expansion
 includes scopes inside merged clusters, additional feature values, longer
 combining sequences, error/cancellation scenarios beyond the existing unit
-tests, and broader buffer sweeps. Actual all-deletion progress and context-safe
-streaming mark placement remain blocked by recorded production defects. See
+tests, and broader buffer sweeps. All-deletion completion at EOF and explicit
+zero-output capacity errors are covered by the resolved SHAPE-017. Context-safe
+streaming mark placement remains blocked by recorded production defects. See
 [SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md).

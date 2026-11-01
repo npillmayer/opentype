@@ -106,7 +106,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
 | [SHAPE-015](#shape-015--streaming-cuts-lose-shaping-context) | reproduced | Buffer cuts change ligatures, pair positioning, and normalization |
 | [SHAPE-016](#shape-016--feature-scopes-sever-unrelated-lookup-context) | reproduced | Feature-event spans break kerning across scope boundaries |
-| [SHAPE-017](#shape-017--gsub-deletion-is-ignored) | reproduced | Empty GSUB multiple-substitution sequences leave glyphs unchanged |
 | [SHAPE-019](#shape-019--ligature-substitution-deletes-ignored-marks) | reproduced | Ligature span replacement deletes skipped marks; component association remains to be verified |
 | [SHAPE-021](#shape-021--engine-and-user-feature-settings-combine-as-off-wins) | reproduced | Engine and user feature settings combine so that "off" wins, contrary to the agreed precedence |
 
@@ -119,6 +118,7 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-007 — final mark positioning](#shape-007--mark-attachments-do-not-resolve-to-origins),
 [SHAPE-008 — GDEF mark advances](#shape-008--marks-retain-nominal-advances),
 [SHAPE-011 — base/mark clusters](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0),
+[SHAPE-017 — GSUB deletion](#shape-017--gsub-deletion-is-ignored),
 [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks),
 and [SHAPE-020 — stage lookup order](#shape-020--default-features-run-in-feature-order-instead-of-lookup-order).
 
@@ -423,6 +423,15 @@ retained context are insufficient for the tested lookup/normalization
 relationships. A complete repair must consider both safe-cut information and
 hard-cap policy; this discovery batch does not prescribe that implementation.
 
+**SHAPE-017 update (2026-11-01):** deletion now works. Sixteen original
+mixed/all-deletion tiny/forced comparisons, plus eight from the new leading/
+trailing-deletion capture, retain their complete expectations here. Mixed
+outputs lose kerning or cluster context at cuts; all-deleted carry at capacity
+returns the agreed `ErrZeroOutputBufferFull` instead of unsafe progress. This
+error is separately tested as a valid conservative limit, not reported as a new
+lookup defect. Reclassification of unsupported profiles belongs to the broader
+buffer contract; whole/lookahead/carry deletion comparisons are ordinary.
+
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE015' -count=1 -timeout=30s -v
 ```
@@ -452,38 +461,6 @@ This reproduces a scope-boundary problem independently of SHAPE-015.
 
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE016' -count=1 -timeout=30s -v
-```
-
-## SHAPE-017 — GSUB deletion is ignored
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE017GSUBDeletion`.
-
-**Expected behavior and basis:** GSUB type 2 with an empty replacement sequence
-removes the matched glyph. The repository-authored
-[progress font](../testdata/fonts/STREAMING.md) contains `sub d by NULL` and
-both required layout tables; normal parsing is used. HarfBuzz supplies the
-independent empty/nonempty outputs.
-
-**Reproduction:** `adadada` and `dddddd`, Latn/en/LTR, `test=1`, all five
-buffer profiles, both APIs, both flush modes.
-
-**Observed:** `adadada` remains seven glyphs `[1,3,1,3,1,3,1]`, each advancing
-600. Expected are four `a` glyphs at clusters `[0,2,4,6]`, with advances
-`[580,580,580,600]` after pair positioning. The all-deletion case emits six `d`
-glyphs instead of none. Both return nil and consume through EOF. Expansion
-`b → b b` passes every configuration, and ligature contraction passes the
-whole/lookahead/carry profiles.
-
-**Implementation evidence:** `gsubLookupType2Fmt1` in
-[gsub.go](../otlayout/gsub.go) returns “not applied” when the replacement
-sequence is empty, bypassing deletion. Consequently the all-deletion test is
-installed but cannot yet verify actual zero-output progress. Empty input and
-balanced event-only scopes pass separately. HB's exact newline serialization
-for all-deleted output is preserved in capture metadata and accepted only for
-this designated case; missing/null output is rejected.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE017' -count=1 -timeout=30s -v
 ```
 
 ## SHAPE-019 — Ligature substitution deletes ignored marks
@@ -519,7 +496,7 @@ SHAPE-007/008 now resolve anchor offsets and cancel advances for surviving
 GDEF marks in the agreed horizontal Latin/Hebrew scope. Keep the full
 oracle tagged until all its blockers are resolved; a future mark-preservation
 fix should also have an isolated regression that can pass independently of GPOS.
-This differs from SHAPE-017, where an intentional empty substitution is ignored.
+This differs from intentional empty substitution, now implemented under SHAPE-017.
 
 **Verification:** reproduced during the SHAPE-005 review on 2026-10-29 with the
 classification fix in the working tree. This reassignment adds no test and does
@@ -610,8 +587,8 @@ The shared-API and initial AOTS batches are not a complete defect inventory.
 and earlier inspection/review observations. Next shared-API cases include
 Latin/Hebrew script and language selection, ranges/scopes inside merged
 clusters, additional feature values, and broader buffer sweeps. The initial
-streaming/event/progress setup is complete; successful all-deletion progress
-remains blocked by SHAPE-017. Whole-input range drift after normalization is
+streaming/event/progress setup is complete; SHAPE-017 now covers successful
+all-deletion at EOF and explicit zero-output capacity errors. Whole-input range drift after normalization is
 covered by an ordinary SHAPE-002 regression. Add stable findings here as those
 cases are investigated; do not silently equate missing coverage with a bug.
 
@@ -866,9 +843,10 @@ fourteen failing top-level tests, without build failures, panics, or timeouts.
 
 **Remaining scope:** empty-record and nonapplying-child rules retain their prior
 behavior; a value-preserving substitution still counts as application.
-Intentional deletion (SHAPE-017), ignored-mark preservation (SHAPE-019), reverse
-traversal, and streaming context safety remain separate. This resolution does
-not establish complete contextual shaping conformance.
+Intentional deletion was subsequently resolved under SHAPE-017. Ignored-mark
+preservation (SHAPE-019), reverse traversal, and streaming context safety remain
+separate. This resolution does not establish complete contextual shaping
+conformance.
 
 ```sh
 go test ./internal/hbcmp -run '^TestAOTSGSUBBaselines/gsub_context1_next_glyph' -count=1 -v
@@ -1048,6 +1026,72 @@ feature-event barriers (SHAPE-016) remain open. General emoji and other
 script-specific sequence rules are not claimed. Conservative partial compaction
 still rejects repeated output clusters; separate source anchors do not prove
 that a prefix is safe to emit.
+
+### SHAPE-017 — GSUB deletion is ignored
+
+**Status:** fixed; accepted 2026-11-01. Passing comparisons run in
+`TestHarfBuzzStreamingBaselines`; the former `TestKnownBugSHAPE017GSUBDeletion`
+wrapper is removed. Remaining streaming comparisons belong to SHAPE-015.
+
+**Cause and fix:** GSUB type 2 treated an empty replacement sequence as “not
+applied.” Empty sequences now delete through `ReplaceGlyphs` and its edit
+journal, returning successful application at the deletion index so the shifted
+next glyph is visited. Contextual input maps skip deleted targets and retain the
+edited continuation; positions and side arrays follow the edit. Deleting the
+last glyph of a cluster merges its cluster into a survivor, backward when
+available and forward at the run start, matching
+[HarfBuzz 15's deletion rules](https://github.com/harfbuzz/harfbuzz/blob/15.0.0/src/hb-buffer.cc#L621).
+Survivors keep their own source anchors, masks, and other metadata.
+
+**Agreed zero-output contract (2026-11-01):** both public APIs consume an
+all-deleted carry only when EOF is known. Before EOF they retain raw context,
+read up to `MaxBuffer`, and reshape. If the raw buffer fills with no output and
+EOF remains unknown, they return `otshape.ErrZeroOutputBufferFull`. This includes
+input whose length exactly equals the cap: an additional read would be needed
+to discover EOF. Previously emitted output remains; provisional empty carry is
+not discarded. `ShapeEvents` still checks for unclosed feature scopes at EOF.
+This fixes the missing zero-output progress path in `Shape` and premature carry
+discard in `ShapeEvents`. The broader minimum capacity, context limits, and
+safe-cut policy remain under SHAPE-015.
+
+**Regression coverage:** the normal-parsed
+[progress font](../testdata/fonts/STREAMING.md) contains `sub d by NULL` and both
+required layout tables. Unchanged independent HarfBuzz captures expect four
+`a` glyphs from `adadada`, at clusters `[0,2,4,6]` with advances
+`[580,580,580,600]`, and no output from `dddddd`. Twenty-four comparisons
+(whole/lookahead/carry × both APIs × both flush modes) are promoted. A new
+independent `ddaadd` capture adds twelve passing comparisons for leading,
+trailing, and consecutive deletion, with clusters `[0,3]` and advances
+`[580,600]`. All twelve prior streaming captures, their metadata, and the font
+binary remain unchanged.
+
+Focused regressions in [otlayout/deletion_test.go](../otlayout/deletion_test.go),
+[otshape/deletion_test.go](../otshape/deletion_test.go), and
+[internal/hbcmp/deletion_test.go](../internal/hbcmp/deletion_test.go) cover direct,
+extension, and contextual deletion, shared positions, journals and partial
+errors, deleted contextual targets, continuation, survivor masks/source anchors,
+cluster merging, syllable-isolated execution, retained lookahead context after
+an initially empty result, bounded capacity errors, exact-cap input, preservation
+of earlier sink writes, and feature-scope closure after all-deletion.
+
+**Remaining scope:** tiny/forced mixed-deletion profiles still lose kerning
+context; all-deleted profiles now fail explicitly at capacity. These full-output
+comparisons, including the new edge capture, remain tagged under SHAPE-015 with
+unchanged expectations. Separate ordinary tests assert the exact capacity error.
+General buffer-contract work can later reclassify unsupported configurations.
+SHAPE-016 event barriers and SHAPE-019 ignored-mark preservation remain separate.
+
+**Recorded implementation verification (2026-11-01):** full ordinary and race
+suites, build, and vet passed. Discovery has ten failing top-level tests, down
+from eleven; the SHAPE-017 wrapper is gone. The streaming matrix has 340
+comparisons: 218 ordinary and 122 tagged. Outside deletion and its
+reclassification, failure assignments are unchanged. Read-only preparation
+verified all thirteen streaming captures. See [TESTING.md](TESTING.md) and the
+[matrix report](../internal/hbcmp/testdata/text/STREAMING.md).
+
+```sh
+go test ./otlayout ./otshape ./internal/hbcmp -run 'Deletion|SHAPE017|TestHarfBuzzStreamingBaselines/progress_' -count=1 -timeout=30s
+```
 
 ### SHAPE-018 — Forward lookup scans bypass feature masks
 

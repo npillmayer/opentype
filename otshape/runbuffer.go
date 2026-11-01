@@ -897,6 +897,9 @@ func (rb *runBuffer) applyLayoutEdit(edit otlayout.EditSpan) {
 	if rb.Clusters != nil && edit.From < edit.To {
 		// Consuming a base must also merge any surviving marks in its group.
 		mergeClusterRange(rb.Clusters, edit.From, edit.To)
+		if edit.Len == 0 {
+			mergeDeletionClusters(rb.Clusters, edit.From, edit.To)
+		}
 		cluster = rb.Clusters[edit.From]
 	}
 	if rb.SourceAnchors != nil && edit.From < edit.To {

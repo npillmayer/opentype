@@ -1755,6 +1755,66 @@
           }
         ]
       }
+    },
+    {
+      "id": "progress_delete_edges",
+      "text": "ddaadd",
+      "font_path": "testdata/fonts/ShaperTestProgress.ttf",
+      "font_sha256": "6b4bb3ea60b769f0b385eeed74dc79ab50e61628f458c1a1368548acd59293be",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestProgress.ttf",
+        "--unicodes=U+0064,U+0064,U+0061,U+0061,U+0064,U+0064",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=test=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestProgress.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "test=1"
+          ]
+        },
+        "input": [
+          100,
+          100,
+          97,
+          97,
+          100,
+          100
+        ],
+        "output": [
+          {
+            "g": 1,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 580,
+            "ay": 0
+          },
+          {
+            "g": 1,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          }
+        ]
+      }
     }
   ]
 }

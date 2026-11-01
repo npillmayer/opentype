@@ -23,6 +23,7 @@ CASES = [
     ("progress_delete", "ShaperTestProgress.ttf", "Latn", "en", "ltr", "adadada", ["test=1"]),
     ("progress_all_deleted", "ShaperTestProgress.ttf", "Latn", "en", "ltr", "dddddd", ["test=1"]),
     ("progress_contract", "ShaperTestProgress.ttf", "Latn", "en", "ltr", "afifiafifi", ["test=1"]),
+    ("progress_delete_edges", "ShaperTestProgress.ttf", "Latn", "en", "ltr", "ddaadd", ["test=1"]),
 ]
 
 

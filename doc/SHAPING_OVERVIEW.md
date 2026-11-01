@@ -32,7 +32,7 @@ font shaping. Layout execution uses GSUB/GPOS; there is no legacy kern fallback.
 | [pipeline.go](../otshape/pipeline.go) | Rune input, glyph sink/record, flush modes, and buffering options. |
 | [shape_api.go](../otshape/shape_api.go) | Orchestrator construction, engine selection, ordinary streaming loop, and hook execution. |
 | [normalize.go](../otshape/normalize.go), [glyph_mapping.go](../otshape/glyph_mapping.go), [output.go](../otshape/output.go) | Normalization, rune→glyph cmap mapping, and output materialization. |
-| [shape_events.go](../otshape/shape_events.go), [input_events.go](../otshape/input_events.go), [plan_stack.go](../otshape/plan_stack.go) | Event source adapter/validation, nested feature scopes, plan IDs, and event-shaped spans. |
+| [shape_events.go](../otshape/shape_events.go), [input_events.go](../otshape/input_events.go), [plan_stack.go](../otshape/plan_stack.go) | Event source adapter/validation, nested feature scopes, scope IDs, and shared event shaping. |
 | [shape_streaming.go](../otshape/shape_streaming.go), [shape_runtime.go](../otshape/shape_runtime.go) | Watermarks, raw carry, cut selection, compaction, shared adapters, and reusable workspace. |
 | [plan.go](../otshape/plan.go), [plan_compile.go](../otshape/plan_compile.go), [plan_exec.go](../otshape/plan_exec.go), [position_policies.go](../otshape/position_policies.go), [plan_hooks.go](../otshape/plan_hooks.go) | Private plan structures, feature/mask compilation, stages, pauses, fallback metadata, execution, and position policies. |
 | [lookups.go](../otshape/lookups.go), [annotate.go](../otshape/annotate.go) | Lookup traversal/mask gating, metadata edits, cluster-derived syllables, and glyph-based joiner annotations. |
@@ -90,13 +90,15 @@ Hebrew presentation-form fallback consults enabled, resolved GPOS `mark`
 lookups in the plan (SHAPE-010). Default and required mark support count;
 `mkmk` alone does not. Ranged mark enablement suppresses that fallback
 plan-wide, while positioning still follows its masks. This does not guarantee
-coverage for each glyph or remove normalization boundaries between event plans.
+coverage for each glyph. Event scopes now share that plan-wide signal for the
+whole buffered carry (SHAPE-016).
 
 SHAPE-012/013 cover the shared normalization and font-coverage fixes. Hebrew
 explicitly bypasses the new canonical ordering pass to preserve existing behavior
 until its script-specific ordering follow-up; font-coverage checks still apply.
-Full script-specific HarfBuzz normalization conformance and safe streaming/event
-normalization boundaries are not established.
+Full script-specific HarfBuzz normalization conformance and safe streaming
+normalization boundaries are not established. Feature-event boundaries now share
+normalization and initial grouping within the buffered run (SHAPE-016).
 
 ## Script/language mapping and engines
 
@@ -133,7 +135,8 @@ Known limitations include:
   context, and normalization remain partial.
 - Internal policy support is not fully wired to the public API; declared flags
   and hooks do not all have their intended behavior.
-- Multiple event plans share mutable engine-local state.
+- Event scopes share one combined plan per buffered run. Stateful engines must
+  return independent instances; engine/user precedence remains SHAPE-021.
 
 [SHAPER_PLAN.md](SHAPER_PLAN.md) describes compilation, scheduling, flags,
 policies, and pauses as actually implemented. It supersedes the old proposals

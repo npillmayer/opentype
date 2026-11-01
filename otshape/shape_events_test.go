@@ -125,9 +125,9 @@ func TestFillEventsStoresPlanIDsInCarryBuffer(t *testing.T) {
 		maxBuffer:     8,
 	}
 	st := newStreamingState(cfg)
-	stack := newPlanStack(nil, &plan{})
-	plans := map[uint16]*plan{
-		stack.currentPlanID(): stack.currentPlan(),
+	stack := newPlanStack(nil)
+	plans := map[uint16]featureSet{
+		stack.currentPlanID(): stack.currentFeatures(),
 	}
 	src := &sliceEventSource{
 		events: []InputEvent{
@@ -140,8 +140,7 @@ func TestFillEventsStoresPlanIDsInCarryBuffer(t *testing.T) {
 			{Kind: InputEventRune, Rune: 'B', Size: 1},
 		},
 	}
-	build := func([]FeatureRange) (*plan, error) { return &plan{}, nil }
-	if _, err := fillEventsUntilHighWatermark(src, st, stack, plans, build); err != nil {
+	if _, err := fillEventsUntilHighWatermark(src, st, stack, plans); err != nil {
 		t.Fatalf("fillEventsUntilHighWatermark failed: %v", err)
 	}
 	want := []uint16{2, 1}

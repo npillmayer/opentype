@@ -89,7 +89,6 @@ func (fs featureSet) asGlobalFeatureRanges() []FeatureRange {
 type planFrame struct {
 	id       uint16
 	features featureSet
-	plan     *plan
 }
 
 type planStack struct {
@@ -97,12 +96,10 @@ type planStack struct {
 	nextID uint16
 }
 
-func newPlanStack(rootFeatures []FeatureRange, rootPlan *plan) *planStack {
-	assert(rootPlan != nil, "root plan must not be nil")
+func newPlanStack(rootFeatures []FeatureRange) *planStack {
 	root := planFrame{
 		id:       1,
 		features: newFeatureSet(rootFeatures),
-		plan:     rootPlan,
 	}
 	return &planStack{
 		frames: []planFrame{root},
@@ -123,30 +120,19 @@ func (s *planStack) current() planFrame {
 	return s.frames[len(s.frames)-1]
 }
 
-func (s *planStack) currentPlan() *plan {
-	f := s.current()
-	return f.plan
-}
+func (s *planStack) currentFeatures() featureSet { return s.current().features }
 
 func (s *planStack) currentPlanID() uint16 {
 	f := s.current()
 	return f.id
 }
 
-func (s *planStack) push(settings []FeatureSetting, build func([]FeatureRange) (*plan, error)) (uint16, error) {
+func (s *planStack) push(settings []FeatureSetting) (uint16, error) {
 	assert(s != nil, "plan stack is nil")
-	assert(build != nil, "plan stack build callback is nil")
 	if len(s.frames) == 0 {
 		return 0, errPlanStackUnderflow
 	}
 	nextFeatures := s.current().features.applyPush(settings)
-	nextPlan, err := build(nextFeatures.asGlobalFeatureRanges())
-	if err != nil {
-		return 0, err
-	}
-	if nextPlan == nil {
-		return 0, errShaper("plan builder returned nil plan")
-	}
 	id := s.nextID
 	if id == 0 {
 		return 0, errShaper("plan id overflow")
@@ -155,7 +141,6 @@ func (s *planStack) push(settings []FeatureSetting, build func([]FeatureRange) (
 	s.frames = append(s.frames, planFrame{
 		id:       id,
 		features: nextFeatures,
-		plan:     nextPlan,
 	})
 	return id, nil
 }

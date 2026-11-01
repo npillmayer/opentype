@@ -27,7 +27,10 @@ var (
 //
 // In ShapeEvents, params.Features is restricted to global defaults only:
 // each FeatureRange must have Start==0 and End==0. Feature scoping is performed
-// exclusively via InputEventPushFeatures/InputEventPopFeatures events.
+// exclusively via InputEventPushFeatures/InputEventPopFeatures events. Scopes
+// share normalization and lookup context within each buffered run. Settings at
+// an initial base/mark group's first scalar apply to that entire group. Each
+// carry uses one combined plan and mask budget, validated before shaping.
 // A shaping error prevents emission of the current in-progress chunk. Previously
 // emitted prefixes remain in sink; neither consumed input nor sink writes are
 // rolled back. For atomic delivery, buffer output and commit only after success.
@@ -67,16 +70,11 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 	ing := newStreamIngestor(cfg)
 	st := ing.state()
 	ws := newShapeWorkspace(cfg.maxBuffer)
-	stack := newPlanStack(rootFeatures, rootPlan)
-	plansByID := map[uint16]*plan{
-		stack.currentPlanID(): rootPlan,
-	}
-	build := func(features []FeatureRange) (*plan, error) {
-		return compiler.compile(features)
-	}
+	stack := newPlanStack(rootFeatures)
+	scopesByID := map[uint16]featureSet{stack.currentPlanID(): stack.currentFeatures()}
 
 	for {
-		if _, err := ing.fillEvents(src, stack, plansByID, build); err != nil {
+		if _, err := ing.fillEvents(src, stack, scopesByID); err != nil {
 			return err
 		}
 		if len(st.rawRunes) == 0 {
@@ -86,7 +84,7 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 			continue
 		}
 
-		run, err := shapeEventCarry(ws, st, params, ctx, engine, plansByID)
+		run, err := shapeEventCarry(ws, st, compiler, rootPlan, scopesByID)
 		if err != nil {
 			return err
 		}
@@ -100,7 +98,7 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 			if len(st.rawRunes) >= st.cfg.maxBuffer {
 				return ErrZeroOutputBufferFull
 			}
-			if _, err := ing.fillEventsLimit(src, stack, plansByID, build, st.cfg.maxBuffer); err != nil {
+			if _, err := ing.fillEventsLimit(src, stack, scopesByID, st.cfg.maxBuffer); err != nil {
 				return err
 			}
 			continue
@@ -108,7 +106,7 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 
 		cut := findFlushCut(run, st)
 		if !cut.ready {
-			if _, err := ing.fillEventsLimit(src, stack, plansByID, build, st.cfg.maxBuffer); err != nil {
+			if _, err := ing.fillEventsLimit(src, stack, scopesByID, st.cfg.maxBuffer); err != nil {
 				return err
 			}
 			continue
@@ -116,7 +114,7 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 		assert(cut.glyphCut >= 0 && cut.glyphCut <= run.Len(), "flush decision glyph cut out of bounds")
 		assert(cut.rawFlush >= 0 && cut.rawFlush <= len(st.rawRunes), "flush decision raw cut out of bounds")
 		if cut.glyphCut == 0 {
-			if _, err := ing.fillEventsLimit(src, stack, plansByID, build, st.cfg.maxBuffer); err != nil {
+			if _, err := ing.fillEventsLimit(src, stack, scopesByID, st.cfg.maxBuffer); err != nil {
 				return err
 			}
 			continue
@@ -147,18 +145,16 @@ func fillEventsUntilHighWatermark(
 	src InputEventSource,
 	st *streamingState,
 	stack *planStack,
-	plansByID map[uint16]*plan,
-	build func([]FeatureRange) (*plan, error),
+	scopesByID map[uint16]featureSet,
 ) (int, error) {
-	return fillEventsUntilBufferLimit(src, st, stack, plansByID, build, st.cfg.highWatermark)
+	return fillEventsUntilBufferLimit(src, st, stack, scopesByID, st.cfg.highWatermark)
 }
 
 func fillEventsUntilBufferLimit(
 	src InputEventSource,
 	st *streamingState,
 	stack *planStack,
-	plansByID map[uint16]*plan,
-	build func([]FeatureRange) (*plan, error),
+	scopesByID map[uint16]featureSet,
 	limit int,
 ) (int, error) {
 	assert(src != nil, "event source is nil")
@@ -191,11 +187,11 @@ func fillEventsUntilBufferLimit(
 			st.nextCluster++
 			read++
 		case InputEventPushFeatures:
-			id, err := stack.push(ev.Push, build)
+			id, err := stack.push(ev.Push)
 			if err != nil {
 				return read, err
 			}
-			plansByID[id] = stack.currentPlan()
+			scopesByID[id] = stack.currentFeatures()
 		case InputEventPopFeatures:
 			if err := stack.pop(); err != nil {
 				return read, err
@@ -208,50 +204,30 @@ func fillEventsUntilBufferLimit(
 	return read, nil
 }
 
-func shapeEventCarry(
-	ws *shapeWorkspace,
-	st *streamingState,
-	params Params,
-	ctx SelectionContext,
-	engine ShapingEngine,
-	plansByID map[uint16]*plan,
-) (*runBuffer, error) {
-	assert(ws != nil, "shape workspace is nil")
-	assert(st != nil, "streaming state is nil")
+// shapeEventCarry gives feature scopes one normalization/lookup context. A new
+// engine instance is initialized for the combined plan, so span-local InitPlan
+// state cannot leak from a later push into an earlier or restored scope.
+func shapeEventCarry(ws *shapeWorkspace, st *streamingState, compiler planCompiler,
+	rootPlan *plan, scopesByID map[uint16]featureSet) (*runBuffer, error) {
 	st.assertInvariants()
-	if len(st.rawRunes) == 0 {
-		return ws.beginOut(), nil
+	features, err := eventFeatureRanges(st, compiler.params.Features, rootPlan, scopesByID)
+	if err != nil {
+		return nil, err
 	}
-	if len(st.rawPlanIDs) != len(st.rawRunes) {
-		return nil, errShaper("event carry plan-id alignment mismatch")
+	engine := compiler.engine.New()
+	if engine == nil {
+		engine = compiler.engine
 	}
-	runes, clusters, planIDs := ws.copyRawWithPlanIDs(st)
-
-	out := ws.beginOut()
-	for start := 0; start < len(runes); {
-		end := start + 1
-		pid := planIDs[start]
-		for end < len(runes) && planIDs[end] == pid {
-			end++
-		}
-		pl := plansByID[pid]
-		if pl == nil {
-			return nil, errShaper("missing compiled plan for event span")
-		}
-		segRunes := runes[start:end]
-		segClusters := clusters[start:end]
-		segRunes, segClusters, sources := ws.normalize(segRunes, segClusters, params.Font, ctx, engine, pl)
-		if len(segRunes) == 0 {
-			start = end
-			continue
-		}
-		segPlanIDs := ws.spanPlanIDsFor(pid, len(segRunes))
-		segRun := ws.mapSegment(segRunes, segClusters, sources, segPlanIDs, params.Font)
-		if err := shapeMappedRun(segRun, engine, pl); err != nil {
-			return nil, err
-		}
-		out.AppendRun(segRun)
-		start = end
+	compiler.engine = engine
+	pl, err := compiler.compile(features)
+	if err != nil {
+		return nil, err
 	}
-	return out, nil
+	runes, clusters := ws.copyRaw(st)
+	runes, clusters, sources := ws.normalize(runes, clusters, compiler.params.Font, compiler.ctx, engine, pl)
+	run := ws.mapMain(runes, clusters, sources, nil, compiler.params.Font)
+	if err := shapeMappedRun(run, engine, pl); err != nil {
+		return nil, err
+	}
+	return run, nil
 }

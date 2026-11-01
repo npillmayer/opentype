@@ -63,7 +63,7 @@ func gposLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
-	next, ok := nextMatchable(ctx, buf, mpos+1)
+	next, ok := nextInputMatchable(ctx, buf, mpos+1)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -99,7 +99,7 @@ func gposLookupType2Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
-	next, ok := nextMatchable(ctx, buf, mpos+1)
+	next, ok := nextInputMatchable(ctx, buf, mpos+1)
 	if !ok {
 		return pos, false, buf, nil, nil
 	}
@@ -145,7 +145,7 @@ func gposLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 			basePos := -1
 			baseInx := -1
 			for i := mpos - 1; i >= 0; {
-				prev, ok := prevMatchable(ctx, buf, i)
+				prev, ok := prevInputMatchable(ctx, buf, i)
 				if !ok {
 					break
 				}
@@ -204,7 +204,7 @@ func gposLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 			ligPos := -1
 			ligInx := -1
 			for i := mpos - 1; i >= 0; {
-				prev, ok := prevMatchable(ctx, buf, i)
+				prev, ok := prevInputMatchable(ctx, buf, i)
 				if !ok {
 					break
 				}
@@ -280,7 +280,7 @@ func gposLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 			mark2Pos := -1
 			mark2Inx := -1
 			for i := mpos - 1; i >= 0; {
-				prev, ok := prevMatchable(ctx, buf, i)
+				prev, ok := prevInputMatchable(ctx, buf, i)
 				if !ok {
 					break
 				}
@@ -345,7 +345,7 @@ func gposLookupType7Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	rules := payload.RuleSets[inx]
 	for _, rule := range rules {
 		restPos, ok := matchGlyphSequenceForward(ctx, buf, mpos+1, rule.InputGlyphs)
-		if !ok {
+		if !ok || !inputPositionsEnabled(ctx, restPos) {
 			continue
 		}
 		matchPositions := make([]int, 0, 1+len(restPos))
@@ -389,7 +389,7 @@ func gposLookupType7Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	rules := payload.RuleSets[firstClass]
 	for _, rule := range rules {
 		restPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, payload.ClassDef, rule.InputClasses)
-		if !ok {
+		if !ok || !inputPositionsEnabled(ctx, restPos) {
 			continue
 		}
 		matchPositions := make([]int, 0, 1+len(restPos))
@@ -468,7 +468,7 @@ func gposLookupType8Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	}
 	for _, rule := range rules {
 		inputPos, ok := matchGlyphSequenceForward(ctx, buf, mpos+1, rule.Input)
-		if !ok {
+		if !ok || !inputPositionsEnabled(ctx, inputPos) {
 			continue
 		}
 		matchPositions := make([]int, 0, 1+len(inputPos))
@@ -522,7 +522,7 @@ func gposLookupType8Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	}
 	for _, rule := range rules {
 		inputPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, payload.InputClassDef, rule.Input)
-		if !ok {
+		if !ok || !inputPositionsEnabled(ctx, inputPos) {
 			continue
 		}
 		matchPositions := make([]int, 0, 1+len(inputPos))

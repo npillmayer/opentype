@@ -43,6 +43,15 @@ Both APIs retain provisional empty carry for more context and finalize it only
 at EOF. Additional tests cover lookahead changing the empty result, scope closure,
 and preservation of earlier output. No general streaming safety fix is claimed.
 
+**SHAPE-016 resolution (2026-11-01):** feature events now share one
+normalization and lookup run per buffered carry. Six `scope_pair` event cells
+(whole/lookahead/carry, both flush modes) pass and are promoted unchanged. The
+remaining four tiny/forced event cells retain the complete oracle under
+SHAPE-015. New focused captures and the independent SHAPE-022 discovery are
+recorded separately in [SCOPES.md](SCOPES.md). Existing captures are unchanged.
+The fix is accepted and archived in
+[SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md#shape-016--feature-scopes-sever-unrelated-lookup-context).
+
 ## What is now implemented
 
 [streaming_baselines_test.go](../../streaming_baselines_test.go) applies the same
@@ -56,7 +65,7 @@ oracle, and whole-versus-streaming equality is not the primary assertion.
 [streaming.json](streaming.json) contains thirteen independently captured records.
 Four existing text records are reused as controls and mark-context cases.
 The total matrix is **17 cases × 5 profiles × 2 entry points × 2 flush modes =
-340 executions: 218 passing and 122 tagged comparisons**. Ten separate empty-input
+340 executions: 224 passing and 116 tagged comparisons**. Ten separate empty-input
 checks pass, including balanced nested scopes with no rune events. Ordinary
 tests validate every captured record/font, including tagged cases.
 
@@ -107,9 +116,8 @@ plain rune events with the same global features as `Shape`.
 The nested and accented schedules pass as event input with whole/lookahead/carry
 profiles, including correct restoration and global cluster indexes. Equivalent
 indexed-range input previously failed separately (SHAPE-018, now repaired for
-forward starts). The unrelated-feature
-pair case fails even with whole-input buffering (SHAPE-016), distinguishing
-scope segmentation from the ordinary streaming-context problem (SHAPE-015).
+forward starts). The unrelated-feature pair case now passes with whole/lookahead/
+carry buffering after SHAPE-016. Its tiny/forced failures remain under SHAPE-015.
 
 ## Coverage and current results
 
@@ -124,9 +132,9 @@ Changing flush mode alone does not repair any of these mismatches.
 | `stream_accents` | tiny, lookahead, carry | tiny, lookahead, carry |
 | `stream_hebrew` | tiny, forced | tiny, forced |
 | `stream_range` | tiny, forced | tiny, forced |
-| `scope_nested` | whole, tiny, forced | tiny, forced |
-| `scope_pair` | tiny, forced | all |
-| `scope_accent` | all | tiny, forced |
+| `scope_nested` | tiny, forced | tiny, forced |
+| `scope_pair` | tiny, forced | tiny, forced |
+| `scope_accent` | tiny, forced | tiny, forced |
 | `progress_expand` | none | none |
 | `progress_delete` | tiny, forced | tiny, forced |
 | `progress_all_deleted` | tiny, forced (capacity error) | tiny, forced (capacity error) |
@@ -169,28 +177,29 @@ that output only for `progress_all_deleted`, records the original newline as
 output is rejected; other cases cannot silently acquire empty expectations.
 
 ```sh
-# Ordinary tests, including 182 matrix executions and ten empty-input checks:
+# Ordinary tests, including 224 matrix executions and ten empty-input checks:
 go test ./internal/hbcmp -count=1 -timeout=30s
 
-# Complete discovery suite: 10 failing top-level tests, including three matrix groups.
+# Complete discovery suite: seven failing top-level groups, including SHAPE-015 and SHAPE-022.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=30s
 
-# Observe consumption/emission and one whole-input scope failure:
-go test -tags shaping_knownbugs ./internal/hbcmp -run 'TestKnownBugSHAPE016FeatureScopeContext/scope_pair/whole/events/run$' -count=1 -timeout=30s -v
+# Observe consumption/emission for the promoted whole-input scope regression:
+go test ./internal/hbcmp -run 'TestHarfBuzzStreamingBaselines/scope_pair/whole/events/run$' -count=1 -timeout=30s -v
 
 # Preparation only:
 python3 testdata/scripts/capture_harfbuzz_streaming.py
 python3 testdata/scripts/build_streaming_font.py  # recorded FontTools version required
 ```
 
-The ordinary full suite passes. Two top-level tagged matrix groups cover
-SHAPE-015 (stream context/capacity) and SHAPE-016 (scope context). SHAPE-018 forward-scan cells were promoted
+The ordinary full suite passes. One tagged matrix group covers SHAPE-015
+(stream context/capacity); SHAPE-022 is tracked separately in [SCOPES.md](SCOPES.md).
+The obsolete SHAPE-016 wrapper is removed. SHAPE-018 forward-scan cells were promoted
 or retained under SHAPE-015 as described above. The remaining cells
 are statically assigned by `streamingFinding`; no outcome-driven skip or buggy
 expectation is used. Promote cells when their full independent comparison passes.
 
 This completes the initial runner/event/progress setup. Remaining expansion
-includes scopes inside merged clusters, additional feature values, longer
+includes scopes inside substitution-merged clusters, additional feature values, longer
 combining sequences, error/cancellation scenarios beyond the existing unit
 tests, and broader buffer sweeps. All-deletion completion at EOF and explicit
 zero-output capacity errors are covered by the resolved SHAPE-017. Context-safe

@@ -1,7 +1,6 @@
 package hbcmp
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/npillmayer/opentype/otshape"
@@ -17,12 +16,6 @@ var normalizationBaselineFindings = map[string]string{
 
 func TestSHAPE012013NormalizationBaselines(t *testing.T) {
 	for _, c := range loadTextBaselineFile(t, "testdata/text/normalization.json", normalizationBaselineFindings, nil) {
-		if strings.HasPrefix(c.ID, "norm_range_") {
-			// Indexed ranges remain Shape-only: equivalent event spans would
-			// introduce the separate SHAPE-016 normalization boundary.
-			t.Run(c.ID, func(t *testing.T) { runTextBaseline(t, c) })
-			continue
-		}
 		for _, entry := range []string{"runes", "events"} {
 			t.Run(c.ID+"/"+entry, func(t *testing.T) {
 				n := len(c.Fixture.Input)

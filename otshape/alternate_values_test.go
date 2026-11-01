@@ -19,23 +19,31 @@ func TestSHAPE003RandomSelectionSurvivesCarryAndScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stack := newPlanStack(params.Features, root)
+	stack := newPlanStack(params.Features)
 	// A push of an unrelated feature must preserve the root's negative value.
-	if _, err := stack.push([]FeatureSetting{{Tag: ot.T("kern"), Enabled: false}}, compiler.compile); err != nil {
+	if _, err := stack.push([]FeatureSetting{{Tag: ot.T("kern"), Enabled: false}}); err != nil {
 		t.Fatal(err)
 	}
-	plans := []*plan{root, stack.currentPlan()}
-	if _, err := stack.push([]FeatureSetting{{Tag: ot.T("test"), Enabled: true, Value: math.MinInt}}, compiler.compile); err != nil {
+	pushed, err := compiler.compile(stack.currentFeatures().asGlobalFeatureRanges())
+	if err != nil {
 		t.Fatal(err)
 	}
-	plans = append(plans, stack.currentPlan())
+	plans := []*plan{root, pushed}
+	if _, err := stack.push([]FeatureSetting{{Tag: ot.T("test"), Enabled: true, Value: math.MinInt}}); err != nil {
+		t.Fatal(err)
+	}
+	pushed, err = compiler.compile(stack.currentFeatures().asGlobalFeatureRanges())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans = append(plans, pushed)
 	seen := map[ot.GlyphIndex]bool{}
 	for _, pl := range plans {
 		if pl.randomSeed != 42 {
 			t.Fatal("event plan lost request seed")
 		}
-		// Re-shape overlapping pieces of the original input, as carry and event
-		// spans do. Selection must use the original anchor, not its local index.
+		// Re-shape overlapping pieces of the original input as carry does.
+		// Selection must use the original anchor, not its local index.
 		for _, span := range [][2]int{{0, 32}, {7, 19}, {16, 32}, {7, 19}} {
 			runes := make([]rune, span[1]-span[0])
 			clusters := make([]uint32, len(runes))

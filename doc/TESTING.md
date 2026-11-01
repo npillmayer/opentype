@@ -5,6 +5,39 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## SHAPE-016 resolution (2026-11-01)
+
+Feature events now share normalization, a combined plan/mask layout, and lookup
+context for each buffered carry. Six original `scope_pair` event comparisons
+(whole/lookahead/carry, both flush modes) are promoted unchanged. Four tiny/forced
+event comparisons move to SHAPE-015 with their full expectations retained. The
+original 340-cell streaming matrix now has 224 ordinary and 116 tagged cases.
+
+[SCOPES.md](../internal/hbcmp/testdata/text/SCOPES.md) describes eleven new
+independent HarfBuzz 15 captures: ten pass through both APIs and both flush modes
+(forty comparisons). One exposes SHAPE-022 mark-to-mark attachment across a base
+and remains tagged in four comparisons. The two existing normalization captures
+with indexed ranges now also have equivalent `ShapeEvents` recipes; the original
+fourteen-record normalization corpus has 28 ordinary comparisons. No old capture
+or assertion changed.
+
+Lower-level tests cover masks on all twelve contextual GSUB/GPOS format paths,
+unmasked backtrack/lookahead, ignored marks, and inheritance through nested
+edits, deletion, clones and ligature survivors. Event tests verify combined-plan
+engine state, shared hooks and masks, implicit defaults after pop/compaction,
+stable random choices across combined carry rebuilds, and validation failures
+before output. Existing scope/error, random-value and
+shared-alternate conflict tests remain ordinary. This adds no safe-cut guarantee
+and does not fix engine precedence, cursive finalization or Hebrew ordering.
+
+Recorded implementation verification: `go test ./... -count=1`, targeted race
+tests for `otlayout`, `otshape/...` and `internal/hbcmp`, `go build ./...`, and
+`go vet ./...` passed.
+Tagged discovery has seven expected failing top-level groups (SHAPE-016 removed,
+SHAPE-022 added), no unexpected passing known-bug groups, and no build/panic/
+timeout failures. The accepted fix is archived in
+[Resolved findings](SHAPING_FINDINGS.md#shape-016--feature-scopes-sever-unrelated-lookup-context).
+
 ## SHAPE-012/013 resolution (2026-11-01)
 
 The jointly authorized normalization fix chooses cmap-supported decompositions,
@@ -65,8 +98,8 @@ deletion or disabling component selection independently triggered the relevant
 regressions. Discovery retained nine expected failing groups with no unexpected
 passing groups. Read-only checks reproduced all ten new captures and the font
 byte-for-byte; implementation verification also checked the 35 text and thirteen
-streaming records. Streaming boundaries, event barriers and general mark-to-mark
-compatibility remain separate. The fix is accepted and archived in
+streaming records. SHAPE-016 subsequently removed event barriers within a carry.
+Streaming boundaries and general mark-to-mark compatibility remain separate. The fix is accepted and archived in
 [Resolved findings](SHAPING_FINDINGS.md#shape-019--ligature-substitution-deletes-ignored-marks).
 
 ## SHAPE-010 resolution (2026-11-01)
@@ -82,7 +115,8 @@ Four independent HarfBuzz captures add mark-only, mkmk-only, ranged-on and
 ranged-off coverage. All 31 previous records and provenance are unchanged.
 The text corpus now has 35 cases: 29 ordinary and six tagged. Seven global
 mark-setting cases also run through `ShapeEvents`; indexed ranges use `Shape`
-because event-plan normalization boundaries remain a separate SHAPE-016 issue.
+in that batch. SHAPE-016 subsequently removed event-plan normalization barriers
+within each buffered carry and added focused range/event equivalence coverage.
 
 Pointed shalom now has the correct seven glyphs, clusters and per-glyph positions;
 its full comparison stays tagged for the separate Hebrew internal mark-ordering
@@ -313,7 +347,7 @@ within the same Go module.
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
 | [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. All selected AOTS cases pass; six real-text cases remain behind `shaping_knownbugs`. `feature_precedence_test.go` reuses two Gentium captures with a probe engine to check engine/user feature precedence; two of its five cases are tagged (SHAPE-021). The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. `ligature_marks_test.go` compares ten component cases through both APIs. No runner invokes HarfBuzz during tests. |
-| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json`, 35 Latin/Hebrew cases in `text/baselines.json`, fourteen normalization cases in `text/normalization.json`, ten component cases in `text/ligatures.json`, and thirteen streaming/scope/progress records in `text/streaming.json`. The text reports and `testdata/fonts/LIGATURE_MARKS.md` record semantics, commands, provenance and results. |
+| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json`, 35 Latin/Hebrew cases in `text/baselines.json`, fourteen normalization cases in `text/normalization.json`, eleven scope cases in `text/scopes.json`, ten component cases in `text/ligatures.json`, and thirteen streaming/scope/progress records in `text/streaming.json`. The text reports and `testdata/fonts/LIGATURE_MARKS.md` record semantics, commands, provenance and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. All fourteen selected records pass (five GSUB, nine GPOS, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
 | [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Five derived normalization fonts remove selected cmap mappings, mark features, or GPOS; `fonts/NORMALIZATION.md` records their generation and licenses. The repository-authored `ShaperTestProgress.ttf` isolates expansion, deletion, and contraction; `fonts/STREAMING.md` records its reproducible construction. The five repository-authored `ShaperTestLookupOrder-*.ttf` fonts isolate GSUB/GPOS lookup order and shared alternate selection; `fonts/LOOKUP_ORDER.md` records their construction. Also contains Calibri and Go fonts. |
@@ -792,16 +826,17 @@ complete HarfBuzz capture. Unit coverage also checks decomposition correspondenc
 reordered anchors, range bounds, and existing mask inheritance through glyph edits.
 SHAPE-011 subsequently settles indexed ranges inside initial base/mark groups:
 select by the group start; starts inside exclude it and ends inside include it.
-Feature events inside groups remain a separate context issue (SHAPE-016).
+SHAPE-016 now applies the same initial-group rule to feature events within a
+buffered carry, with independent Latin/Hebrew regressions.
 
 The [streaming/scope matrix](../internal/hbcmp/testdata/text/STREAMING.md) contains
 thirteen independent captures and reuses four original text cases. Five buffer
 profiles × both public entry points × both flush modes yield 340 executions:
-218 pass, 122 remain tagged. The runner validates actual push/pop schedules
+224 pass, 116 remain tagged. The runner validates actual push/pop schedules
 against the equivalent HB ranges at every scalar and checks complete output,
 EOF consumption, early emission, and bounded source/sink activity. Ten additional
-empty-input and balanced empty-scope checks pass. Remaining findings cover
-streaming context/capacity (SHAPE-015) and scope context (SHAPE-016);
+empty-input and balanced empty-scope checks pass. Remaining matrix failures
+cover streaming context/capacity (SHAPE-015); SHAPE-016 scope context is resolved.
 SHAPE-011 promoted 32 mark cells unchanged; eight tiny-buffer mark cells remain
 under SHAPE-015 with complete cluster/position expectations.
 SHAPE-002 promoted eight matrix cells; remaining tiny/forced range failures
@@ -976,15 +1011,17 @@ continue to pass, but expanding their coverage is not a current priority.
    ligatures, pairs, normalization, mark failures, nested push/pop restoration,
    compaction, EOF tails, expansion, contraction, and deletion. Five buffer
    profiles, both APIs, and both flush modes distinguish passing cells from
-   remaining failures (SHAPE-015/016). SHAPE-017 now covers deletion,
+   remaining matrix failures (SHAPE-015). SHAPE-017 now covers deletion,
    zero-output completion at EOF, and explicit capacity errors before known EOF.
    The [agreed buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented)
    permits a generous required minimum and practical sequence/context limits.
    When implemented, test explicit rejection below the minimum, specific errors
    on limit exhaustion, and exact output across boundaries in long inputs at
    supported buffer sizes. Tiny-buffer acceptance is not a future requirement.
-   Further coverage can add scopes inside merged clusters, additional feature
-   values, longer combining sequences, and broader buffer sweeps.
+   SHAPE-016 adds scoped events inside initial groups and equivalent indexed
+   ranges; SHAPE-022 retains the independent mark-to-mark failure. Further
+   coverage can add scopes inside substitution-merged clusters, additional
+   feature values, longer combining sequences, and broader buffer sweeps.
 
 Arabic joining, Syriac shaping, script-specific cursive behavior, and broader
 script coverage remain follow-up work after these Latin/Hebrew priorities.

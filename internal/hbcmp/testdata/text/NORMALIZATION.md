@@ -12,9 +12,9 @@ are ordinary and three remain tagged. Four original normalization cases also
 run through `ShapeEvents`.
 
 Fourteen additional independent captures are stored separately in
-[`normalization.json`](normalization.json). Twelve cases run through both APIs;
-two indexed-range cases run through `Shape` because event spans have their own
-normalization barrier (SHAPE-016). Every comparison checks all six output fields.
+[`normalization.json`](normalization.json). All fourteen cases now run through
+both APIs (28 comparisons): SHAPE-016 adds equivalent push/pop recipes for the two indexed-range cases. Every comparison
+checks all six output fields.
 The cases exercise:
 
 - Precomposed, canonical and reversed accents, with original indexes on a
@@ -60,8 +60,9 @@ support, including ranged enablement, suppresses fallback throughout the plan;
 `mkmk` alone does not. Positioning still obeys ranges. Every record contains all
 six output fields, exact command arguments, and font/tool hashes. The capture
 script reproduces them; Go tests remain offline. Seven global-setting cases
-also run through `ShapeEvents`. Indexed ranges do not imply equivalent event
-spans, whose normalization barriers remain SHAPE-016.
+also run through `ShapeEvents`. SHAPE-016 subsequently removed normalization
+barriers within each carry and added focused indexed-range/event equivalence
+coverage; safe streaming boundaries remain separate.
 
 Pointed shalom now produces all seven expected glyphs with matching clusters
 and per-glyph positions, but the two initial shin marks remain reversed. Its

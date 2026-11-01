@@ -37,38 +37,18 @@ func TestFeatureSetApplyPushAndExport(t *testing.T) {
 }
 
 func TestPlanStackPushPopAndClose(t *testing.T) {
-	root := &plan{}
 	stack := newPlanStack([]FeatureRange{
 		{Feature: ot.T("liga"), On: true},
-	}, root)
+	})
 	if stack.depth() != 1 {
 		t.Fatalf("stack depth=%d, want 1", stack.depth())
 	}
 	if stack.currentPlanID() != 1 {
 		t.Fatalf("root plan id=%d, want 1", stack.currentPlanID())
 	}
-	var buildCalls int
-	id, err := stack.push([]FeatureSetting{
-		{Tag: ot.T("smcp"), Enabled: true},
-	}, func(features []FeatureRange) (*plan, error) {
-		buildCalls++
-		hasSmcp := false
-		for _, f := range features {
-			if f.Feature == ot.T("smcp") && f.On {
-				hasSmcp = true
-				break
-			}
-		}
-		if !hasSmcp {
-			t.Fatalf("compiled features do not contain smcp: %+v", features)
-		}
-		return &plan{}, nil
-	})
+	id, err := stack.push([]FeatureSetting{{Tag: ot.T("smcp"), Enabled: true}})
 	if err != nil {
 		t.Fatalf("push failed: %v", err)
-	}
-	if buildCalls != 1 {
-		t.Fatalf("build callback calls=%d, want 1", buildCalls)
 	}
 	if id != 2 {
 		t.Fatalf("pushed plan id=%d, want 2", id)
@@ -76,8 +56,8 @@ func TestPlanStackPushPopAndClose(t *testing.T) {
 	if stack.depth() != 2 {
 		t.Fatalf("stack depth=%d, want 2", stack.depth())
 	}
-	if stack.currentPlan() == nil {
-		t.Fatalf("current plan is nil")
+	if !stack.currentFeatures().byTag[ot.T("smcp")].enabled || !stack.currentFeatures().byTag[ot.T("liga")].enabled {
+		t.Fatal("push did not inherit liga and enable smcp")
 	}
 	if err := stack.ensureClosed(); !errors.Is(err, errPlanStackUnclosed) {
 		t.Fatalf("ensureClosed error=%v, want errPlanStackUnclosed", err)
@@ -88,13 +68,16 @@ func TestPlanStackPushPopAndClose(t *testing.T) {
 	if stack.depth() != 1 {
 		t.Fatalf("stack depth=%d, want 1", stack.depth())
 	}
+	if _, exists := stack.currentFeatures().byTag[ot.T("smcp")]; exists {
+		t.Fatal("pop retained pushed feature")
+	}
 	if err := stack.ensureClosed(); err != nil {
 		t.Fatalf("ensureClosed failed: %v", err)
 	}
 }
 
 func TestPlanStackPopUnderflow(t *testing.T) {
-	stack := newPlanStack(nil, &plan{})
+	stack := newPlanStack(nil)
 	err := stack.pop()
 	if !errors.Is(err, errPlanStackUnderflow) {
 		t.Fatalf("pop error=%v, want errPlanStackUnderflow", err)

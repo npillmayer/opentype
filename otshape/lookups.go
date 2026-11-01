@@ -211,6 +211,11 @@ func (e *planExecutor) applyLookupSpanInternal(
 		return end, nil
 	}
 	st.Index = start
+	if op.Mask != 0 {
+		st.SetInputMasks(e.run.Masks[indexBase:indexBase+st.Len()], op.Mask)
+	} else {
+		st.SetInputMasks(nil, 0)
+	}
 	for st.Index < end && st.Index < st.Len() {
 		if !e.lookupIndexEnabled(pl, op, st, st.Index, indexBase) {
 			st.Index++

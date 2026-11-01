@@ -109,6 +109,34 @@ func TestContextProgressionFormats(t *testing.T) {
 								t.Fatalf("positions=%v want=%v", st.Pos, wantPos)
 							}
 						}
+						// Only actual inputs require the lookup mask. Backtrack,
+						// lookahead and ignored marks deliberately have mask zero.
+						graph.Lookup(1).Subtable(0).Coverage = cov(10)
+						for _, enabled := range []bool{false, true} {
+							st := NewBufferState(append(GlyphBuffer(nil), input...), NewPosBuffer(len(input)))
+							masks := make([]uint32, len(input))
+							masks[1] = 1
+							if enabled {
+								masks[end-1] = 1
+							}
+							st.SetInputMasks(masks, 1)
+							st.Index = 1
+							pos, applied, err := ApplyFeature(font, errorTestFeature{kind, []int{0}}, st, 0)
+							wantEnd := 1
+							if enabled {
+								wantEnd = end
+							}
+							if err != nil || applied != enabled || pos != wantEnd {
+								t.Fatalf("input enabled=%t: applied=%t pos=%d err=%v", enabled, applied, pos, err)
+							}
+							wantPos := NewPosBuffer(len(input))
+							if kind == GPosFeatureType && enabled {
+								wantPos[1].XAdvance = 1
+							}
+							if !reflect.DeepEqual(st.Pos, wantPos) || !reflect.DeepEqual(st.Glyphs, input) {
+								t.Fatalf("masked context output: glyphs=%v positions=%v", st.Glyphs, st.Pos)
+							}
+						}
 					})
 				}
 			}
@@ -189,6 +217,7 @@ func TestContextProgressionThroughEdits(t *testing.T) {
 					p.Records = append(p.Records, ot.SequenceLookupRecord{LookupListIndex: 65535})
 				}
 				st := NewBufferState(append(GlyphBuffer(nil), input...), NewPosBuffer(len(input)))
+				st.SetInputMasks([]uint32{0, 1, 1, 1, 0}, 1)
 				st.Index = 1
 				pos, applied, err := ApplyFeature(font, errorTestFeature{GSubFeatureType, []int{0}}, st, 0)
 				wantEnd := end

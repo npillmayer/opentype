@@ -64,6 +64,26 @@ func scopeRecipe(id string) []scopeChange {
 		return []scopeChange{scopePush(8, "liga", true), {at: 11}}
 	case "scope_nested":
 		return []scopeChange{scopePush(0, "liga", false), scopePush(7, "liga", true), {at: 14}, {at: 21}, scopePush(28, "liga", false), {at: 28}}
+	case "scope_liga_second_off":
+		return []scopeChange{scopePush(1, "liga", false), {at: 2}}
+	case "scope_liga_first_off":
+		return []scopeChange{scopePush(0, "liga", false), {at: 1}}
+	case "scope_kern_second_off", "scope_unrelated_ligature":
+		return []scopeChange{scopePush(1, "kern", false), {at: 2}}
+	case "scope_kern_first_off":
+		return []scopeChange{scopePush(0, "kern", false), {at: 1}}
+	case "scope_composition", "scope_hebrew_group":
+		return []scopeChange{scopePush(1, "liga", false), {at: 2}}
+	case "scope_mark_inside", "scope_mark_inside_no_mkmk":
+		return []scopeChange{scopePush(1, "mark", false), {at: 3}}
+	case "scope_implicit_restore":
+		return []scopeChange{scopePush(2, "liga", false), {at: 4}}
+	case "scope_nested_ligatures":
+		return []scopeChange{scopePush(0, "liga", false), scopePush(2, "liga", true), {at: 4}, {at: 6}}
+	case "norm_range_after_expansion":
+		return []scopeChange{scopePush(2, "liga", true), {at: 5}}
+	case "norm_range_after_reordering":
+		return []scopeChange{scopePush(4, "liga", true), {at: 7}}
 	case "scope_pair":
 		return []scopeChange{scopePush(1, "liga", false), {at: 2}}
 	case "scope_accent":
@@ -274,10 +294,6 @@ func streamingFinding(id, profile, entry string) string {
 			return "015"
 		}
 		return ""
-	case "scope_pair":
-		if entry == "events" {
-			return "016"
-		}
 	}
 	if profile == "whole" {
 		return ""

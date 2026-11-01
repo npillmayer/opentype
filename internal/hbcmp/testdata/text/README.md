@@ -21,10 +21,16 @@ and the thirteen streaming records unchanged. Its preparation script is
 all outputs and provenance without writing.
 
 The separate [normalization corpus](NORMALIZATION.md) adds fourteen independent
-records in [normalization.json](normalization.json), with 26 whole-input
-comparisons. SHAPE-012/013 also promote three unchanged original records:
+records in [normalization.json](normalization.json), with 28 whole-input
+comparisons after SHAPE-016 added event recipes for both indexed-range cases.
+SHAPE-012/013 also promote three unchanged original records:
 `baselines.json` now has 32 ordinary and three tagged cases. The remaining cases
 cover two Hebrew ordering failures and the deferred no-GPOS parser limitation.
+
+The [scope corpus](SCOPES.md) adds eleven independent records in
+[scopes.json](scopes.json): forty ordinary comparisons and four tagged SHAPE-022
+comparisons, through both APIs and both flush modes. SHAPE-016 is resolved within
+each buffered carry; safe cuts and mark-to-mark compatibility remain separate.
 
 ## Files and execution
 
@@ -49,7 +55,7 @@ cover two Hebrew ordering failures and the deferred no-GPOS parser limitation.
   [normalization report](NORMALIZATION.md) for the plan-wide range contract and
   the remaining pointed-shalom mark-ordering blocker.
 - [normalization_test.go](../../normalization_test.go) checks the fourteen new
-  records, twelve through both APIs and two indexed-range cases through `Shape`.
+  records through both APIs, including equivalent events for indexed ranges.
   It also checks four original normalization records through `ShapeEvents`.
   The [preparation script](../../../../testdata/scripts/capture_harfbuzz_normalization.py)
   verifies independent output and provenance without writing by default.

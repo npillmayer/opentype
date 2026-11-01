@@ -75,10 +75,12 @@ Current selection behavior in [shape_api.go](../otshape/shape_api.go):
 5. The winner's `New` is called once per shaping request. If it returns nil,
    the candidate itself is reused.
 
-This is not fresh-per-plan construction. One selected engine is reused across
-streaming cycles and, for `ShapeEvents`, all compiled feature-scope plans.
-Stateful engines should supply independent instances from `New`; event scope
-state isolation remains an implementation gap.
+Ordinary `Shape` reuses that engine and plan across streaming cycles.
+`ShapeEvents` additionally calls `New` for each combined carry plan, then runs
+`InitPlan`/validation before shaping that carry. Stateful engines should return
+independent instances; nil retains the fallback to reuse. Event pushes no longer
+compile separate plans or leave a later scope's plan state active for earlier
+text. The root plan is still compiled up front to validate defaults.
 
 ## Optional hooks
 
@@ -133,8 +135,8 @@ selected font/script/language plan. Defaults and required features count even
 without a mask; `mkmk` alone, empty bindings, and absent requested features do
 not. A ranged enablement counts across the entire plan for normalization;
 positioning still respects the ranges. This is not a per-glyph coverage query
-and cannot predict later mask hooks. Feature-event spans retain separate plans
-and normalization boundaries (SHAPE-016).
+and cannot predict later mask hooks. Feature events share one combined plan
+and normalization run per buffered carry (SHAPE-016).
 
 ## Actual plan-time order
 
@@ -167,7 +169,7 @@ GSUB pauses do not advance GPOS stages. See [SHAPER_PLAN.md](SHAPER_PLAN.md).
 
 ## Actual runtime order
 
-For each current raw carry buffer, or each contiguous event-plan span:
+For each current raw carry buffer, including all its feature-event scopes:
 
 1. Form initial base/mark clusters, then normalize runes; consult `Compose`
    when enabled by normalization mode. Retain normalized source anchors
@@ -226,9 +228,10 @@ tatweel expansion and narrow `.notdef` repair, not a general fallback shaper.
 SHAPE-001 now preserves these mask decisions. This alone does not establish
 correct joining behavior or context-safe streaming.
 
-In event mode, compiling a later plan mutates this engine-local state.
-Processing an older stored plan or popping a feature scope does not restore it.
-The multiple-plan/stateful-engine combination needs dedicated integration tests.
+In event mode, SHAPE-016 initializes the engine for the combined plan immediately
+before its run hooks. Synthetic-engine tests verify shared masks, whole-carry
+hooks, instance isolation, and validation failure; they do not establish Arabic
+joining or other deferred script conformance.
 
 ## Testing and pending contracts
 
@@ -239,5 +242,6 @@ limits are recorded in [TESTING.md](TESTING.md).
 
 Mask preservation is covered by the ordinary SHAPE-001 regression for both public
 entry points. Remaining interface concerns include validation-hook gating,
-preprocessing order, GPOS opt-out, and per-plan engine state. Source comments and a
+preprocessing order, GPOS opt-out, and engine/user precedence. Combined event-plan
+state now has SHAPE-016 regression coverage. Source comments and a
 declared interface alone do not demonstrate that every policy is honored.

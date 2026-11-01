@@ -225,7 +225,7 @@ func gsubLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		cur := mpos
 		positions := []int{mpos}
 		for _, g := range rule.Components {
-			next, ok := nextMatchable(ctx, buf, cur+1)
+			next, ok := nextInputMatchable(ctx, buf, cur+1)
 			if !ok || g != buf.At(next) {
 				match = false
 				break
@@ -281,7 +281,7 @@ func gsubLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	rules := payload.RuleSets[inx]
 	for _, rule := range rules {
 		restPos, ok := matchGlyphSequenceForward(ctx, buf, mpos+1, rule.InputGlyphs)
-		if !ok {
+		if !ok || !inputPositionsEnabled(ctx, restPos) {
 			continue
 		}
 		matchPositions := make([]int, 0, 1+len(restPos))
@@ -324,7 +324,7 @@ func gsubLookupType5Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	rules := payload.RuleSets[firstClass]
 	for _, rule := range rules {
 		restPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, payload.ClassDef, rule.InputClasses)
-		if !ok {
+		if !ok || !inputPositionsEnabled(ctx, restPos) {
 			continue
 		}
 		matchPositions := make([]int, 0, 1+len(restPos))
@@ -401,7 +401,7 @@ func gsubLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	}
 	for _, rule := range rules {
 		inputPos, ok := matchGlyphSequenceForward(ctx, buf, mpos+1, rule.Input)
-		if !ok {
+		if !ok || !inputPositionsEnabled(ctx, inputPos) {
 			continue
 		}
 		matchPositions := make([]int, 0, 1+len(inputPos))
@@ -460,7 +460,7 @@ func gsubLookupType6Fmt2(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	}
 	for _, rule := range rules {
 		inputPos, ok := matchClassSequenceForward(ctx, buf, mpos+1, payload.InputClassDef, rule.Input)
-		if !ok {
+		if !ok || !inputPositionsEnabled(ctx, inputPos) {
 			continue
 		}
 		matchPositions := make([]int, 0, 1+len(inputPos))
@@ -573,7 +573,7 @@ func gsubLookupType8Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		}
 		tracer().Debugf("GSUB 8|1 candidate pos=%d glyph=%d", mpos, buf.At(mpos))
 		inx, ok := sub.Coverage.Match(buf.At(mpos))
-		if !ok {
+		if !ok || !ctx.buf.inputEnabled(mpos) {
 			tracer().Debugf("GSUB 8|1 coverage did not match at pos %d", mpos)
 			i = mpos - 1
 			continue

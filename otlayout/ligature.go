@@ -84,6 +84,6 @@ func (ctx *applyCtx) ligate(positions []int, glyph ot.GlyphIndex) *EditSpan {
 	if isLigature {
 		b.Pos[from].ligatureComponents = total
 	}
-	b.edits = append(b.edits, *edit)
+	b.recordEdit(*edit)
 	return edit
 }

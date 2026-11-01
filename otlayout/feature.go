@@ -405,6 +405,8 @@ func (e EditSpan) RetainedIndex(index int) int {
 // Mutation ownership and partial-progress invariants are documented in
 // doc/PARTIAL_PROGRESS.md.
 type BufferState struct {
+	inputMasks              []uint32 // owned copy, kept aligned through nested edits
+	lookupMask              uint32
 	Glyphs                  GlyphBuffer
 	Pos                     PosBuffer
 	Index                   int
@@ -414,6 +416,47 @@ type BufferState struct {
 	posShared               bool
 	execution               *lookupExecution // transient per-application limits, shared by nested calls
 	edits                   []EditSpan       // ordered mutations, in coordinates immediately before each edit
+}
+
+// SetInputMasks restricts matched lookup inputs to glyphs whose masks intersect
+// lookupMask. Backtrack/lookahead context is unrestricted; ignored glyphs retain
+// their lookup-flag behavior. Nil masks or a zero lookupMask remove the restriction.
+// The masks are copied and inherited through substitutions, including nested
+// edits. This is optional: direct ApplyFeature callers remain unrestricted.
+func (b *BufferState) SetInputMasks(masks []uint32, lookupMask uint32) {
+	if masks == nil || lookupMask == 0 {
+		b.inputMasks, b.lookupMask = nil, 0
+		return
+	}
+	if len(masks) != b.Len() {
+		panic("BufferState.SetInputMasks: mask alignment mismatch")
+	}
+	b.inputMasks = append(b.inputMasks[:0], masks...)
+	b.lookupMask = lookupMask
+}
+
+func (b *BufferState) inputEnabled(index int) bool {
+	return b == nil || b.lookupMask == 0 ||
+		(index >= 0 && index < len(b.inputMasks) && b.inputMasks[index]&b.lookupMask != 0)
+}
+
+func (b *BufferState) recordEdit(edit EditSpan) {
+	if b.inputMasks != nil && !(edit.To-edit.From == 1 && edit.Len == 1) {
+		old := b.inputMasks
+		value := uint32(0)
+		if edit.From < len(old) {
+			value = old[edit.From]
+		}
+		repl := make([]uint32, edit.Len)
+		for i := range repl {
+			repl[i] = value
+			if source, ok := edit.SurvivorSource(i); ok {
+				repl[i] = old[source]
+			}
+		}
+		b.inputMasks = append(append(old[:edit.From:edit.From], repl...), old[edit.To:]...)
+	}
+	b.edits = append(b.edits, edit)
 }
 
 // SetAlternateSelectionError defers a caller's selection error until an alternate
@@ -484,6 +527,8 @@ func (b *BufferState) CloneShared() *BufferState {
 		random = &copy
 	}
 	return &BufferState{
+		inputMasks:              slices.Clone(b.inputMasks),
+		lookupMask:              b.lookupMask,
 		alternateSelectionError: b.alternateSelectionError,
 		Glyphs:                  b.Glyphs,
 		random:                  random,
@@ -533,7 +578,7 @@ func (b *BufferState) At(i int) ot.GlyphIndex {
 func (b *BufferState) Set(i int, g ot.GlyphIndex) {
 	b.ensureUniqueGlyphs()
 	b.Glyphs.Set(i, g)
-	b.edits = append(b.edits, EditSpan{From: i, To: i + 1, Len: 1})
+	b.recordEdit(EditSpan{From: i, To: i + 1, Len: 1})
 }
 
 // ApplyEdit mirrors a GSUB edit onto the position buffer to keep alignment.
@@ -575,7 +620,7 @@ func (b *BufferState) ReplaceGlyphs(i, j int, repl []ot.GlyphIndex) *EditSpan {
 	b.ensureUniqueGlyphs()
 	b.Glyphs = b.Glyphs.Replace(i, j, repl)
 	edit := &EditSpan{From: i, To: j, Len: len(repl), ResetsPositions: true}
-	b.edits = append(b.edits, *edit)
+	b.recordEdit(*edit)
 	if b.Pos != nil {
 		b.ensureUniquePos()
 		b.Pos = b.Pos.ApplyEdit(edit)
@@ -1019,13 +1064,32 @@ func prevMatchable(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool) {
 	return 0, false
 }
 
+func nextInputMatchable(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool) {
+	i, ok := nextMatchable(ctx, buf, pos)
+	return i, ok && ctx.buf.inputEnabled(i)
+}
+
+func prevInputMatchable(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool) {
+	i, ok := prevMatchable(ctx, buf, pos)
+	return i, ok && ctx.buf.inputEnabled(i)
+}
+
+func inputPositionsEnabled(ctx *applyCtx, positions []int) bool {
+	for _, i := range positions {
+		if !ctx.buf.inputEnabled(i) {
+			return false
+		}
+	}
+	return true
+}
+
 type singleMatchFn func(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool)
 type matchSeqFn func(ctx *applyCtx, buf GlyphBuffer, pos int) ([]int, bool)
 
 // matchCoverageAt checks the lookup's designated start. Searching for the next
 // candidate belongs to the caller, which must recheck that candidate's settings.
 func matchCoverageAt(ctx *applyCtx, buf GlyphBuffer, pos int, cov ot.Coverage) (mpos, inx int, ok bool) {
-	if pos < 0 || pos >= buf.Len() || skipGlyph(ctx, buf.At(pos)) {
+	if pos < 0 || pos >= buf.Len() || skipGlyph(ctx, buf.At(pos)) || !ctx.buf.inputEnabled(pos) {
 		return 0, 0, false
 	}
 	inx, ok = cov.Match(buf.At(pos))
@@ -1045,7 +1109,7 @@ func matchInputCoverageSequence(ctx *applyCtx, buf GlyphBuffer, pos int, covs []
 		return []int{pos}, true
 	}
 	rest, ok := matchCoverageSequenceForward(ctx, buf, pos+1, covs[1:])
-	if !ok {
+	if !ok || !inputPositionsEnabled(ctx, rest) {
 		return nil, false
 	}
 	return append([]int{pos}, rest...), true

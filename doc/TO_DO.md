@@ -147,8 +147,17 @@ continuity policy or turn the current physical split into a final API contract.
 
 ## Remaining work
 
-Follow the overall ordering in [TESTING.md](TESTING.md). For feature scopes,
-the concrete tasks are:
+Follow the overall ordering in [TESTING.md](TESTING.md).
+
+**2026-11-01 update:** the scope roadmap below predates SHAPE-016. Shared carry
+plans, engine initialization, group-start ranges, matched-input masks and their
+focused Latin/Hebrew regressions are implemented and accepted; see the
+[archived resolution](SHAPING_FINDINGS.md#shape-016--feature-scopes-sever-unrelated-lookup-context). Remaining
+work is safe buffer boundaries (SHAPE-015), engine precedence (SHAPE-021), and
+mark-to-mark compatibility (SHAPE-022). Do not restart a broad coverage effort or
+reopen accepted feature fixes from this historical task list.
+
+The original feature-scope tasks were:
 
 1. **Cover shared feature semantics through the public API.** Add regressions
    for mask preservation, global input-coordinate ranges, and alternate values

@@ -1,0 +1,729 @@
+{
+  "schema_version": 1,
+  "capture": {
+    "version": "hb-shape (HarfBuzz) 15.0.0",
+    "binary_sha256": "855aedbd766ed19a7548f9d39fe6aee510c342f893a42e7cc512af437f0d981f",
+    "locale": "C",
+    "cluster_indices": "unicode_scalars",
+    "cluster_level": 0,
+    "units": "font_units",
+    "normalization": "HarfBuzz default; input unmodified"
+  },
+  "cases": [
+    {
+      "id": "scope_liga_second_off",
+      "text": "fi",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0066,U+0069",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=1,liga[1:2]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "liga=1",
+            "liga[1:2]=0"
+          ]
+        },
+        "input": [
+          102,
+          105
+        ],
+        "output": [
+          {
+            "g": 73,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_liga_first_off",
+      "text": "fi",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0066,U+0069",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=1,liga[0:1]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "liga=1",
+            "liga[0:1]=0"
+          ]
+        },
+        "input": [
+          102,
+          105
+        ],
+        "output": [
+          {
+            "g": 73,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_kern_second_off",
+      "text": "AV",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0041,U+0056",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=kern=1,kern[1:2]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "kern=1",
+            "kern[1:2]=0"
+          ]
+        },
+        "input": [
+          65,
+          86
+        ],
+        "output": [
+          {
+            "g": 36,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1219,
+            "ay": 0
+          },
+          {
+            "g": 57,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1331,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_kern_first_off",
+      "text": "AV",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0041,U+0056",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=kern=1,kern[0:1]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "kern=1",
+            "kern[0:1]=0"
+          ]
+        },
+        "input": [
+          65,
+          86
+        ],
+        "output": [
+          {
+            "g": 36,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1219,
+            "ay": 0
+          },
+          {
+            "g": 57,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1331,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_unrelated_ligature",
+      "text": "fi",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0066,U+0069",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=kern=1,kern[1:2]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "kern=1",
+            "kern[1:2]=0"
+          ]
+        },
+        "input": [
+          102,
+          105
+        ],
+        "output": [
+          {
+            "g": 737,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1192,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_composition",
+      "text": "éx",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0065,U+0301,U+0078",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=1,liga[1:2]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "liga=1",
+            "liga[1:2]=0"
+          ]
+        },
+        "input": [
+          101,
+          769,
+          120
+        ],
+        "output": [
+          {
+            "g": 112,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 946,
+            "ay": 0
+          },
+          {
+            "g": 91,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_mark_inside",
+      "text": "x́x́",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0078,U+0301,U+0078,U+0301",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark=1,mark[1:3]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "mark=1",
+            "mark[1:3]=0"
+          ]
+        },
+        "input": [
+          120,
+          769,
+          120,
+          769
+        ],
+        "output": [
+          {
+            "g": 91,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 2173,
+            "cl": 0,
+            "dx": 31,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 91,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 2173,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_mark_inside_no_mkmk",
+      "text": "x́x́",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0078,U+0301,U+0078,U+0301",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark=1,mkmk=0,mark[1:3]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "mark=1",
+            "mkmk=0",
+            "mark[1:3]=0"
+          ]
+        },
+        "input": [
+          120,
+          769,
+          120,
+          769
+        ],
+        "output": [
+          {
+            "g": 91,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 2173,
+            "cl": 0,
+            "dx": 31,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 91,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1030,
+            "ay": 0
+          },
+          {
+            "g": 2173,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_implicit_restore",
+      "text": "fififi",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0066,U+0069,U+0066,U+0069,U+0066,U+0069",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga[2:4]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "liga[2:4]=0"
+          ]
+        },
+        "input": [
+          102,
+          105,
+          102,
+          105,
+          102,
+          105
+        ],
+        "output": [
+          {
+            "g": 737,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1192,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          },
+          {
+            "g": 737,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1192,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_nested_ligatures",
+      "text": "fifififi",
+      "font_path": "testdata/fonts/GentiumPlus-R.ttf",
+      "font_sha256": "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/GentiumPlus-R.ttf",
+        "--unicodes=U+0066,U+0069,U+0066,U+0069,U+0066,U+0069,U+0066,U+0069",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=1,liga[0:6]=0,liga[2:4]=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "GentiumPlus-R.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "liga=1",
+            "liga[0:6]=0",
+            "liga[2:4]=1"
+          ]
+        },
+        "input": [
+          102,
+          105,
+          102,
+          105,
+          102,
+          105,
+          102,
+          105
+        ],
+        "output": [
+          {
+            "g": 73,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 1,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          },
+          {
+            "g": 737,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1192,
+            "ay": 0
+          },
+          {
+            "g": 73,
+            "cl": 4,
+            "dx": 0,
+            "dy": 0,
+            "ax": 637,
+            "ay": 0
+          },
+          {
+            "g": 76,
+            "cl": 5,
+            "dx": 0,
+            "dy": 0,
+            "ax": 555,
+            "ay": 0
+          },
+          {
+            "g": 737,
+            "cl": 6,
+            "dx": 0,
+            "dy": 0,
+            "ax": 1192,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "scope_hebrew_group",
+      "text": "וֹ",
+      "font_path": "testdata/fonts/NotoSansHebrew-Regular.ttf",
+      "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/NotoSansHebrew-Regular.ttf",
+        "--unicodes=U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=liga=1,liga[1:2]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "NotoSansHebrew-Regular.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": [
+            "liga=1",
+            "liga[1:2]=0"
+          ]
+        },
+        "input": [
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 46,
+            "cl": 0,
+            "dx": 92,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -31,8 +31,8 @@ The agreed requirements are:
    forcing a cut that changes shaping. Already emitted output must be final;
    errors do not imply rollback of earlier sink writes.
 5. Preserve shaping context across feature push/pop boundaries for features
-   that remain enabled. Increasing buffer capacity alone does not fix the
-   separate event-span context barrier (SHAPE-016).
+   that remain enabled. SHAPE-016 now implements this within each buffered run;
+   safe output across buffer cuts remains separate.
 
 Choose the minimum capacity together with practical sequence/context limits
 and reserved carry/lookahead space. Prefer conservative bounds and explicit
@@ -101,10 +101,10 @@ The sink receives individual records, not batches or flush notifications.
 | [shape_api.go](../otshape/shape_api.go) | Ordinary streaming loop and shared shaping hooks. |
 | [output.go](../otshape/output.go) | Output materialization. |
 | [clusters.go](../otshape/clusters.go) | Cluster formation, merging, and the cluster spans used for cuts and flushing. |
-| [shape_events.go](../otshape/shape_events.go) | Event ingestion, feature-plan spans, and the event streaming loop. |
+| [shape_events.go](../otshape/shape_events.go) | Event ingestion, shared feature-range plans, and the event streaming loop. |
 | [shape_streaming.go](../otshape/shape_streaming.go) | Configuration, raw carry, cut selection, safety checks, and compaction. |
 | [shape_runtime.go](../otshape/shape_runtime.go) | Shared ingestor/compiler adapters and reusable scratch workspace. |
-| [plan_stack.go](../otshape/plan_stack.go) | Nested feature sets and compiled-plan frames. |
+| [plan_stack.go](../otshape/plan_stack.go) | Nested immutable feature sets and scope IDs. |
 | [runbuffer.go](../otshape/runbuffer.go) | Mutable glyph/position/metadata arrays. |
 
 Raw carry is the source of truth between cycles: `rawRunes`, `rawClusters`,
@@ -115,7 +115,7 @@ rather than incrementally resumed after a GSUB/GPOS cursor.
 
 `MaxBuffer` caps raw rune count. It is not a hard limit on total memory:
 normalization/substitutions can expand glyph buffers, scratch storage is separate,
-and event plans remain in a request-wide map after their scopes are popped.
+and event scope assignments remain in a request-wide map after they are popped.
 
 ## Watermark configuration
 
@@ -232,12 +232,12 @@ after GPOS/advance zeroing and before `PostprocessRun`, incorporating target
 placement and final pen differences while retaining logical output order.
 `PosItem.MarkAttachmentPending` is cleared; attachment diagnostics remain.
 Cursive, hint/device/variation adjustments,
-and attachment context lost at buffer/event cuts remain outside this fix.
+and attachment context lost at buffer cuts remain outside this fix.
 SHAPE-019 now preserves skipped marks and carries GSUB ligature-component
 association through a shaped span, including nested ligatures. GPOS 5 uses it
 to choose the component anchor; input ligatures and unassociated marks retain
 the last-component fallback. This provenance does not span independently shaped
-buffer/event windows and does not establish safe cuts. Final glyph records omit
+buffer windows and does not establish safe cuts. Final glyph records omit
 the transient identity/component data while retaining attachment diagnostics.
 Attachment indexes are not converted to a global sink index during emission;
 consumers use the finalized offsets for rendering.
@@ -253,26 +253,37 @@ the defaults alone do not guarantee that baseline.
 unchanged. Ordinary `Shape` does not automatically switch to event processing.
 
 `ShapeEvents` rejects non-global ranges for nonzero feature tags.
-A push clones the current assignments, applies a delta, compiles a plan, and
-allocates a new `uint16` plan ID. A pop restores the preceding frame. Underflow,
-unclosed scopes at EOF, malformed events, and plan-ID exhaustion return errors.
-The final unclosed-stack check can occur after glyphs have already been emitted.
+A push clones the current assignments, applies a delta, and allocates a new
+`uint16` scope ID (internally still called a plan ID). A pop restores the
+preceding frame. Underflow, unclosed scopes at EOF, malformed events, and ID
+exhaustion return errors. The final unclosed-stack check can occur after glyphs
+have already been emitted.
 
-Each rune carries the active plan ID. `shapeEventCarry` normalizes and shapes
-each contiguous plan-ID span separately, then appends it to an output run.
-Consequently, a feature-scope boundary also separates normalization and lookup
-context. It is not just a mask change inside one contextual shaping run.
+Each rune carries the active scope ID. Before shaping, `eventFeatureRanges`
+expresses those assignments in original scalar coordinates, preserving explicit
+and implicit root defaults outside each scope. `shapeEventCarry` compiles one
+combined plan/mask layout, creates and initializes its engine, and normalizes,
+maps, and shapes the whole carry. Run hooks execute once for that carry.
+Feature boundaries no longer split normalization, lookup context, or attachment
+indexes. Scope changes inside initial base/mark groups follow the group-start
+rule used by `Shape` ranges; they never split the group.
 
-Further integration limits visible in the source:
+Actual matched inputs must have an active lookup mask. Disabled inputs stop a
+ligature, pair, or contextual input match; backtrack/lookahead remain available
+across settings boundaries, and ignored-glyph skipping still follows lookup flags.
+This does not implement all cursive or script-specific matching rules.
 
-- All plans share the selected engine. Compilation mutates engine-local plan
-  state; shaping an older span or popping does not restore that state.
-- `AppendRun` copies position records without rebasing span-local attachment
-  targets to the concatenated run.
-- Plans are retained in `plansByID` for the request; max raw buffer size does
-  not bound plan count or total plan storage.
+The root plan is validated before ingestion. Push/pop only stores assignments;
+a nonempty carry compiles its combined plan before shaping. Compilation or
+validation failure suppresses that carry's output. The combined plan uses the
+existing 31-bit feature-mask budget; it is not a separate budget per scope.
+Balanced empty scopes have no run effect. Scope snapshots are retained for the
+request, so the raw buffer limit does not bound their storage. Stateful engines
+must return independent instances from `New`; nil retains the existing fallback
+to reuse. Request random seeds remain stable across combined-plan rebuilds.
 
-These are inspection findings requiring dedicated event/attachment regressions.
+These changes resolve SHAPE-016's event barrier; SHAPE-015 still governs safe
+buffer cuts and SHAPE-021 still governs engine/user setting precedence.
 
 ## Guarantees, counterexamples, and tests
 
@@ -294,7 +305,8 @@ The review reproduced:
 
 SHAPE-002's indexed-range reproduction now passes: mask assignment uses retained
 original scalar anchors after compaction and normalization. Ordinary tests cover
-that correspondence; ranges splitting merged source sequences remain out of scope.
+that correspondence; initial base/mark groups use their first scalar for range
+selection, including equivalent feature-event scopes (SHAPE-011/016).
 
 Current tests include configuration/fill/compaction/cut helpers in
 `shape_streaming_test.go`, loop exercises in `shape_streaming_loop_test.go`,
@@ -310,13 +322,12 @@ still requires:
 
 1. A context-retention/boundary policy covering joining, lookback/lookahead,
    normalization, substitutions, and attachments, including max-buffer handling.
-2. Context behavior at feature-event boundaries inside merged source sequences.
-   Indexed `Shape` ranges now select initial base/mark groups by their starting
-   scalar (SHAPE-011); SHAPE-002 covers original coordinates across compaction
-   and normalization. Later substitutions retain existing mask inheritance.
-3. Final attachment resolution and consistent attachment-index semantics across
-   spans and emitted prefixes.
-4. Per-plan state isolation and defined context behavior for feature events.
+2. Broader script-specific sequence rules beyond the initial Latin/Hebrew
+   group-start policy now shared by ranges and feature events (SHAPE-011/016).
+3. Attachment/context retention across buffer cuts, and cursive finalization.
+   Feature-event spans no longer require separate attachment-index rebasing.
+4. Engine/user feature precedence (SHAPE-021); stateful event engines now receive
+   the combined plan immediately before shaping its carry.
 5. Termination tests for empty shaped output and other length-changing cases.
 6. Independent expected outputs and boundary sweeps, not only comparison of two
    configurations of the same implementation.

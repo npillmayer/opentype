@@ -43,6 +43,16 @@ Mutation methods detach shared storage before writing. `EnsurePos` also detaches
 an already aligned shared position buffer before GPOS writes. Nested calls must
 use the actual owning `BufferState`, not a new owner made from borrowed slices.
 
+`SetInputMasks` optionally installs an owned mask snapshot and the outer lookup's
+activation mask. The shaping executor refreshes it for each lookup span. Actual
+matched inputs are gated, while backtrack/lookahead remain readable. Masks follow
+nested edits immediately: replacements inherit the first input's mask, deletion
+removes it, and ignored ligature survivors retain their own masks. `CloneShared`
+copies this snapshot independently. This local matching state is distinct from
+the outer run metadata, which still consumes the journal once on return. Direct
+`ApplyFeature` callers that do not install masks retain unrestricted matching.
+Cursive partner selection retains its prior behavior outside the SHAPE-016 scope.
+
 ## Ordered Edit Journal
 
 `BufferState.edits` is an internal ordered list of `EditSpan` values.

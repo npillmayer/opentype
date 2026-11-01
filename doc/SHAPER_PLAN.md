@@ -21,7 +21,8 @@ behavior must not be inferred from that reference.
 
 Current shaping executes GSUB/GPOS through `otlayout`; there is no legacy
 `kern` fallback in this pipeline. Plans are built for each request, with
-additional plans for event feature pushes. There is no cross-request plan cache.
+a combined plan rebuilt for each event carry from immutable scope assignments.
+Push/pop does not compile plans. There is no cross-request plan cache.
 
 ## Source map and data model
 
@@ -35,7 +36,7 @@ additional plans for event feature pushes. There is no cross-request plan cache.
 | [position_policies.go](../otshape/position_policies.go) | Post-GPOS position policies such as GDEF mark advance zeroing. |
 | [plan_hooks.go](../otshape/plan_hooks.go) | Feature intents, fallback metadata, and direct/anchored pause adapters. |
 | [lookups.go](../otshape/lookups.go) | Runtime mask filtering, lookup traversal, syllable isolation, and metadata edit propagation. |
-| [plan_stack.go](../otshape/plan_stack.go) | Nested feature sets and plans for event input. |
+| [plan_stack.go](../otshape/plan_stack.go) | Nested immutable feature sets and scope IDs for event input. |
 
 All plan types are private. There is no exported `Plan`, `PlanRequest`,
 `PlanCompiler`, or `PlanExecutor` API.
@@ -166,8 +167,9 @@ suppresses the failing chunk while preserving earlier sink output.
 Important limits:
 
 - Masks initialized before `SetupMasks` are preserved. Feature values and ranges
-  follow the resolved SHAPE-001/002/003/011/018 contracts; event scopes and safe
-  streaming boundaries still have separate open findings.
+  follow the SHAPE-001/002/003/011/018 contracts. SHAPE-016 extends the same
+  original-coordinate group-start policy to event scopes. Safe streaming
+  boundaries remain separate (SHAPE-015).
 - An internal `Strict` policy and its test exist, but the public compile path
   does not enable it. The former `ZeroMarks` and `FallbackMarkPos` policies
   were removed as unused on 2026-11-01.

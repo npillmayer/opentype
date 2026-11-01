@@ -33,8 +33,7 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 ```
 
 These are method-based calls, not package-level `Shape(req)` functions.
-`ShapeEventsRequest` remains as a deprecated type but is not accepted by these
-methods. See [STREAMING_API.md](STREAMING_API.md) for sources, sinks, and events.
+See [STREAMING_API.md](STREAMING_API.md) for sources, sinks, and events.
 
 ## Output order and clusters
 

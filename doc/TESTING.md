@@ -210,11 +210,6 @@ features; Hebrew adds composition and reordering. No dedicated Indic or other
 complex-script engines exist. Default per-syllable annotations derive from
 clusters rather than a script syllable recognizer.
 
-The older `Buffer`, `ShapedGlyph`, and normalization helpers in
-[buffer.go](../otshape/buffer.go) are separate from the streaming path.
-`Buffer.applySubstitutionFeature` is empty and `TestBufferFunctions` is skipped.
-That stub does not describe the implementation state of `Shaper.Shape`.
-
 ## Confirmed gaps and regression targets
 
 ### Failures reproduced through the public API
@@ -680,7 +675,8 @@ go test ./otshape/... ./otlayout ./internal/ttxtest -count=1 -coverprofile=/tmp/
 | `otlayout` | 53 | 0 | 56.5% |
 | `internal/ttxtest` | 1 | 0 | 9.5% |
 
-Counts exclude subtests; the skipped shaping test is `TestBufferFunctions`.
+Counts exclude subtests; the skipped shaping test is `TestBufferFunctions`,
+which was later removed together with the legacy `buffer.go`.
 Coverage is per package in this invocation, without `-coverpkg`. In particular,
 the helper's own coverage does not reflect its use by tests in `ot/`. The active
 decomposition routine had 0% coverage in this run. Executed statements do not

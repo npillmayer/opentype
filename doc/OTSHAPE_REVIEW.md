@@ -12,7 +12,7 @@ and line counts in them describe the code as it was at `9760035`.
 
 | Step | Status |
 |---|---|
-| 1. Cheap cleanup | Open |
+| 1. Cheap cleanup | **Partly done** — legacy `buffer.go` and `ShapeEventsRequest` removed; remaining items listed below |
 | 2. Split files | **Done** — reorganization by responsibility, including the `lookups.go`, `shape_runtime.go`, `shaper.go`, and `doc.go` issues from section 1 |
 | 3. Expand the package doc | Open |
 | 4. Investigate correctness observations | Open |
@@ -44,6 +44,24 @@ tests pass and the `shaping_knownbugs` results are unchanged.
 | `helpers.go` | `NOTDEF`, `tracer`, `errShaper`, `assert` | `doc.go` |
 
 File links in the `doc/` guides were updated to match.
+
+### Step 1 (partial): legacy API removed
+
+- Deleted `buffer.go` and its always-skipped `buffer_test.go`: `Buffer`,
+  `ShapedGlyph`, `NewBuffer`, `PREFER_COMPOSED`/`PREFER_DECOMPOSED`,
+  `normalizerFor`, the `findRepresentation` search, `mapGlyphs`, the unused
+  feature lists, and the empty `applySubstitutionFeature`. These were an early
+  whole-string shaper sketch that never reached GSUB/GPOS.
+- Deleted the deprecated, unused `ShapeEventsRequest`.
+- SHAPE-013 now points to the removed representation search as prior art
+  (`git show 9760035:otshape/buffer.go`).
+- Exactly these 19 declarations disappeared. The ordinary tests pass, and the
+  only change in the `shaping_knownbugs` run is that the skipped
+  `TestBufferFunctions` no longer exists.
+
+Still open in step 1: the unused wrappers, `realignSideArrays`,
+`lookupsForStage`, `stageCount`, `runBuffer.front`/`end`, the unused
+`planPolicy` fields, `streamIngestor`, and the comment fixes.
 
 Still open from section 1 (not file moves, so deferred to the cleanup):
 `streamIngestor` adds nothing over `shape_streaming.go`, and `pipeline.go` is a

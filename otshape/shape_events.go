@@ -14,17 +14,6 @@ var (
 	ErrEventIndexedFeatureRange = errors.New("otshape: ShapeEvents requires global-only FeatureRange values")
 )
 
-// ShapeEventsRequest bundles all inputs required by [ShapeEvents].
-//
-// Deprecated: use [ShapeEvents] or [Shaper.ShapeEvents] directly with
-// explicit arguments (`Params`, `InputEventSource`, `GlyphSink`, `BufferOptions`).
-type ShapeEventsRequest struct {
-	Options BufferOptions // Options configures buffering/flush behavior.
-	Source  InputEventSource
-	Sink    GlyphSink
-	Shapers []ShapingEngine
-}
-
 // ShapeEvents shapes src into sink according to params and bufOpts.
 //
 // Parameters:

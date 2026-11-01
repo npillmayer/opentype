@@ -40,7 +40,6 @@ font shaping. Layout execution uses GSUB/GPOS; there is no legacy kern fallback.
 | [clusters.go](../otshape/clusters.go) | Initial base/mark cluster formation, cluster merging, and cluster spans. |
 | [engine_api.go](../otshape/engine_api.go), [engine_internal.go](../otshape/engine_internal.go) | Public engine hooks and narrow context interfaces; adapters to private pipeline state. |
 | [language.go](../otshape/language.go) | Script/language tag mapping and default decomposition preferences. |
-| [buffer.go](../otshape/buffer.go) | Legacy `Buffer` mapping/representation helpers; not the active shaping pipeline. |
 | [otcore](../otshape/otcore/), [othebrew](../otshape/othebrew/), [otarabic](../otshape/otarabic/) | Concrete engines and their script/public-API tests. |
 | [otlayout](../otlayout/), [otquery](../otquery/), [ot](../ot/) | Lookup execution, cmap/metrics queries, and parsed font tables respectively. |
 
@@ -56,7 +55,7 @@ Active side arrays must have the same length as glyph storage. During layout,
 updates metadata through `applyLayoutEdit`. Runtime hook edits use `RunContext`.
 
 The public output is `GlyphRecord`: GID, `otlayout.PosItem`, cluster, mask, and
-unsafe flags. It is richer than legacy `ShapedGlyph{Index, Advance}`.
+unsafe flags.
 Position materialization adds nominal horizontal advance to layout deltas.
 After GPOS in Latin/Hebrew plans, GDEF marks receive a delta that cancels this
 metric, producing zero final advances without changing placement offsets.
@@ -75,7 +74,7 @@ The ordinary request path is:
 The workspace reuses allocations, but reshapes uncommitted carry each cycle.
 See [STREAMING_API.md](STREAMING_API.md) for exact cut semantics and limitations.
 
-## Normalization and the legacy mapper
+## Normalization
 
 Active normalization is in `normalize.go`. Engine policy selects auto, none,
 composed, or decomposed mode. Auto defaults to composed, with decomposition
@@ -84,13 +83,7 @@ uses adjacent pairs and optional engine composition hooks.
 
 This is not full font-aware normalization: general canonical ordering across
 combining sequences and cmap-aware Unicode composition/decomposition selection
-are incomplete.
-
-The recursive representation search in `buffer.go` tries a nucleus/mark
-combination supported by the font. It is legacy code, not reused by the active
-streaming normalizer. Its old `mapGlyphs` writes into a preallocated `Buffer`,
-and `applySubstitutionFeature` remains empty. These facts no longer imply that
-the whole package lacks feature execution.
+are incomplete (SHAPE-012, SHAPE-013).
 
 ## Script/language mapping and engines
 
@@ -136,9 +129,9 @@ for exported compiler/executor APIs and claims of complete script behavior.
 ## Testing and diagnostics
 
 The former proof-image failure and proposed first GSUB milestone are historical,
-not the current test state. `TestBufferFunctions` is skipped, while the active
-pipeline has substantial tests. The review's full suite passed, but public-API
-probes found failures outside the committed regression coverage.
+not the current test state. The active pipeline has substantial tests. The
+review's full suite passed, but public-API probes found failures outside the
+committed regression coverage.
 
 [TESTING.md](TESTING.md) is the test directory guide, coverage snapshot, and
 regression backlog. It distinguishes structural font tests, lookup tests,

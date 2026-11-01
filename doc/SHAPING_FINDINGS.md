@@ -340,6 +340,12 @@ results do not check cmap coverage. Fixes must preserve original cluster anchors
 through expansion and contraction; resolving the missing glyph will still leave
 mark positioning/grouping to be checked against the complete oracle.
 
+**Prior art:** the removed legacy `otshape/buffer.go` contained a recursive,
+font-aware representation search (`findRepresentation`) that picks the
+nucleus/mark combination the font can display. It worked on whole strings and
+kept no clusters, so it is not a drop-in fix. View it with
+`git show 9760035:otshape/buffer.go`.
+
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE013' -count=1 -v
 ```

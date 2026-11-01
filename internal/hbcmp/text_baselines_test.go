@@ -45,7 +45,9 @@ var textBaselineFindings = map[string]string{
 	"hebrew_vav_holam_no_mark": "", "hebrew_vav_holam_no_mark_requested": "SHAPE-010",
 	"hebrew_shin_reordered": "",
 	// Same rules, swapped LookupList order; the control runs calt first in both.
-	"latin_lookup_order_liga_first": "SHAPE-020", "latin_lookup_order_calt_first": "",
+	"latin_lookup_order_liga_first": "", "latin_lookup_order_calt_first": "",
+	"latin_position_order_kern_first": "", "latin_position_order_mark_first": "",
+	"latin_shared_alternate_salt": "", "latin_shared_alternate_ss01": "", "latin_shared_alternate_equal": "",
 }
 
 // Load every record even for a filtered run: missing fonts, fields or cases

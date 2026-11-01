@@ -43,6 +43,11 @@ CASES = [
     ("hebrew_shin_reordered", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05e9\u05c1\u05b8", ["mark=1", "mkmk=1"]),
     ("latin_lookup_order_liga_first", "ShaperTestLookupOrder-LigaFirst.ttf", "Latn", "en", "ltr", "fi", []),
     ("latin_lookup_order_calt_first", "ShaperTestLookupOrder-CaltFirst.ttf", "Latn", "en", "ltr", "fi", []),
+    ("latin_position_order_kern_first", "ShaperTestLookupOrder-KernFirst.ttf", "Latn", "en", "ltr", "f\u0301", []),
+    ("latin_position_order_mark_first", "ShaperTestLookupOrder-MarkFirst.ttf", "Latn", "en", "ltr", "f\u0301", []),
+    ("latin_shared_alternate_salt", "ShaperTestLookupOrder-SharedAlternates.ttf", "Latn", "en", "ltr", "f", ["salt=1", "ss01=0"]),
+    ("latin_shared_alternate_ss01", "ShaperTestLookupOrder-SharedAlternates.ttf", "Latn", "en", "ltr", "f", ["salt=0", "ss01=2"]),
+    ("latin_shared_alternate_equal", "ShaperTestLookupOrder-SharedAlternates.ttf", "Latn", "en", "ltr", "f", ["salt=1", "ss01=1"]),
 ]
 
 

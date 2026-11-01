@@ -354,14 +354,23 @@ type EditSpan struct {
 // Mutation ownership and partial-progress invariants are documented in
 // doc/PARTIAL_PROGRESS.md.
 type BufferState struct {
-	Glyphs       GlyphBuffer
-	Pos          PosBuffer
-	Index        int
-	glyphsShared bool
-	random       *rand.PCG // optional reproducible alternate-selection stream
-	posShared    bool
-	execution    *lookupExecution // transient per-application limits, shared by nested calls
-	edits        []EditSpan       // ordered mutations, in coordinates immediately before each edit
+	Glyphs                  GlyphBuffer
+	Pos                     PosBuffer
+	Index                   int
+	glyphsShared            bool
+	alternateSelectionError error     // deferred until a covered, nonempty alternate set is reached
+	random                  *rand.PCG // optional reproducible alternate-selection stream
+	posShared               bool
+	execution               *lookupExecution // transient per-application limits, shared by nested calls
+	edits                   []EditSpan       // ordered mutations, in coordinates immediately before each edit
+}
+
+// SetAlternateSelectionError defers a caller's selection error until an alternate
+// substitution actually matches. Contextual and extension lookups share it.
+// Pass nil before the next lookup/candidate to clear the error. Other lookup
+// types and uncovered glyphs are unaffected; prior successful edits are retained.
+func (b *BufferState) SetAlternateSelectionError(err error) {
+	b.alternateSelectionError = err
 }
 
 // SetRandomSeed resets the alternate-selection generator for subsequent calls.
@@ -424,12 +433,13 @@ func (b *BufferState) CloneShared() *BufferState {
 		random = &copy
 	}
 	return &BufferState{
-		Glyphs:       b.Glyphs,
-		random:       random,
-		Pos:          b.Pos,
-		Index:        b.Index,
-		glyphsShared: true,
-		posShared:    true,
+		alternateSelectionError: b.alternateSelectionError,
+		Glyphs:                  b.Glyphs,
+		random:                  random,
+		Pos:                     b.Pos,
+		Index:                   b.Index,
+		glyphsShared:            true,
+		posShared:               true,
 	}
 }
 

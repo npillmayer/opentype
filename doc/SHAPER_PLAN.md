@@ -1,7 +1,7 @@
 # otshape Plan Compilation and Execution
 
-Validated against the source on 2026-10-26. This document describes the current
-implementation and distinguishes internal machinery from public guarantees.
+Stage scheduling updated against the source on 2026-11-01 (SHAPE-020). This
+document describes the current implementation and distinguishes internal machinery from public guarantees.
 [TESTING.md](TESTING.md) records test evidence and reproduced correctness gaps.
 
 ## Scope and design
@@ -46,7 +46,8 @@ All plan types are private. There is no exported `Plan`, `PlanRequest`,
 - `tableProgram` contains a flat `[]lookupOp`, `[]stage` ranges, and
   `[]featureBind`. Stages use inclusive `FirstLookup` and exclusive
   `LastLookup`, with an optional pause-hook ID.
-- `lookupOp` carries lookup index, feature tag, mask, and runtime flags.
+- `lookupOp` carries lookup index, representative feature tag, union mask, runtime
+  flags, and every contributing feature with its individual mask/required status.
 - `maskLayout` carries `GlobalMask` and per-tag mask/shift/default values.
 - `planExecutor` acquires a mutable `runBuffer`; it does not store glyph data in
   the plan.
@@ -75,24 +76,25 @@ The current `compile(planRequest)` sequence is:
 3. Call optional `CollectFeatures`, then `OverrideFeatures`.
 4. Combine user ranges with engine mask requests and allocate masks.
 5. Extract features independently from GSUB and GPOS.
-6. Compile each table's selected features into lookup stages.
-7. Append direct GSUB pause stages.
-8. Compute unresolved-feature fallback needs and a resolved-feature view.
-9. Call optional `PostResolveFeatures` to anchor GSUB pauses.
-10. Construct the plan and joiner map; call `InitPlan`.
-11. Call `ValidatePlan` if present, inside the `ShapingEnginePlanHooks` branch.
-12. Validate structural plan invariants.
+6. Compile each table with its recorded stage assignments and pause boundaries.
+7. Compute unresolved-feature fallback needs and a resolved-feature view.
+8. Call optional `PostResolveFeatures` to anchor GSUB pauses.
+9. Construct the plan and joiner map; call `InitPlan`.
+10. Call `ValidatePlan` if present, inside the `ShapingEnginePlanHooks` branch.
+11. Validate structural plan invariants.
 
 Thus a validation-only engine does not currently get `ValidatePlan` invoked.
 User-facing strict mode and public plan diagnostics are not exposed.
 
 ## Feature discovery and scheduling
 
-Default GSUB order is `locl, ccmp, rlig, rclt, calt, clig, liga`.
-Default GPOS order is `abvm, blwm, mark, mkmk, curs, dist, kern`.
-Engine additions extend these lists; adding a tag already present does not move
-it. This differs from assuming that every engine collection call establishes a
-new stage at that position.
+Default GSUB features are `locl, ccmp, rlig, rclt, calt, clig, liga`;
+default GPOS features are `abvm, blwm, mark, mkmk, curs, dist, kern`.
+These lists select features; they do not set execution order. Explicit pauses
+are the stage boundaries. Engine registrations use the current table stage,
+with repeated registrations retaining the earliest stage. Unregistered defaults
+and user features join the final stage. GSUB pauses do not advance GPOS stages;
+there is currently no public GPOS pause API.
 
 `fontFeaturesForTable` selects the requested script or falls back to `DFLT`.
 It then selects the requested language or the script's default LangSys.
@@ -101,21 +103,34 @@ itself is incomplete; see [TESTING.md](TESTING.md).
 
 The extracted feature slice reserves slot zero for the required feature.
 `compileTableProgram` activates required features, available defaults, and user
-toggles. Required features are retained in the schedule when a global disable is
-requested; the compiler records a warning. This scheduling rule alone does not
-prove immunity from runtime mask filtering.
+toggles. Required features cannot be disabled and use an unconditional mask.
+They join stage zero unless their tag was explicitly registered in another stage.
+Engine/user setting precedence otherwise remains the separate SHAPE-021 issue.
 
-Stages are assigned to required features first, then active default tags, then
-remaining active tags sorted by tag. Within a stage, lookup indexes are sorted
-and duplicates merge masks and flags with bitwise OR. Duplicate lookups in
-different stages remain separate executions.
+Within each stage, lookup indexes are sorted and shared lookups execute once.
+Duplicates in different stages remain separate executions. Mask unions preserve
+unconditional activation: if any contributor has mask zero, the shared lookup's
+mask is zero. All contributing tags remain in the resolved-feature view and can
+anchor pauses; feature metadata describes each contributor's own flags.
 
-Mask allocation processes user/engine mask requests before font feature
-resolution. It allocates up to 31 bits in a `uint32`, with at most eight bits per
-feature value. It does not implement shared HarfBuzz-style global-bit allocation.
-Default features without an explicit mask can have a zero lookup mask, meaning
-no mask gate. Engine-generated mask requests come from a map, so stable numeric
-mask assignments across compilations are not a supported guarantee.
+Feature collection is deterministic: required first, then ascending tag. Shared
+lookups AND automatic joiner flags and retain the first contributor's random and
+per-syllable flags. This follows the merge operation in
+[HarfBuzz 15 hb-ot-map.cc](https://github.com/harfbuzz/harfbuzz/blob/15.0.0/src/hb-ot-map.cc),
+which does not OR random/per-syllable flags. The deterministic representative
+rule avoids depending on unstable ordering of equal lookup indexes.
+
+Masks allocate up to 31 bits, encoding feature values through per-feature value
+tables. Engine requests are sorted for deterministic allocation. Default features
+without an explicit mask and required features use zero, meaning unconditional.
+For a shared alternate lookup, only active contributors at the checked start
+supply values. Zero/default equals one; all negative values mean random. Equal
+values apply once. Incompatible values return `ErrConflictingAlternates` when a
+nonempty alternate set matches, including nested and extension lookups. Other
+lookup kinds and uncovered glyphs do not fail just because values differ.
+A retained `FeatureRandom` flag forces random selection after this conflict check.
+This is the agreed API contract, intentionally independent of HarfBuzz's packed
+mask numeric behavior for shared alternates (see SHAPE-020).
 
 ## Flags and pauses: implemented semantics
 
@@ -124,14 +139,14 @@ mask assignments across compilations are not a supported guarantee.
 | `FeatureManualZWNJ`, `FeatureManualZWJ` | Adjust automatic joiner skipping flags. |
 | `FeaturePerSyllable` | Isolates GSUB spans. Default syllable IDs derive from clusters, not script syllable recognition. |
 | `FeatureHasFallback` | Contributes unresolved-feature metadata for engine fallback decisions. |
-| `FeatureRandom` | Sets a runtime flag that passes `alt=-1`; the GSUB alternate implementation selects the last alternative, not a random one. |
+| `FeatureRandom` | Sets a runtime flag that passes `alt=-1` for random selection after checking contributor conflicts. |
 | `FeatureGlobal`, `FeatureGlobalSearch` | Declared but have no implemented handling in the planner/executor. |
-| `AddGSUBPause` | Appends empty stages after the compiled GSUB lookup stages. It does not interleave pauses at feature-collection call sites. |
-| `AddGSUBPauseBefore/After` | Anchors callbacks to resolved GSUB stages; returns false when no anchor can be attached. |
+| `AddGSUBPause` | Closes the current GSUB stage, runs the callback, and opens the next. Nil callbacks still split stages; empty stages are retained. |
+| `AddGSUBPauseBefore/After` | Anchors callbacks before/after the whole containing GSUB stage, not an individual feature; returns false when no anchor can be attached. |
 | `PauseHook` | Returns `error`; execution stops on error. There is no ignored boolean return. |
 
-Anchored pauses are resolved by retained lookup feature tags. Public hooks expose
-GSUB pauses only; there is no public GPOS pause API. Arabic's registered pause
+Anchored pauses resolve through all selected feature bindings, including shared
+contributors. Public hooks expose GSUB pauses only; there is no public GPOS pause API. Arabic's registered pause
 callbacks are currently no-ops, so their presence does not implement fallback
 work at those boundaries.
 
@@ -150,9 +165,9 @@ suppresses the failing chunk while preserving earlier sink output.
 
 Important limits:
 
-- The executor initializes masks again after `SetupMasks`, overwriting script
-  masks. Ordinary feature arguments also do not reach alternate selection, and
-  indexed ranges are applied in chunk-local coordinates.
+- Masks initialized before `SetupMasks` are preserved. Feature values and ranges
+  follow the resolved SHAPE-001/002/003/011/018 contracts; event scopes and safe
+  streaming boundaries still have separate open findings.
 - An internal `Strict` policy and its test exist, but the public compile path
   does not enable it. The former `ZeroMarks` and `FallbackMarkPos` policies
   were removed as unused on 2026-11-01.
@@ -162,10 +177,9 @@ Important limits:
 - Without strict mode, missing tables or feature-extraction failures become
   private plan notes; they are not universally fatal. This contradicts the old
   blanket claim that the public shaper is strict about incomplete fonts.
-- Mark/cursive positioning retains unresolved attachment references. Internal
-  fallback positioning only records an attachment. Mark-zeroing helpers operate
-  before nominal horizontal advances are added at output; their unit tests do
-  not establish final zero advances through the public API.
+- Latin/Hebrew mark finalization and mark advances follow SHAPE-007/008. Cursive
+  positioning and safe streaming remain separate limitations; this scheduling
+  fix makes no broader positioning or script-conformance claim.
 - The sink contract is logical shaping order, including RTL. Final visual
   ordering belongs to the caller (SHAPE-009 resolved). A vertical-metrics
   pipeline and variation application remain absent from plan execution.
@@ -188,8 +202,8 @@ policy does not imply global strict mode or general Arabic shaping correctness.
 
 The old delivery steps for plan compilation, staged execution, edit propagation,
 hook wiring, and basic GPOS tests have implementations. Remaining work includes
-correct mask/value/range behavior, stage/pause semantics, public policy wiring,
-final attachment coordinates, and context-safe streaming.
+engine/user setting precedence (SHAPE-021), public policy wiring,
+script-specific positioning, and context-safe streaming.
 
 Event-plan state also needs isolation: compilation calls `InitPlan` repeatedly
 on the same engine, while replay of a stored plan does not restore engine-local

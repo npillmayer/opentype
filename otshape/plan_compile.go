@@ -336,6 +336,12 @@ func compileUserFeatureMasks(features []FeatureRange) (maskLayout, error) {
 	return layout, nil
 }
 
+// Only explicit pauses create stages. Empty stages retain their callbacks.
+type tableStagePlan struct {
+	ByFeature map[ot.Tag]int
+	Pauses    []pauseHookID // entry i closes stage i; the final stage has no pause
+}
+
 func compileTableProgram(
 	features []otlayout.Feature,
 	table planTable,
@@ -344,6 +350,7 @@ func compileTableProgram(
 	featureFlags map[ot.Tag]FeatureFlags,
 	masks maskLayout,
 	policy planPolicy,
+	staging tableStagePlan,
 ) (tableProgram, []planNote, error) {
 	prog := tableProgram{
 		FoundScript: len(features) > 0,
@@ -351,9 +358,6 @@ func compileTableProgram(
 		Lookups:     []lookupOp{},
 	}
 	notes := make([]planNote, 0)
-	if len(features) == 0 {
-		return prog, notes, nil
-	}
 
 	available := make(map[ot.Tag]otlayout.Feature, len(features))
 	required := make(map[ot.Tag]bool)
@@ -405,69 +409,66 @@ func compileTableProgram(
 		}
 	}
 
-	stageByTag := make(map[ot.Tag]int, len(available))
-	stageNo := 0
-	for tag := range required {
-		if active[tag] {
-			stageByTag[tag] = stageNo
-		}
-	}
-	if len(required) > 0 {
-		stageNo++
-	}
-	for _, tag := range defaultTags {
-		if !active[tag] || required[tag] {
-			continue
-		}
-		if _, exists := stageByTag[tag]; exists {
-			continue
-		}
-		stageByTag[tag] = stageNo
-		stageNo++
-	}
-	remaining := make([]ot.Tag, 0, len(active))
+	stageByTag := make(map[ot.Tag]int, len(active))
 	for tag, on := range active {
 		if !on {
 			continue
 		}
-		if _, exists := stageByTag[tag]; exists {
-			continue
+		st := len(staging.Pauses)
+		if required[tag] {
+			st = 0
 		}
-		remaining = append(remaining, tag)
+		if explicit, ok := staging.ByFeature[tag]; ok {
+			st = explicit
+		}
+		if st < 0 || st > len(staging.Pauses) {
+			return prog, notes, errShaper("feature stage outside pause schedule")
+		}
+		stageByTag[tag] = st
 	}
-	sort.Slice(remaining, func(i, j int) bool { return remaining[i] < remaining[j] })
-	for _, tag := range remaining {
-		stageByTag[tag] = stageNo
-		stageNo++
+
+	// Match HB's required-first, then tag-order collection. A retained lookup
+	// supplies random/per-syllable flags; joiner flags are ANDed across all
+	// contributors (HB 15 hb-ot-map.cc). Keep selection provenance separately.
+	tags := make([]ot.Tag, 0, len(active))
+	for tag, on := range active {
+		if on {
+			tags = append(tags, tag)
+		}
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if required[tags[i]] != required[tags[j]] {
+			return required[tags[i]]
+		}
+		return tags[i] < tags[j]
+	})
+	featureIndices := make(map[ot.Tag]int, len(features))
+	for i, feat := range features {
+		if feat != nil {
+			if _, exists := featureIndices[feat.Tag()]; !exists {
+				featureIndices[feat.Tag()] = i
+			}
+		}
 	}
 
 	type stageLookupBucket map[uint16]lookupOp
 	stageBuckets := make(map[int]stageLookupBucket)
-	for i, feat := range features {
-		if feat == nil {
-			continue
-		}
-		tag := feat.Tag()
-		if !active[tag] {
-			continue
-		}
+	for _, tag := range tags {
+		feat := available[tag]
+		i := featureIndices[tag]
 		mask := uint32(0)
-		if ms, ok := masks.ByFeature[tag]; ok {
+		if ms, ok := masks.ByFeature[tag]; ok && !required[tag] {
 			mask = ms.Mask
 		}
 		fstage, ok := stageByTag[tag]
 		if !ok {
 			continue
 		}
-		prog.FeatureBinds = append(prog.FeatureBinds, featureBind{
-			Tag:          tag,
-			FeatureIndex: uint16(i),
-			Stage:        fstage,
-			Mask:         mask,
-			Required:     required[tag],
-		})
 		flags := lookupFlagsForFeature(table, tag)
 		flags = applyFeatureFlags(flags, featureFlags[tag], table)
+		prog.FeatureBinds = append(prog.FeatureBinds, featureBind{
+			Tag: tag, FeatureIndex: uint16(i), Stage: fstage, Mask: mask, Required: required[tag], Flags: flags,
+		})
 		for j := 0; j < feat.LookupCount(); j++ {
 			inx := feat.LookupIndex(j)
 			if inx < 0 {
@@ -480,8 +481,15 @@ func compileTableProgram(
 				stageBuckets[fstage] = bucket
 			}
 			if op, exists := bucket[uinx]; exists {
-				op.Mask |= mask
-				op.Flags |= flags
+				// Zero means unconditional here, unlike HB's dedicated global bit.
+				if op.Mask == 0 || mask == 0 {
+					op.Mask = 0
+				} else {
+					op.Mask |= mask
+				}
+				const joiners = lookupAutoZWJ | lookupAutoZWNJ
+				op.Flags = (op.Flags &^ joiners) | (op.Flags & flags & joiners)
+				op.Features = append(op.Features, lookupFeature{Tag: tag, Mask: mask, Required: required[tag]})
 				bucket[uinx] = op
 				continue
 			}
@@ -490,22 +498,12 @@ func compileTableProgram(
 				FeatureTag:  tag,
 				Mask:        mask,
 				Flags:       flags,
+				Features:    []lookupFeature{{Tag: tag, Mask: mask, Required: required[tag]}},
 			}
 		}
 	}
-	if len(stageBuckets) == 0 {
-		return prog, notes, nil
-	}
-	stageKeys := make([]int, 0, len(stageBuckets))
-	for st := range stageBuckets {
-		stageKeys = append(stageKeys, st)
-	}
-	sort.Ints(stageKeys)
-	for _, st := range stageKeys {
+	for st := 0; st <= len(staging.Pauses); st++ {
 		bucket := stageBuckets[st]
-		if len(bucket) == 0 {
-			continue
-		}
 		start := len(prog.Lookups)
 		indices := make([]uint16, 0, len(bucket))
 		for inx := range bucket {
@@ -516,10 +514,14 @@ func compileTableProgram(
 			prog.Lookups = append(prog.Lookups, bucket[inx])
 		}
 		end := len(prog.Lookups)
+		pause := noPauseHook
+		if st < len(staging.Pauses) {
+			pause = staging.Pauses[st]
+		}
 		prog.Stages = append(prog.Stages, stage{
 			FirstLookup: start,
 			LastLookup:  end,
-			Pause:       noPauseHook,
+			Pause:       pause,
 		})
 	}
 	return prog, notes, nil
@@ -610,6 +612,7 @@ func compile(req planRequest) (*plan, error) {
 		gsubFeatureFlags,
 		masks,
 		policy,
+		planner.tableStages(planGSUB),
 	)
 	if err != nil {
 		return nil, err
@@ -623,12 +626,12 @@ func compile(req planRequest) (*plan, error) {
 		gposFeatureFlags,
 		masks,
 		policy,
+		planner.tableStages(planGPOS),
 	)
 	if err != nil {
 		return nil, err
 	}
 	notes = append(notes, gposNotes...)
-	planner.applyDirectGSUBPauses(&gsubProg)
 
 	gsubFallbackNeeds := collectFallbackNeeds(gsubProg, planner.defaultTags(planGSUB), toggles, gsubFeatureFlags)
 	gposFallbackNeeds := collectFallbackNeeds(gposProg, planner.defaultTags(planGPOS), toggles, gposFeatureFlags)

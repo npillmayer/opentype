@@ -28,8 +28,9 @@ Status: Arabic and Syriac shaping is outside the current conformance focus
 (Latin and Hebrew). Joining classification is hand-maintained rather than
 derived from the Unicode joining data, and the behavior is covered by unit
 tests only, without independent HarfBuzz comparisons. The Syriac script is
-currently mapped to the default OpenType script tag rather than syrc. GSUB
-features currently run in the general default order, so the form features are
-applied after rlig, calt, and liga rather than before them.
+currently mapped to the default OpenType script tag rather than syrc. The shared
+planner now honors registered GSUB pause boundaries (SHAPE-020), placing form
+features before rlig/calt as collected. This scheduling change is regression
+tested but does not establish Arabic/Syriac HarfBuzz conformance.
 */
 package otarabic

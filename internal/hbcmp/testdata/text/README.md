@@ -10,12 +10,12 @@ No expected value comes from the repository shaper.
 The later [streaming/scope extension](STREAMING.md) adds twelve captures in
 [streaming.json](streaming.json), reuses four of these cases, and tests both
 public APIs across buffer profiles and flush modes. Its event/progress driver
-uses the same comparison contract. The 26-case counts below refer specifically
+uses the same comparison contract. The 31-case counts below refer specifically
 to `baselines.json` and its whole-input runner.
 
 ## Files and execution
 
-- [baselines.json](baselines.json) contains 26 cases, exact Unicode inputs,
+- [baselines.json](baselines.json) contains 31 cases, exact Unicode inputs,
   complete HarfBuzz output, font hashes, capture command arguments, and the
   version and SHA-256 of the capturing executable.
 - [capture_harfbuzz_text.py](../../../../testdata/scripts/capture_harfbuzz_text.py)
@@ -24,11 +24,11 @@ to `baselines.json` and its whole-input runner.
   replaces the snapshot. It rejects a different HarfBuzz version, incomplete
   output, and missing-glyph results.
 - [text_baselines_test.go](../../text_baselines_test.go) validates all cases and
-  font hashes, including the tagged cases, and runs sixteen passing comparisons.
+  font hashes, including the tagged cases, and runs twenty-two passing comparisons.
   It reuses `fixture` parameter conversion, `glyphCollector`, and the exact
   positioned-glyph comparison from `hb_compare.go`.
-- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs ten failing cases
-  in six top-level tests under `shaping_knownbugs`. Raw expectations remain the
+- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs nine failing cases
+  in five top-level tests under `shaping_knownbugs`. Raw expectations remain the
   original HarfBuzz output; comparison explicitly converts RTL to logical order; promote cases as their blockers are resolved.
 - [Noto font provenance](../../../../testdata/fonts/NotoSansHebrew-README.md)
   pins the new Hebrew font and its OFL license. Latin uses the existing
@@ -85,12 +85,12 @@ bidi layout, streaming cuts, events, or general Latin/Hebrew conformance.
 
 ## Results
 
-Sixteen cases pass every output field; ten remain tagged. The NFD ranged
+Twenty-two cases pass every output field; nine remain tagged. The NFD ranged
 ligature case was promoted after the SHAPE-002 fix on 2026-10-27. All calls reaching
 `Shape` return nil. The NoGPOS font is rejected by the normal parser before
 shaping (a documented library scope restriction). The original eleven cases
 are listed below; [NORMALIZATION.md](NORMALIZATION.md) lists the thirteen normalization
-additions, and [Lookup-order cases](#lookup-order-cases) the two SHAPE-020 cases.
+additions, and [Lookup-order cases](#lookup-order-cases) the seven SHAPE-020 cases.
 
 | Case ID | Text / context | Features | Result |
 | --- | --- | --- | --- |
@@ -142,9 +142,31 @@ order. Input `fi`, Latn/en/LTR, default features.
 
 | Case ID | LookupList order | HarfBuzz output | Result |
 | --- | --- | --- | --- |
-| `latin_lookup_order_liga_first` | `liga` = 0, `calt` = 1 | `3/0 (0,600)`: the `fi` ligature | SHAPE-020: actual `4/0 (0,600), 2/1 (0,600)` (`f.alt i`) |
+| `latin_lookup_order_liga_first` | `liga` = 0, `calt` = 1 | `3/0 (0,600)`: the `fi` ligature | Pass after SHAPE-020; promoted from the tagged suite |
 | `latin_lookup_order_calt_first` | `calt` = 0, `liga` = 1 | `4/0 (0,600), 2/1 (0,600)` | Pass (control) |
 
-See [SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md) for diagnosis
-and agreed contracts. This work changes tests and public contract comments,
-not production shaping behavior.
+The SHAPE-020 implementation adds five more independent captures on 2026-11-01
+with the same binary. All preceding 26 records and capture metadata were verified
+unchanged. The full seven-case set also passes through `ShapeEvents` in
+`TestSHAPE020EventBaselines`, with whole-input buffers and full-field comparison.
+
+**Review (2026-11-01):** SHAPE-020 passed review and is archived in the
+[resolved findings](../../../../doc/SHAPING_FINDINGS.md#shape-020--default-features-run-in-feature-order-instead-of-lookup-order).
+Read-only checks verified all 31 captures and reproduced all five lookup-order
+font binaries; prior records and original font bytes remain unchanged.
+
+| Case ID | Input/features | HarfBuzz output (font units) |
+| --- | --- | --- |
+| `latin_position_order_kern_first` | `f` + U+0301; defaults | GID 1, cluster 0, offset (0,50), advance (600,0); GID 5, cluster 0, offset (-500,250), advance (0,0) |
+| `latin_position_order_mark_first` | same, swapped GPOS order | same, except mark Y offset 200 |
+| `latin_shared_alternate_salt` | `f`; `salt=1,ss01=0` | GID 2, cluster 0, zero offsets, advance (600,0) |
+| `latin_shared_alternate_ss01` | `f`; `salt=0,ss01=2` | GID 3, cluster 0, zero offsets, advance (600,0) |
+| `latin_shared_alternate_equal` | `f`; `salt=1,ss01=1` | GID 2, cluster 0, zero offsets, advance (600,0) |
+
+HarfBuzz 15's alternate selection combines packed mask bits. A probe using the
+same shared font with `salt=1,ss01=2` leaves GID 1 unchanged; it does not provide
+a portable per-feature value resolution rule for our differently encoded masks.
+The user chose `ErrConflictingAlternates` for incompatible active values. Public
+contract tests assert that error and withhold the failing chunk; they do not
+claim HarfBuzz parity for that input or replace an independent expectation.
+See [SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md) for the decision.

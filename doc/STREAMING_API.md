@@ -84,6 +84,12 @@ anchor repeats the choice. Separate requests can differ. This does not repair
 context loss. SHAPE-018 now anchors forward lookup starts to the checked glyph,
 including its mask/value and source anchor; reverse traversal remains separate. See [SHAPE-003](SHAPING_FINDINGS.md#shape-003--feature-values-do-not-select-alternates).
 
+When active features share one alternate lookup in a stage, equal values run
+once (zero/default equals one; all negatives mean random). Incompatible values
+return `ErrConflictingAlternates` only if a nonempty alternate set matches,
+including through context or extension lookups. The failing chunk is withheld;
+earlier sink writes remain. This SHAPE-020 contract applies to both public APIs.
+
 The source must return `io.EOF` to terminate. Rune byte sizes are ignored by
 ordinary ingestion; cluster IDs are monotonically assigned codepoint indexes.
 The sink receives individual records, not batches or flush notifications.

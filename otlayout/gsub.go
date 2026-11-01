@@ -159,6 +159,9 @@ func gsubLookupType3Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	if len(glyphs) == 0 {
 		return pos, false, buf, nil, nil
 	}
+	if ctx.buf.alternateSelectionError != nil {
+		return pos, false, buf, nil, ctx.buf.alternateSelectionError
+	}
 	if alt < 0 {
 		alt = ctx.buf.randomAlternate(len(glyphs))
 	} else if alt > 0 {

@@ -121,6 +121,15 @@ Replacement policies:
 - One-to-one edits preserve side metadata.
 - Pure insertion uses default metadata; deletion removes consumed entries.
 
+Shared alternate lookups retain each contributor's value. Incompatible active
+values set a deferred `BufferState.SetAlternateSelectionError`; only a matched,
+nonempty alternate set raises it, including through contextual/extension calls.
+Other lookup types and uncovered glyphs remain usable. Shaping sets or clears
+this error before each checked lookup start. A shared clone copies the pending
+error, while clearing it on the clone does not alter its source. Earlier edits
+still follow the journal rules above. Public callers can identify the shaping
+error with `errors.Is(err, otshape.ErrConflictingAlternates)` (SHAPE-020).
+
 ### Isolated spans and attachments
 
 `applyLookupIsolatedSpan` works on detached glyph/position slices, for example

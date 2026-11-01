@@ -108,7 +108,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-016](#shape-016--feature-scopes-sever-unrelated-lookup-context) | reproduced | Feature-event spans break kerning across scope boundaries |
 | [SHAPE-017](#shape-017--gsub-deletion-is-ignored) | reproduced | Empty GSUB multiple-substitution sequences leave glyphs unchanged |
 | [SHAPE-019](#shape-019--ligature-substitution-deletes-ignored-marks) | reproduced | Ligature span replacement deletes skipped marks; component association remains to be verified |
-| [SHAPE-020](#shape-020--default-features-run-in-feature-order-instead-of-lookup-order) | reproduced | Each feature gets its own stage, so lookups of different default features run in feature order instead of LookupList order |
 | [SHAPE-021](#shape-021--engine-and-user-feature-settings-combine-as-off-wins) | reproduced | Engine and user feature settings combine so that "off" wins, contrary to the agreed precedence |
 
 Archived fixes in [Resolved findings](#resolved-findings):
@@ -120,7 +119,8 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-007 — final mark positioning](#shape-007--mark-attachments-do-not-resolve-to-origins),
 [SHAPE-008 — GDEF mark advances](#shape-008--marks-retain-nominal-advances),
 [SHAPE-011 — base/mark clusters](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0),
-and [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks).
+[SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks),
+and [SHAPE-020 — stage lookup order](#shape-020--default-features-run-in-feature-order-instead-of-lookup-order).
 
 The AOTS baseline batch adds SHAPE-005/006 in
 [`internal/hbcmp/aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go).
@@ -528,58 +528,6 @@ not change the fifteen failing top-level discovery tests.
 ```sh
 # Historical test name; current finding is SHAPE-019.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE005AOTSLigatureAcrossMark$' -count=1 -v
-```
-
-## SHAPE-020 — Default features run in feature order instead of lookup order
-
-**Status:** reproduced 2026-11-01. Originally an inspection note in the
-`otshape` code review. **Test:** `TestKnownBugSHAPE020LookupOrder` in
-[text_knownbugs_test.go](../internal/hbcmp/text_knownbugs_test.go); ordinary
-control `latin_lookup_order_calt_first` in `TestHarfBuzzTextBaselines`.
-
-**Expected behavior and basis:** the OpenType LookupList order determines the
-order in which lookups are applied. HarfBuzz places the default shaper's common
-and horizontal features (`ccmp`, `locl`, `rlig`, `calt`, `clig`, `liga`,
-`rclt`, …) and user features into one GSUB stage, and applies the lookups of a
-stage in LookupList index order. An independent `hb-shape` 15.0.0 capture of
-the fixture below forms the ligature: GID 3, cluster 0, advance 600.
-
-**Reproduction:** repository-authored
-[lookup-order fonts](../testdata/fonts/LOOKUP_ORDER.md) with the same GSUB rules,
-`liga` (`f i` → `fi`) and `calt` (`f` → `f.alt`), in swapped LookupList order.
-Input `fi`, Latn/en/LTR, default features, core and Hebrew engines registered,
-whole-input buffers `3/1/4`. With `ShaperTestLookupOrder-LigaFirst.ttf`
-(`liga` = lookup 0), HarfBuzz emits `[3/0 (0,600)]`.
-
-**Observed:** `Shape` returns nil and emits `[4/0 (0,600), 2/1 (0,600)]`
-(`f.alt i`): `calt` runs first and prevents the ligature. The control font
-(`calt` = lookup 0) yields `f.alt i` in both shapers and passes, so the
-difference comes from lookup order alone.
-
-**Implementation evidence:** `compileTableProgram` in
-[plan_compile.go](../otshape/plan_compile.go) assigns a new stage number to
-every active default feature in the order of `defaultGSUBFeatures` (and of the
-GPOS defaults), then one stage per remaining feature sorted by tag. Lookups are
-sorted by index only within a stage. For the LigaFirst font, the compiled plan
-has GSUB stage 0 = `calt` (lookup 1) and stage 1 = `liga` (lookup 0); this was
-checked with a temporary in-package probe that was not committed.
-
-**Scope and related observations:** GPOS defaults (`abvm`, `blwm`, `mark`,
-`mkmk`, `curs`, `dist`, `kern`) are staged by the same code; that variant is
-not reproduced here. Engine-collected features are affected as well: for the
-Arabic engine, the code review records (inspection only) that its collected
-feature order is lost and form features run after `rlig`, `calt`, and `liga`.
-A fix must group features into stages the way HarfBuzz does, with explicit
-pauses (including engine `AddGSUBPause` calls, which currently all follow the
-last lookup) as the only stage boundaries, while keeping required-feature and
-mask handling. This finding prescribes no implementation.
-
-**Verification:** at revision `0a12e65` plus the new fixture, capture, and
-tests. The 24 existing text captures were verified byte-identical with the same
-`hb-shape` binary before the two cases were added.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE020' -count=1 -v
 ```
 
 ## SHAPE-021 — Engine and user feature settings combine as "off wins"
@@ -1152,3 +1100,74 @@ failing cells. Independent captures and full-output assertions are unchanged.
 go test ./otlayout ./otshape/... -run 'SHAPE018|ForwardLookupStartsAtCursor|NestedForwardLookupStaysAtTarget' -count=1
 go test ./internal/hbcmp -run '^TestHarfBuzzStreamingBaselines/(scope_nested|scope_accent)/' -count=1
 ```
+
+### SHAPE-020 — Default features run in feature order instead of lookup order
+
+**Fixed:** implemented and reviewed 2026-11-01. No blocking findings within the
+shared stage-scheduling and alternate-selection scope.
+
+**Cause and fix:** the compiler assigned one stage per default/user feature,
+so default feature-list order overrode LookupList order. With the original
+LigaFirst fixture, `calt` ran before lookup 0 (`liga`), producing `f.alt i`
+instead of HarfBuzz's `fi` ligature (GID 3, cluster 0, advance 600).
+[The compiler](../otshape/plan_compile.go) now sorts and deduplicates lookups
+within stages defined by explicit pauses. The original independent capture is
+promoted unchanged; the swapped-order control remains ordinary.
+
+**Stage contract:** [engine registrations](../otshape/plan_hooks.go) retain their
+earliest stage; unregistered defaults/user features join the final stage.
+Required features default to stage zero unless explicitly registered elsewhere.
+Direct GSUB pauses run at their collection boundaries, including empty and
+consecutive stages; nil callbacks still close a stage. GSUB pauses do not advance
+GPOS stages. Anchored Before/After callbacks surround the whole containing stage,
+and all shared-feature tags remain available as anchors. There is no public GPOS
+pause API.
+
+A lookup executes once per stage, retaining all contributing tags/masks and
+per-feature metadata. Any unmasked/required contributor makes it unconditional.
+Automatic joiner flags combine with AND; random/per-syllable flags come from the
+first contributor, collected deterministically in required-first, then tag order.
+See [SHAPER_PLAN.md](SHAPER_PLAN.md) for the scheduling and flag rules.
+
+**Shared-alternate decision (2026-11-01):** active contributors with equal values
+run once; zero/default equals one and all negative values mean random.
+Required/unmasked contributors supply the default value. Incompatible values
+produce `otshape.ErrConflictingAlternates` only when a nonempty alternate set
+matches, including contextual/extension leaves. Other lookup kinds and uncovered
+glyphs remain usable. A retained random flag forces random selection after
+conflict checking. Earlier internal edits and emitted output survive; both public
+APIs withhold the failing chunk. This explicitly agreed contract differs from
+HarfBuzz's packed-mask numeric behavior; no oracle was adjusted to conceal it.
+
+**Permanent regressions:**
+
+- [Text baselines](../internal/hbcmp/text_baselines_test.go) and
+  [event/contract tests](../internal/hbcmp/lookup_order_test.go) cover all seven
+  lookup-order/shared-alternate captures through both public APIs, plus explicit
+  conflict errors. [LOOKUP_ORDER.md](../testdata/fonts/LOOKUP_ORDER.md) records
+  five reproducible fonts and their hashes. The corpus has 31 records:
+  22 ordinary and nine tagged.
+- [Planner tests](../otshape/lookup_order_test.go) cover required-feature and
+  repeated registration placement, separate GPOS scheduling, empty/consecutive/
+  nil pauses, callback errors after edits, shared masks/flags, resolved metadata,
+  anchors, and a shared lookup appearing in separate stages.
+- [Selection tests](../otshape/lookup_selection_test.go) cover equal, default,
+  random, oversized, inactive, unmasked, and required contributors, conflicts,
+  uncovered glyphs, and partial progress.
+  [Lower-level tests](../otlayout/alternate_selection_error_test.go) cover deferred
+  errors through direct, contextual, and extension calls, unaffected single
+  substitutions/nonmatches, and clearing the error on a shared clone.
+
+**Review verification (2026-11-01):** full ordinary and race suites passed,
+including Arabic regressions. Read-only preparation checks verified all 31
+captures against installed HarfBuzz 15.0.0 and reproduced all five synthetic font
+binaries byte-for-byte. All 26 earlier capture records and metadata, and both
+original font binaries, are unchanged. Comparing discovery results before and
+after the fix removed only `TestKnownBugSHAPE020LookupOrder`: eleven failing
+top-level tests remain, with no other changed failing tests/subtests. Build and
+vet also passed during implementation.
+
+**Remaining scope:** SHAPE-021 setting precedence and streaming/context findings
+remain open. Arabic's registered pause schedule is now honored by the shared
+planner, but passing existing Arabic tests does not establish Arabic/Syriac
+conformance. No resolved or deferred finding was reopened.

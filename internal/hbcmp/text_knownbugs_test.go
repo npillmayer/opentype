@@ -39,6 +39,3 @@ func TestKnownBugSHAPE014AbsentGPOS(t *testing.T) {
 // Default features share one GSUB stage in HarfBuzz, so their lookups run in
 // LookupList order. The ordinary control latin_lookup_order_calt_first uses
 // the same rules with the lookup order swapped.
-func TestKnownBugSHAPE020LookupOrder(t *testing.T) {
-	runTextBaselineID(t, "latin_lookup_order_liga_first")
-}

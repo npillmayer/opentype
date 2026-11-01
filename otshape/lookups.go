@@ -219,12 +219,8 @@ func (e *planExecutor) applyLookupSpanInternal(
 		}
 		prevIndex := st.Index
 		prevLen := st.Len()
-		selection := alt
-		if !op.Flags.has(lookupRandom) {
-			if spec, ok := pl.maskForFeature(op.FeatureTag); ok && spec.Mask != 0 {
-				selection = spec.decode(e.run.Masks[indexBase+st.Index])
-			}
-		}
+		selection, selectionErr := e.lookupAlternateSelection(pl, op, indexBase+st.Index, alt)
+		st.SetAlternateSelectionError(selectionErr)
 		if selection < 0 {
 			// Rebuilt carry must draw the same choice on subsequent passes. Seed
 			// by the original source anchor and outer lookup, never chunk offset.

@@ -25,6 +25,7 @@ type planFeaturePlanner struct {
 	maskValues     map[ot.Tag]uint32
 	baseMaskValues map[ot.Tag]struct{}
 	gsubPauseHooks []pauseHookID
+	stagesByTable  map[planTable]map[ot.Tag]int
 }
 
 func newPlanFeaturePlanner(
@@ -48,6 +49,7 @@ func newPlanFeaturePlanner(
 		togglesByTag:   collectUserFeatureToggles(userFeatures),
 		flagsByTable:   map[planTable]map[ot.Tag]FeatureFlags{planGSUB: {}, planGPOS: {}},
 		maskValues:     make(map[ot.Tag]uint32),
+		stagesByTable:  map[planTable]map[ot.Tag]int{planGSUB: {}, planGPOS: {}},
 		baseMaskValues: baseMaskValues,
 	}
 }
@@ -60,6 +62,7 @@ func (p *planFeaturePlanner) AddFeature(tag ot.Tag, flags FeatureFlags, value ui
 	if p == nil || tag == 0 {
 		return
 	}
+	p.recordStage(tag)
 	targets := inferFeatureTargets(tag)
 	if targets&targetGSUB != 0 {
 		p.gsubDefaults = appendUniqueTag(p.gsubDefaults, tag)
@@ -83,26 +86,52 @@ func (p *planFeaturePlanner) AddFeature(tag ot.Tag, flags FeatureFlags, value ui
 	}
 }
 
+// recordStage is independent of setting precedence. Re-registering a feature
+// changes its intent/flags as before, but retains its earliest stage.
+func (p *planFeaturePlanner) recordStage(tag ot.Tag) {
+	targets := inferFeatureTargets(tag)
+	for _, table := range []planTable{planGSUB, planGPOS} {
+		if (table == planGSUB && targets&targetGSUB == 0) || (table == planGPOS && targets&targetGPOS == 0) {
+			continue
+		}
+		if _, exists := p.stagesByTable[table][tag]; !exists {
+			stage := 0
+			if table == planGSUB {
+				stage = len(p.gsubPauseHooks)
+			}
+			p.stagesByTable[table][tag] = stage
+		}
+	}
+}
+
 func (p *planFeaturePlanner) DisableFeature(tag ot.Tag) {
 	if p == nil || tag == 0 {
 		return
 	}
-	p.togglesByTag[tag] = userFeatureToggle{
-		on:        false,
-		arg:       0,
-		hasGlobal: true,
-		mentioned: true,
-	}
+	p.recordStage(tag)
+	p.togglesByTag[tag] = userFeatureToggle{on: false, arg: 0, hasGlobal: true, mentioned: true}
 }
 
 func (p *planFeaturePlanner) AddGSUBPause(fn PauseHook) {
-	if p == nil || fn == nil || p.hooks == nil {
+	if p == nil {
 		return
 	}
-	id := p.hooks.addPause(wrapPauseHook(p.font, fn))
-	if id != noPauseHook {
-		p.gsubPauseHooks = append(p.gsubPauseHooks, id)
+	id := noPauseHook
+	if fn != nil && p.hooks != nil {
+		id = p.hooks.addPause(wrapPauseHook(p.font, fn))
 	}
+	// A nil callback is still an explicit stage boundary.
+	p.gsubPauseHooks = append(p.gsubPauseHooks, id)
+}
+
+// tableStages assigns unregistered defaults/user features to the final stage.
+// GSUB pauses never advance the independent GPOS schedule.
+func (p *planFeaturePlanner) tableStages(table planTable) tableStagePlan {
+	stages := tableStagePlan{ByFeature: p.stagesByTable[table]}
+	if table == planGSUB {
+		stages.Pauses = p.gsubPauseHooks
+	}
+	return stages
 }
 
 func (p *planFeaturePlanner) HasFeature(tag ot.Tag) bool {
@@ -171,23 +200,6 @@ func (p *planFeaturePlanner) maskFeatures() []FeatureRange {
 	// stable across plans rather than exposing map iteration order in output masks.
 	sort.Slice(features, func(i, j int) bool { return features[i].Feature < features[j].Feature })
 	return features
-}
-
-func (p *planFeaturePlanner) applyDirectGSUBPauses(prog *tableProgram) {
-	if p == nil || prog == nil || len(p.gsubPauseHooks) == 0 {
-		return
-	}
-	pos := len(prog.Lookups)
-	for _, id := range p.gsubPauseHooks {
-		if id == noPauseHook {
-			continue
-		}
-		prog.Stages = append(prog.Stages, stage{
-			FirstLookup: pos,
-			LastLookup:  pos,
-			Pause:       id,
-		})
-	}
 }
 
 type resolvedFeatureView struct {
@@ -304,6 +316,9 @@ func (p *resolvedPausePlanner) prependStagePause(id pauseHookID) {
 		Pause:       id,
 	}
 	p.gsubProg.Stages = append([]stage{newStage}, p.gsubProg.Stages...)
+	for i := range p.gsubProg.FeatureBinds {
+		p.gsubProg.FeatureBinds[i].Stage++
+	}
 	for tag, inx := range p.stageByTag {
 		p.stageByTag[tag] = inx + 1
 	}
@@ -341,20 +356,14 @@ func collectResolvedFeatures(
 	prog tableProgram,
 	fallbackNeeds map[ot.Tag]bool,
 ) []ResolvedFeature {
-	stageByTag := stageIndexByTag(prog)
 	byTag := map[ot.Tag]ResolvedFeature{}
-	for _, op := range prog.Lookups {
-		rf := byTag[op.FeatureTag]
-		rf.Tag = op.FeatureTag
-		rf.Stage = stageByTag[op.FeatureTag]
-		rf.AutoZWNJ = rf.AutoZWNJ || op.Flags.has(lookupAutoZWNJ)
-		rf.AutoZWJ = rf.AutoZWJ || op.Flags.has(lookupAutoZWJ)
-		rf.PerSyllable = rf.PerSyllable || op.Flags.has(lookupPerSyllable)
-		rf.SupportsRandom = rf.SupportsRandom || op.Flags.has(lookupRandom)
-		if fallbackNeeds[op.FeatureTag] {
-			rf.NeedsFallback = true
+	for _, bind := range prog.FeatureBinds {
+		byTag[bind.Tag] = ResolvedFeature{
+			Tag: bind.Tag, Stage: bind.Stage,
+			AutoZWNJ: bind.Flags.has(lookupAutoZWNJ), AutoZWJ: bind.Flags.has(lookupAutoZWJ),
+			PerSyllable: bind.Flags.has(lookupPerSyllable), SupportsRandom: bind.Flags.has(lookupRandom),
+			NeedsFallback: fallbackNeeds[bind.Tag],
 		}
-		byTag[op.FeatureTag] = rf
 	}
 	out := make([]ResolvedFeature, 0, len(byTag))
 	for _, rf := range byTag {
@@ -441,18 +450,11 @@ func hasFeatureBinding(prog tableProgram, tag ot.Tag) bool {
 }
 
 func stageIndexByTag(prog tableProgram) map[ot.Tag]int {
-	stageByTag := make(map[ot.Tag]int)
-	for i, st := range prog.Stages {
-		if st.FirstLookup < 0 || st.LastLookup > len(prog.Lookups) || st.LastLookup < st.FirstLookup {
-			continue
-		}
-		for _, op := range prog.Lookups[st.FirstLookup:st.LastLookup] {
-			if _, exists := stageByTag[op.FeatureTag]; !exists {
-				stageByTag[op.FeatureTag] = i
-			}
-		}
+	stages := make(map[ot.Tag]int, len(prog.FeatureBinds))
+	for _, bind := range prog.FeatureBinds {
+		stages[bind.Tag] = bind.Stage
 	}
-	return stageByTag
+	return stages
 }
 
 func applyFeatureFlags(base lookupRunFlags, flags FeatureFlags, table planTable) lookupRunFlags {

@@ -2,8 +2,8 @@
 """Build/check repository-authored lookup-order test fonts; --write replaces them.
 
 Requires FontTools 4.61.2.dev0 only for preparation. No upstream font is used.
-Both fonts contain the same liga and calt rules; only the LookupList order
-differs. feaLib numbers lookups in definition order.
+The GSUB and GPOS pairs swap LookupList order; a fifth font shares an
+alternate lookup across features. feaLib numbers lookups in definition order.
 """
 import argparse
 import hashlib
@@ -30,14 +30,33 @@ VARIANTS = {
     "CaltFirst": HEADER + CALT + LIGA + KERN,
 }
 
+# GPOS ordering: attachment captures the base's Y placement at lookup time.
+YSHIFT = "feature kern { pos f <0 50 0 0>; } kern;\n"
+MARK = """markClass acute <anchor 0 0> @TOP;
+feature mark { pos base f <anchor 100 200> mark @TOP; } mark;
+"""
+VARIANTS.update({
+    "KernFirst": HEADER + LIGA + YSHIFT + MARK,
+    "MarkFirst": HEADER + LIGA + MARK + YSHIFT,
+    "SharedAlternates": HEADER + """
+lookup ALT { sub f from [i fi f.alt]; } ALT;
+feature salt { lookup ALT; } salt;
+feature ss01 { lookup ALT; } ss01;
+""" + KERN,
+})
+
 
 def build(variant):
     if fontTools.__version__ != "4.61.2.dev0":
         raise ValueError("requires FontTools 4.61.2.dev0")
     names = [".notdef", "f", "i", "fi", "f.alt"]
     fb = FontBuilder(1000, isTTF=True)
+    cmap = {ord("f"): "f", ord("i"): "i"}
+    if variant in ("KernFirst", "MarkFirst"):
+        names.append("acute")
+        cmap[0x301] = "acute"
     fb.setupGlyphOrder(names)
-    fb.setupCharacterMap({ord("f"): "f", ord("i"): "i"})
+    fb.setupCharacterMap(cmap)
     glyphs = {}
     for name in names:
         pen = TTGlyphPen(None)

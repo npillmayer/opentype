@@ -133,7 +133,7 @@ In [plan_compile.go](../otshape/plan_compile.go):
 1. Seed base feature defaults and user toggles.
 2. `CollectFeatures`, then `OverrideFeatures`.
 3. Allocate masks and resolve table features/stages.
-4. Append direct GSUB pauses and compute fallback/resolved-feature metadata.
+4. Include registered pause boundaries and compute fallback/resolved-feature metadata.
 5. `PostResolveFeatures` may anchor GSUB pauses.
 6. `InitPlan`, followed by `ValidatePlan` when both interfaces are implemented.
 7. Validate the internal plan.
@@ -146,9 +146,14 @@ that "off" wins regardless of its source; see
 [SHAPE-021](SHAPING_FINDINGS.md#shape-021--engine-and-user-feature-settings-combine-as-off-wins).
 
 `PauseHook` is `func(PauseContext) error`; an error stops execution.
-Direct pauses currently append empty stages after all GSUB lookups. They are
-not interleaved at their collection call sites. Anchored pauses attach to
-resolved lookup stages. The public API has no GPOS pause-registration methods.
+`AddGSUBPause` closes the current stage at its registration position, even with
+a nil callback. Empty and consecutive stages are retained. A feature keeps its
+earliest registered stage; unregistered defaults/user features join the final
+stage, while a required feature defaults to stage zero. Lookups within each
+stage run once in LookupList order. Anchored Before/After callbacks surround
+the whole stage containing the tag, including its other features. Shared-lookup
+contributors remain available as anchors. The public API has no GPOS pauses;
+GSUB pauses do not advance GPOS stages. See [SHAPER_PLAN.md](SHAPER_PLAN.md).
 
 ## Actual runtime order
 
@@ -219,5 +224,5 @@ limits are recorded in [TESTING.md](TESTING.md).
 
 Mask preservation is covered by the ordinary SHAPE-001 regression for both public
 entry points. Remaining interface concerns include validation-hook gating,
-preprocessing order, GPOS opt-out, direct-pause placement, and per-plan engine state. Source comments and a
+preprocessing order, GPOS opt-out, and per-plan engine state. Source comments and a
 declared interface alone do not demonstrate that every policy is honored.

@@ -1698,6 +1698,256 @@
           }
         ]
       }
+    },
+    {
+      "id": "latin_position_order_kern_first",
+      "text": "f́",
+      "font_path": "testdata/fonts/ShaperTestLookupOrder-KernFirst.ttf",
+      "font_sha256": "a9558d933d42b650636bc77327e123efdaeb6d09c0417921f9e6e2e429e68f8d",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestLookupOrder-KernFirst.ttf",
+        "--unicodes=U+0066,U+0301",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestLookupOrder-KernFirst.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          102,
+          769
+        ],
+        "output": [
+          {
+            "g": 1,
+            "cl": 0,
+            "dx": 0,
+            "dy": 50,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 5,
+            "cl": 0,
+            "dx": -500,
+            "dy": 250,
+            "ax": 0,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_position_order_mark_first",
+      "text": "f́",
+      "font_path": "testdata/fonts/ShaperTestLookupOrder-MarkFirst.ttf",
+      "font_sha256": "d54120a3d7ad6cc2136fdbe3bd1e732d924720bed3f71be86b1d3bd2f7cee57c",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestLookupOrder-MarkFirst.ttf",
+        "--unicodes=U+0066,U+0301",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestLookupOrder-MarkFirst.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": []
+        },
+        "input": [
+          102,
+          769
+        ],
+        "output": [
+          {
+            "g": 1,
+            "cl": 0,
+            "dx": 0,
+            "dy": 50,
+            "ax": 600,
+            "ay": 0
+          },
+          {
+            "g": 5,
+            "cl": 0,
+            "dx": -500,
+            "dy": 200,
+            "ax": 0,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_shared_alternate_salt",
+      "text": "f",
+      "font_path": "testdata/fonts/ShaperTestLookupOrder-SharedAlternates.ttf",
+      "font_sha256": "f437e51b0a503c55f2753be513cb55b5369bb7f50c7e8f123a81883ff09905aa",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestLookupOrder-SharedAlternates.ttf",
+        "--unicodes=U+0066",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=salt=1,ss01=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestLookupOrder-SharedAlternates.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "salt=1",
+            "ss01=0"
+          ]
+        },
+        "input": [
+          102
+        ],
+        "output": [
+          {
+            "g": 2,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_shared_alternate_ss01",
+      "text": "f",
+      "font_path": "testdata/fonts/ShaperTestLookupOrder-SharedAlternates.ttf",
+      "font_sha256": "f437e51b0a503c55f2753be513cb55b5369bb7f50c7e8f123a81883ff09905aa",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestLookupOrder-SharedAlternates.ttf",
+        "--unicodes=U+0066",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=salt=0,ss01=2"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestLookupOrder-SharedAlternates.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "salt=0",
+            "ss01=2"
+          ]
+        },
+        "input": [
+          102
+        ],
+        "output": [
+          {
+            "g": 3,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "latin_shared_alternate_equal",
+      "text": "f",
+      "font_path": "testdata/fonts/ShaperTestLookupOrder-SharedAlternates.ttf",
+      "font_sha256": "f437e51b0a503c55f2753be513cb55b5369bb7f50c7e8f123a81883ff09905aa",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/ShaperTestLookupOrder-SharedAlternates.ttf",
+        "--unicodes=U+0066",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Latn",
+        "--language=en",
+        "--direction=ltr",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=salt=1,ss01=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "ShaperTestLookupOrder-SharedAlternates.ttf",
+          "script": "Latn",
+          "language": "en",
+          "dir": "ltr",
+          "features": [
+            "salt=1",
+            "ss01=1"
+          ]
+        },
+        "input": [
+          102
+        ],
+        "output": [
+          {
+            "g": 2,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 600,
+            "ay": 0
+          }
+        ]
+      }
     }
   ]
 }

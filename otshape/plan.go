@@ -70,6 +70,15 @@ type featureBind struct {
 	Stage        int
 	Mask         uint32
 	Required     bool
+	Flags        lookupRunFlags
+}
+
+// lookupFeature retains every contributor after a shared lookup is deduplicated.
+// Mask zero means unconditional activation, including required features.
+type lookupFeature struct {
+	Tag      ot.Tag
+	Mask     uint32
+	Required bool
 }
 
 type lookupOp struct {
@@ -77,6 +86,7 @@ type lookupOp struct {
 	FeatureTag  ot.Tag
 	Mask        uint32
 	Flags       lookupRunFlags
+	Features    []lookupFeature
 }
 
 type stage struct {

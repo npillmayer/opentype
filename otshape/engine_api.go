@@ -69,11 +69,16 @@ type FeaturePlanner interface {
 	EnableFeature(tag ot.Tag)
 	AddFeature(tag ot.Tag, flags FeatureFlags, value uint32)
 	DisableFeature(tag ot.Tag)
+	// AddGSUBPause closes the current GSUB stage, then runs fn. A nil fn
+	// still creates a boundary. Repeated feature registrations retain their
+	// earliest stage; unregistered defaults/user features join the final stage.
 	AddGSUBPause(fn PauseHook)
 	HasFeature(tag ot.Tag) bool
 }
 
 // ResolvedFeaturePlanner exposes post-resolution stage anchoring hooks.
+// Before/After refers to the whole stage containing the tag, including other
+// features sharing that stage. These hooks do not split a stage's lookups.
 type ResolvedFeaturePlanner interface {
 	AddGSUBPauseBefore(tag ot.Tag, fn PauseHook) bool
 	AddGSUBPauseAfter(tag ot.Tag, fn PauseHook) bool

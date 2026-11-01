@@ -15,7 +15,7 @@ and line counts in them describe the code as it was at `9760035`.
 | 1. Cheap cleanup | **Partly done** — legacy `buffer.go`, `ShapeEventsRequest`, `realignSideArrays`, and the `ZeroMarks`/`FallbackMarkPos` policies removed; remaining items listed below |
 | 2. Split files | **Done** — reorganization by responsibility, including the `lookups.go`, `shape_runtime.go`, `shaper.go`, and `doc.go` issues from section 1 |
 | 3. Expand the package doc | **Done** — `doc.go` rewritten (concepts, guarantees vs. limitations, plain references to `doc/*.md`); runnable examples for `Shaper.Shape` and `Shaper.ShapeEvents` checked against HarfBuzz captures; engine package docs (`otcore`, `othebrew`, `otarabic`) expanded with matching, behavior, and known gaps. |
-| 4. Investigate correctness observations | **In progress** — observations 1 and 2 reproduced as SHAPE-020 and SHAPE-021; the Arabic observation below is still open |
+| 4. Investigate correctness observations | **In progress** — SHAPE-020 fixed and reviewed; SHAPE-021 remains open. The shared scheduler now honors Arabic pause boundaries; Arabic conformance remains unverified |
 | 5. API decisions | Open |
 
 ### Step 2: new file layout
@@ -82,10 +82,11 @@ test-only `writeRunBufferToSink*`, `writeRunBufferPrefixToSink`,
 
 ### Step 4: findings
 
-- Observation 1 (lookup order across features) is reproduced and recorded as
-  **SHAPE-020** in `doc/SHAPING_FINDINGS.md`, with repository-authored
-  lookup-order fonts, HarfBuzz captures, a `shaping_knownbugs` test, and a
-  passing control.
+- Observation 1 (lookup order across features) is fixed and reviewed as
+  [SHAPE-020](SHAPING_FINDINGS.md#shape-020--default-features-run-in-feature-order-instead-of-lookup-order).
+  Explicit pauses define stages, whose lookups run once in LookupList order.
+  The original independent regression is now ordinary; GSUB/GPOS controls and
+  shared-alternate coverage retain complete expectations.
 - Observation 2 (engine features overriding user settings) is reproduced and
   recorded as **SHAPE-021**, after the precedence contract was agreed: user
   settings override `CollectFeatures`, and `OverrideFeatures` overrides user
@@ -95,7 +96,12 @@ test-only `writeRunBufferToSink*`, `writeRunBufferPrefixToSink`,
   engine's `DisableFeature` beats a user's "on", and `OverrideFeatures`
   cannot enable a feature the user disabled.
 
-#### Additional observation (unverified)
+#### Additional observation (historical; shared scheduling corrected)
+
+SHAPE-020 subsequently corrected the shared scheduling mechanism described
+below: registration stages and direct pause boundaries are now honored. Existing
+Arabic tests pass; an independent Arabic font/capture remains future coverage,
+so this does not establish Arabic shaping conformance.
 
 Found while documenting `otarabic` (2026-11-01); it adds a third item to the
 two correctness observations in section 1. It needs a reproduction and an ID

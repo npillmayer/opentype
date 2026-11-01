@@ -5,6 +5,45 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## Reviewed SHAPE-020 resolution (2026-11-01)
+
+The shared GSUB/GPOS compiler now groups features by explicit pause boundaries
+and sorts/deduplicates lookups within each stage. The original LigaFirst
+regression is promoted unchanged. Five additional independent captures cover
+swapped GPOS order and shared alternate lookup values; `text/baselines.json` now
+has 31 records (22 ordinary, nine tagged). All 26 previous capture records and
+metadata, and both original lookup-order font binaries, remain unchanged.
+Both public APIs compare the seven lookup-order/shared-alternate cases against
+all captured fields. Fixture definitions and hashes are in
+[LOOKUP_ORDER.md](../testdata/fonts/LOOKUP_ORDER.md).
+
+Focused regressions cover explicit/empty/nil pause boundaries, repeated feature
+registration, required-feature placement, independent GPOS stages, shared masks
+and flags, retained feature metadata and anchors, and alternate conflicts at
+matching leaves (including nested/extension lookups). Conflicts follow the
+user-approved `ErrConflictingAlternates` contract; incompatible shared values
+are not claimed to match HarfBuzz's packed-mask numeric behavior.
+
+Review verification: `go test ./... -count=1` and
+`go test -race ./... -count=1` passed, including Arabic regression tests.
+Build and vet also passed during implementation.
+The tagged discovery command below still fails as expected: 11 top-level tests,
+down from 12 before the fix. The only removed failure is
+`TestKnownBugSHAPE020LookupOrder`; every other failing test/subtest is unchanged.
+No new failures, unexpected passes, fixture failures, panics, or timeouts occurred.
+SHAPE-021 precedence remains separate; no broad script-conformance claim is made.
+
+```sh
+go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=30s
+python3 testdata/scripts/capture_harfbuzz_text.py
+PYTHONPATH=/path/to/fonttools/Lib python3 testdata/scripts/build_lookup_order_fonts.py
+```
+
+Read-only review checks verified all 31 captures against HarfBuzz 15.0.0 and
+reproduced all five synthetic binaries byte-for-byte. The fix passed review and
+is archived as [SHAPE-020](SHAPING_FINDINGS.md#shape-020--default-features-run-in-feature-order-instead-of-lookup-order),
+retaining the stage and shared-alternate contracts and permanent regression links.
+
 ## Reviewed SHAPE-011 resolution (2026-10-29)
 
 Latin/Hebrew base/mark groups now share original-scalar cluster starts. Indexed
@@ -149,10 +188,10 @@ within the same Go module.
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
 | [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. One AOTS record and ten real-text cases are behind `shaping_knownbugs`. `feature_precedence_test.go` reuses two Gentium captures with a probe engine to check engine/user feature precedence; two of its five cases are tagged (SHAPE-021). The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. No runner invokes HarfBuzz during tests. |
-| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and 26 independently captured Latin/Hebrew cases in `text/baselines.json`. Twelve additional records in `text/streaming.json` supply streaming/scope/progress oracles. `text/README.md`, `text/NORMALIZATION.md`, and `text/STREAMING.md` record semantics, commands, and results. |
+| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json` and 31 independently captured Latin/Hebrew cases in `text/baselines.json`. Twelve additional records in `text/streaming.json` supply streaming/scope/progress oracles. `text/README.md`, `text/NORMALIZATION.md`, and `text/STREAMING.md` record semantics, commands, and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. Fourteen selected records are executed (five GSUB, nine GPOS; thirteen passing, one tagged failure, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
-| [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Three derived normalization fonts remove a cmap mapping, mark features, or GPOS; `fonts/NORMALIZATION.md` records their generation and licenses. The repository-authored `ShaperTestProgress.ttf` isolates expansion, deletion, and contraction; `fonts/STREAMING.md` records its reproducible construction. The repository-authored `ShaperTestLookupOrder-*.ttf` pair isolates lookup order across default features; `fonts/LOOKUP_ORDER.md` records their construction. Also contains Calibri and Go fonts. |
+| [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Three derived normalization fonts remove a cmap mapping, mark features, or GPOS; `fonts/NORMALIZATION.md` records their generation and licenses. The repository-authored `ShaperTestProgress.ttf` isolates expansion, deletion, and contraction; `fonts/STREAMING.md` records its reproducible construction. The five repository-authored `ShaperTestLookupOrder-*.ttf` fonts isolate GSUB/GPOS lookup order and shared alternate selection; `fonts/LOOKUP_ORDER.md` records their construction. Also contains Calibri and Go fonts. |
 | [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` prepares fonts; `recover_harfbuzz_aots.py` recovers upstream records; `capture_harfbuzz_text.py` captures/checks complete text output with HarfBuzz 15.0.0. `build_normalization_fonts.py` reproducibly derives capability-reduced fixtures with FontTools. `build_streaming_font.py` builds the progress fixture; `build_lookup_order_fonts.py` builds the lookup-order fixtures; `capture_harfbuzz_streaming.py` captures/checks the twelve additional oracles. These are not Go test drivers. |
 | [`ot-tools/`](../ot-tools/) | Manual diagnostics: `shape` prints glyph output, `view` renders glyph proofs, and `font` inspects tables. Useful for investigation; visual inspection does not replace output assertions. |
 | [`internal/fontload/`](../internal/fontload/) | Shared font-byte/SFNT loading support. It does not select or execute shaping features. |

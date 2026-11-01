@@ -438,7 +438,7 @@ func (f fakeFeature) LookupIndex(i int) int {
 	return f.lookups[i]
 }
 
-func TestCompileTableProgramBuildsMultipleStagesAndRandomFlag(t *testing.T) {
+func TestCompileTableProgramGroupsFeaturesAndRandomFlag(t *testing.T) {
 	features := []otlayout.Feature{
 		fakeFeature{tag: ot.T("rlig"), typ: otlayout.GSubFeatureType, lookups: []int{4}}, // required slot 0
 		fakeFeature{tag: ot.T("liga"), typ: otlayout.GSubFeatureType, lookups: []int{2, 5}},
@@ -461,12 +461,13 @@ func TestCompileTableProgramBuildsMultipleStagesAndRandomFlag(t *testing.T) {
 		map[ot.Tag]FeatureFlags{},
 		masks,
 		planPolicy{},
+		tableStagePlan{},
 	)
 	if err != nil {
 		t.Fatalf("compileTableProgram failed: %v", err)
 	}
-	if len(prog.Stages) < 3 {
-		t.Fatalf("expected multiple stages, got %d", len(prog.Stages))
+	if len(prog.Stages) != 1 {
+		t.Fatalf("without pauses all features share a stage, got %d", len(prog.Stages))
 	}
 	assertStagePartition(t, "GSUB/fake", prog)
 	if !containsFeatureBind(prog.FeatureBinds, ot.T("rand")) {
@@ -497,6 +498,7 @@ func TestCompileTableProgramAssignsJoinerAndSyllableFlags(t *testing.T) {
 		map[ot.Tag]FeatureFlags{},
 		maskLayout{ByFeature: map[ot.Tag]maskSpec{}},
 		planPolicy{},
+		tableStagePlan{},
 	)
 	if err != nil {
 		t.Fatalf("compileTableProgram failed: %v", err)
@@ -654,6 +656,7 @@ func TestCompileTableProgramRangeOnKeepsFeatureActive(t *testing.T) {
 			ot.T("test"): {Mask: 1, Shift: 0, DefaultValue: 0},
 		}},
 		planPolicy{},
+		tableStagePlan{},
 	)
 	if err != nil {
 		t.Fatalf("compileTableProgram failed: %v", err)

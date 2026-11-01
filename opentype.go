@@ -60,11 +60,11 @@ func (c *glyphCollector) WriteGlyph(g otshape.GlyphRecord) error {
 // Western) script.
 //
 // It uses the core OpenType shaper with script `Latn` and language `en`, and
-// returns glyph records in output order. If `otf` is nil or `text` is empty, it
+// returns glyph records in logical order. If `otf` is nil or `text` is empty, it
 // does nothing.
 //
 // This is a convenience API for a very common use-case of short pieces of Western
-// test. Clients who need more control over shaping, such as shaping multiple runs or
+// text. Clients who need more control over shaping, such as shaping multiple runs or
 // using different scripts and languages, need to use the `otshape` package
 // directly. Package `otshape` employs a streaming API that allows clients to
 // manage memory allocation more efficiently.

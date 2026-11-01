@@ -5,6 +5,52 @@ Read-only evaluation; no code was changed. Claims were checked against
 symbol usage and the existing documentation. Items marked "unverified" are
 code-reading observations without a reproduction.*
 
+## Status (updated 2026-11-01)
+
+The sections after this one are the unchanged original snapshot. File names
+and line counts in them describe the code as it was at `9760035`.
+
+| Step | Status |
+|---|---|
+| 1. Cheap cleanup | Open |
+| 2. Split files | **Done** — reorganization by responsibility, including the `lookups.go`, `shape_runtime.go`, `shaper.go`, and `doc.go` issues from section 1 |
+| 3. Expand the package doc | Open |
+| 4. Investigate correctness observations | Open |
+| 5. API decisions | Open |
+
+### Step 2: new file layout
+
+The code was moved verbatim: no renames and no signature, logic, or
+visibility changes. The set of top-level declarations stayed the same (417),
+and every moved declaration is byte-identical to the original. The ordinary
+tests pass and the `shaping_knownbugs` results are unchanged.
+
+| File | Contents | Origin |
+|---|---|---|
+| `shape_api.go` | Error sentinels, `Shaper`, `NewShaper`, `Shape`, `shapeMappedRun`, engine selection, `compileShapePlanWithFeatures` | Remainder (604 → 241 lines) |
+| `normalize.go` | Decompose/compose normalization, `planHasGposMark` | `shape_api.go` |
+| `glyph_mapping.go` | `mapRunesToRunBuffer*` (rune→glyph cmap mapping) | `shape_api.go` |
+| `output.go` | Sink writers, `materializeGlyphRecord` | `shape_api.go` |
+| `plan.go` | Plan data model and validation | Remainder (1,183 → 282 lines) |
+| `plan_compile.go` | Feature discovery, mask allocation, stage scheduling, `compile` | `plan.go` |
+| `plan_exec.go` | `planExecutor`, buffer ownership, stage execution; `ensureRunMasks`, `applyFeatureRangesToMasks` | `plan.go`; mask preparation from `lookups.go` |
+| `position_policies.go` | Post-GPOS mark-advance zeroing, fallback mark positioning | `plan.go` |
+| `lookups.go` | Lookup execution only | Remainder |
+| `runbuffer.go` | Now also `runBuffer.applyLayoutEdit`, `inheritLayoutEdit` | Edit helpers from `lookups.go` |
+| `clusters.go` | `formInputClusters`, `mergeClusterRange`, `runSpan`, `clusterSpans` | `shape_runtime.go`, `output.go` |
+| `shape_runtime.go` | `planCompiler`, `streamIngestor`, `shapeWorkspace` | Remainder |
+| `params.go` | `Params`, `FeatureRange` | Renamed from `shaper.go` |
+| `doc.go` | Package documentation only | Remainder |
+| `helpers.go` | `NOTDEF`, `tracer`, `errShaper`, `assert` | `doc.go` |
+
+File links in the `doc/` guides were updated to match.
+
+Still open from section 1 (not file moves, so deferred to the cleanup):
+`streamIngestor` adds nothing over `shape_streaming.go`, and `pipeline.go` is a
+vague name for the I/O types. The `runbuffer.go` repetition remains;
+`inheritLayoutEdit[T]` now sits in the same file as the four typed
+`applyEdit*` copies.
+
 ## Summary
 
 The pipeline design is reasonable: fonts and engines are passed in explicitly,

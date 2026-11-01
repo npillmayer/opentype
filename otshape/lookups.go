@@ -154,7 +154,8 @@ func (e *planExecutor) applyLookupIsolatedSpan(
 						if !edit.ResetsPositions {
 							continue
 						}
-						if int(target) >= edit.From && int(target) < edit.To {
+						mapped := edit.RetainedIndex(int(target))
+						if mapped < 0 {
 							target = -1
 							sub.Pos[i].AttachKind = otlayout.AttachNone
 							sub.Pos[i].AttachClass = 0
@@ -162,9 +163,7 @@ func (e *planExecutor) applyLookupIsolatedSpan(
 							sub.Pos[i].MarkAttachmentPending = false
 							break
 						}
-						if int(target) >= edit.To {
-							target += int32(edit.Len - (edit.To - edit.From))
-						}
+						target = int32(mapped)
 					}
 					sub.Pos[i].AttachTo = target
 				}

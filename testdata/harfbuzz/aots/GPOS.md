@@ -1,4 +1,15 @@
 # AOTS positioning baseline batch
+The accepted fix and review evidence are archived in
+[SHAPING_FINDINGS.md](../../../doc/SHAPING_FINDINGS.md#shape-019--ligature-substitution-deletes-ignored-marks).
+
+**Reviewed SHAPE-019 resolution (2026-11-01):** `gpos5.tests:2`
+now passes its complete unchanged origin expectation in `TestAOTSGPOSBaselines`:
+`[17|18@1500,0|19@1400,-80|17@3000,0]`. GSUB preserves the intervening mark,
+and GPOS selects its first component rather than the last. The historical
+SHAPE005 tagged wrapper is removed. All fourteen selected AOTS records now
+pass; all upstream font, test and manifest bytes remain unchanged. The dated
+entries below are historical. Additional independent component tests are
+documented in [LIGATURE_MARKS.md](../../fonts/LIGATURE_MARKS.md).
 
 **SHAPE-007 implementation (2026-10-29; review pending):**
 `gpos4_simple.tests:2` and `gpos5.tests:3` now pass their unchanged full

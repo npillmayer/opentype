@@ -107,7 +107,7 @@ func materializeGlyphRecord(
 ) GlyphRecord {
 	record := GlyphRecord{GID: run.Glyphs[inx]}
 	if hasPos {
-		record.Pos = run.Pos[inx]
+		record.Pos = run.Pos[inx].OutputPosition()
 	}
 	if font != nil {
 		record.Pos.XAdvance += int32(otquery.GlyphMetrics(font, record.GID).Advance)

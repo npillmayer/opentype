@@ -1,4 +1,13 @@
 # AOTS baseline adapter
+The accepted fix and review evidence are archived in
+[SHAPING_FINDINGS.md](../../../doc/SHAPING_FINDINGS.md#shape-019--ligature-substitution-deletes-ignored-marks).
+
+**Reviewed SHAPE-019 resolution (2026-11-01):** the last selected
+tagged AOTS record, `gpos5.tests:2`, now passes unchanged in
+`TestAOTSGPOSBaselines`. The historical `TestKnownBugSHAPE005AOTSLigatureAcrossMark`
+wrapper is removed. All fourteen selected records pass; the upstream records,
+fonts, manifest and comparison adapter are unchanged. See [GPOS.md](GPOS.md).
+The dated entries below retain their historical evidence.
 
 **Reviewed SHAPE-006 resolution (2026-10-29):** the fix is accepted; see the
 [archived resolution](../../../doc/SHAPING_FINDINGS.md#shape-006--contextual-lookup-revisits-matched-input). `gsub_context1_next_glyph.tests:2` now
@@ -179,12 +188,11 @@ PY
 ```sh
 # Passing baseline and adapter validation; no HarfBuzz/Python required.
 go test ./internal/hbcmp -run '^TestAOTS' -count=1 -v
-
-# AOTS findings: four failing top-level tests; SHAPE005 is the legacy name for SHAPE-019.
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE(005|006|007|008)AOTS' -count=1 -v
 ```
 
-The full ordinary `go test ./... -count=1` suite passed. Once a defect is fixed,
+All selected AOTS records now run in the ordinary suite; their historical tagged
+wrappers have been removed. The full ordinary `go test ./... -count=1` suite
+passed during review. Once a defect is fixed,
 move its record ID into the ordinary baseline list and remove its tagged test;
 promote useful diagnostic regressions as well. No production fixes are included
 in these batches. GPOS origin comparisons are now covered in [GPOS.md](GPOS.md);

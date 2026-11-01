@@ -105,7 +105,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
 | [SHAPE-015](#shape-015--streaming-cuts-lose-shaping-context) | reproduced | Buffer cuts change ligatures, pair positioning, and normalization |
 | [SHAPE-016](#shape-016--feature-scopes-sever-unrelated-lookup-context) | reproduced | Feature-event spans break kerning across scope boundaries |
-| [SHAPE-019](#shape-019--ligature-substitution-deletes-ignored-marks) | reproduced | Ligature span replacement deletes skipped marks; component association remains to be verified |
 | [SHAPE-021](#shape-021--engine-and-user-feature-settings-combine-as-off-wins) | reproduced | Engine and user feature settings combine so that "off" wins, contrary to the agreed precedence |
 
 Archived fixes in [Resolved findings](#resolved-findings):
@@ -120,10 +119,11 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-011 — base/mark clusters](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0),
 [SHAPE-017 — GSUB deletion](#shape-017--gsub-deletion-is-ignored),
 [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks),
+[SHAPE-019 — ligature mark preservation](#shape-019--ligature-substitution-deletes-ignored-marks),
 and [SHAPE-020 — stage lookup order](#shape-020--default-features-run-in-feature-order-instead-of-lookup-order).
 
-The AOTS baseline batch adds SHAPE-005/006 in
-[`internal/hbcmp/aots_knownbugs_test.go`](../internal/hbcmp/aots_knownbugs_test.go).
+The original AOTS baseline batch added SHAPE-005/006 in the former
+`internal/hbcmp/aots_knownbugs_test.go` (removed after the SHAPE-019 promotion).
 It reads unchanged upstream records through a test-only adapter. See the
 [adapter report](../testdata/harfbuzz/aots/ADAPTER.md) for the explicit context,
 independent HarfBuzz verification, passing case, and output limitations.
@@ -410,50 +410,6 @@ This reproduces a scope-boundary problem independently of SHAPE-015.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE016' -count=1 -timeout=30s -v
 ```
 
-## SHAPE-019 — Ligature substitution deletes ignored marks
-
-**Status:** reproduced 2026-10-29 after the SHAPE-005 classification fix.
-Split from that finding so the completed classification work can be archived.
-**Test:** `TestKnownBugSHAPE005AOTSLigatureAcrossMark` in
-[aots_knownbugs_test.go](../internal/hbcmp/aots_knownbugs_test.go). The test retains
-its historical name in this documentation-only update; it now tracks SHAPE-019.
-
-**Expected behavior and basis:** unchanged upstream
-[`gpos5.tests:2`](../testdata/harfbuzz/aots/tests/gpos5.tests), at HarfBuzz revision
-`29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b`, requires GIDs 30 and 31 to form
-ligature 18 across ignored mark 19, preserving the mark. The complete glyph/origin
-oracle is `[17@0,0 18@1500,0 19@1400,-80 17@3000,0]`.
-
-**Reproduction:** `gpos5_font1.otf`, input
-`U+0011 U+001E U+0013 U+001F U+0011`, Latin/English/LTR, core engine,
-global `test` enabled, watermarks high/low/max `6/1/7`.
-`Shape` returns nil and emits `[17@0,0 18@1500,0 17@3000,0]`: the ligature
-forms, but the mark is absent. Source/font hashes and the full upstream output
-remain checked by the existing test; no capture was changed.
-
-**Cause:** [gsubLookupType4Fmt1](../otlayout/gsub.go) skips the mark while
-matching components, then replaces the entire matched span with the ligature.
-That replacement deletes the skipped glyph as well as the consumed components.
-
-**Fix scope and dependencies:** preserve skipped marks and their source/cluster
-correspondence during ligature substitution. Component association needs
-verification once the mark survives: current GPOS defaults to the last ligature
-component, but this failing output alone does not establish the required repair.
-SHAPE-007/008 now resolve anchor offsets and cancel advances for surviving
-GDEF marks in the agreed horizontal Latin/Hebrew scope. Keep the full
-oracle tagged until all its blockers are resolved; a future mark-preservation
-fix should also have an isolated regression that can pass independently of GPOS.
-This differs from intentional empty substitution, now implemented under SHAPE-017.
-
-**Verification:** reproduced during the SHAPE-005 review on 2026-10-29 with the
-classification fix in the working tree. This reassignment adds no test and does
-not change the fifteen failing top-level discovery tests.
-
-```sh
-# Historical test name; current finding is SHAPE-019.
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE005AOTSLigatureAcrossMark$' -count=1 -v
-```
-
 ## SHAPE-021 — Engine and user feature settings combine as "off wins"
 
 **Status:** reproduced 2026-11-01. Originally an inspection note in the
@@ -734,12 +690,11 @@ and [GDEF enumeration](https://learn.microsoft.com/en-us/typography/opentype/spe
   mixed-anchor fixture leaves 20 unattached, and actual base glyph 21 is skipped.
   These are attachment-metadata tests, not final-positioning baselines.
 
-**Remaining work:** classification now permits the interleaved-mark ligature,
-but span replacement deletes the mark. That distinct failure is
-[SHAPE-019](#shape-019--ligature-substitution-deletes-ignored-marks), retaining the
-full oracle under the historical `TestKnownBugSHAPE005AOTSLigatureAcrossMark`
-name. Component association remains separate; SHAPE-007/008 subsequently
-resolved positioning for surviving marks within their agreed scope.
+**Subsequent fixes:** SHAPE-007/008 resolved positioning for surviving marks
+within their agreed scope. [SHAPE-019](#shape-019--ligature-substitution-deletes-ignored-marks)
+then resolved ignored-mark preservation and component association. The full
+upstream oracle now passes in `TestAOTSGPOSBaselines/gpos5.tests:2`; the historical
+`TestKnownBugSHAPE005AOTSLigatureAcrossMark` wrapper was removed.
 
 **Review verification (2026-10-29):** `go test ./... -count=1` and
 `go test -race ./... -count=1` passed. Reverting either classification correction
@@ -795,9 +750,9 @@ fourteen failing top-level tests, without build failures, panics, or timeouts.
 
 **Remaining scope:** empty-record and nonapplying-child rules retain their prior
 behavior; a value-preserving substitution still counts as application.
-Intentional deletion was subsequently resolved under SHAPE-017. Ignored-mark
-preservation (SHAPE-019), reverse traversal, and streaming context safety remain
-separate. This resolution does not establish complete contextual shaping
+Intentional deletion was subsequently resolved under SHAPE-017, and ignored-mark
+preservation/component association under SHAPE-019. Reverse traversal and
+streaming context safety remain separate. This resolution does not establish complete contextual shaping
 conformance.
 
 ```sh
@@ -856,11 +811,11 @@ Noto Sans Hebrew mark offsets are exactly 227 and 539. SHAPE-011 subsequently
 fixed grouping: output is now `[96/0,79/0,100/0]` instead of
 `[96/0,100/0,79/0]`. Its four complete combining-mark text cases now pass unchanged
 in the ordinary suite. Effective mark support was subsequently fixed under
-SHAPE-010; canonical normalization remains SHAPE-012. Cursive resolution, hinted
-anchor points, device/variation
-adjustments, ignored-mark preservation/component association (SHAPE-019), and
-streaming/event context (SHAPE-015/016) are outside this fix. Adjacent marks on
-ligatures retain the existing last-component choice.
+SHAPE-010; canonical normalization remains SHAPE-012. SHAPE-019 subsequently
+resolved ignored-mark preservation and component association, including nested
+ligatures; unassociated marks retain the last-component fallback. Cursive
+resolution, hinted anchor points, device/variation adjustments, and
+streaming/event context (SHAPE-015/016) remain outside this fix.
 
 ### SHAPE-008 — Marks retain nominal advances
 
@@ -909,8 +864,9 @@ top-level tests, without build failures, panics, or timeouts.
 
 **Remaining scope:** SHAPE-007 subsequently resolved anchor offsets within the
 agreed scope; both attached-mark AOTS records now pass unchanged in the ordinary
-suite. SHAPE-019 still deletes an intervening mark before positioning. Missing usable
-GDEF, Unicode fallback, other scripts, normalization/cluster differences, and
+suite. SHAPE-019 subsequently resolved intervening-mark preservation and
+component association. Missing usable GDEF, Unicode fallback, other scripts,
+normalization/cluster differences, and
 safe streaming boundaries remain separate.
 
 ```sh
@@ -1093,7 +1049,8 @@ context; all-deleted profiles now fail explicitly at capacity. These full-output
 comparisons, including the new edge capture, remain tagged under SHAPE-015 with
 unchanged expectations. Separate ordinary tests assert the exact capacity error.
 General buffer-contract work can later reclassify unsupported configurations.
-SHAPE-016 event barriers and SHAPE-019 ignored-mark preservation remain separate.
+SHAPE-016 event barriers remain open. Ignored-mark preservation was subsequently
+resolved under SHAPE-019.
 
 **Recorded implementation verification (2026-11-01):** full ordinary and race
 suites, build, and vet passed. Discovery has ten failing top-level tests, down
@@ -1157,6 +1114,77 @@ failing cells. Independent captures and full-output assertions are unchanged.
 ```sh
 go test ./otlayout ./otshape/... -run 'SHAPE018|ForwardLookupStartsAtCursor|NestedForwardLookupStaysAtTarget' -count=1
 go test ./internal/hbcmp -run '^TestHarfBuzzStreamingBaselines/(scope_nested|scope_accent)/' -count=1
+```
+
+### SHAPE-019 — Ligature substitution deletes ignored marks
+
+**Status:** fixed; implemented and reviewed 2026-11-01 within the agreed
+mark-preservation and GPOS 5 component-association scope.
+The former `TestKnownBugSHAPE005AOTSLigatureAcrossMark` is now the ordinary
+`TestAOTSGPOSBaselines/gpos5.tests:2`, with its complete upstream expectation
+unchanged. The obsolete tagged wrapper is removed.
+
+**Expected behavior and basis:** unchanged upstream
+[`gpos5.tests:2`](../testdata/harfbuzz/aots/tests/gpos5.tests), at HarfBuzz revision
+`29c29e1e7d1c663b9f9f8b03e980f8e7aabd1f2b`, requires GIDs 30 and 31 to form
+ligature 18 across ignored mark 19, preserving the mark. The complete glyph/origin
+oracle is `[17@0,0 18@1500,0 19@1400,-80 17@3000,0]`.
+
+**Cause:** [gsubLookupType4Fmt1](../otlayout/gsub.go) skipped the mark while
+matching components, then replaced the entire matched span with the ligature.
+That replacement deleted the skipped glyph as well as the consumed components.
+GPOS 5 also always selected the last component. The fixture's first-component
+anchor requires mark origin `(1400,-80)`; the last gives `(1401,-79)`, confirming
+that preservation alone would not resolve the full expectation.
+
+**Fix:** GSUB records the actual matched positions and preserves skipped
+glyphs in input order after the new ligature. An immutable survivor mapping in
+the edit journal keeps contextual targets and side metadata aligned: consumed
+components map to the ligature, while skipped marks retain their own identities,
+masks, source anchors and positions. Level-0 clusters merge across the span.
+An ignored mark's source anchor does not become the ligature's source anchor.
+
+Transient per-glyph provenance identifies the ligature occurrence and original
+component, independently of buffer indexes and output clusters. It travels with
+position records across GSUB/GPOS stages and isolated spans, flattens nested
+ligatures, and reassigns associated marks after the last nested component.
+Single and multiple substitutions preserve a mark's association. GPOS 5 uses
+the matching association (clamped to the available component anchors); absent
+or mismatched association retains the last-component fallback. Final sink
+records omit this transient provenance but retain attachment diagnostics.
+
+**Regressions:** the upstream record passes unchanged. Ten independent
+HarfBuzz 15 captures in [ligatures.json](../internal/hbcmp/testdata/text/ligatures.json)
+cover intervening/trailing/multiple marks, both nested constructions, separate
+ligature occurrences, an input ligature, later single/multiple substitutions,
+and Hebrew RTL. Both APIs compare all six captured fields (20 comparisons).
+The new font is repository-authored; provenance and exact reproduction commands
+are in [LIGATURE_MARKS.md](../testdata/fonts/LIGATURE_MARKS.md).
+Lower-level tests independently verify preservation without GPOS, extension
+lookups, contextual targets/continuation, shared ownership, translated survivor
+maps, partial errors, component clamping and source/mask/position correspondence.
+
+**Boundaries:** this builds on accepted SHAPE-005/007/008/017 without reopening
+them. It does not change streaming cuts (SHAPE-015), feature-event context
+barriers (SHAPE-016), mark-to-mark compatibility rules, or general script-specific
+ligature matching policy. The Hebrew synthetic case verifies logical RTL
+positioning, not complete Hebrew shaping conformance. No existing oracle or
+fixture bytes changed, and no remaining tagged assertion was weakened.
+
+**Review verification (2026-11-01):** the full ordinary suite, targeted race
+suite (`./otlayout ./otshape/... ./internal/hbcmp`), build, and vet passed.
+The promoted upstream record and all twenty new public-API comparisons passed.
+Temporary Go overlays independently restoring mark deletion or disabling
+component selection caused the relevant lower-level and public-API regressions
+to fail, including the unchanged upstream record. Discovery retained nine
+expected failing top-level groups with no unexpected passing groups.
+Read-only verification reproduced all ten new HarfBuzz captures and rebuilt the
+new font byte-for-byte. Implementation verification also recorded unchanged
+35-record text and 13-record streaming captures. No blocking review findings.
+
+```sh
+go test ./otlayout ./otshape -run '^TestLigature' -count=1
+go test ./internal/hbcmp -run 'TestSHAPE019|TestAOTSGPOSBaselines/gpos5.tests:2' -count=1
 ```
 
 ### SHAPE-020 — Default features run in feature order instead of lookup order

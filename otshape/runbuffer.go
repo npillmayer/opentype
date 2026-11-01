@@ -904,8 +904,10 @@ func (rb *runBuffer) applyLayoutEdit(edit otlayout.EditSpan) {
 	}
 	if rb.SourceAnchors != nil && edit.From < edit.To {
 		source = rb.SourceAnchors[edit.From]
-		for _, c := range rb.SourceAnchors[edit.From:edit.To] {
-			if c < source {
+		for i, c := range rb.SourceAnchors[edit.From:edit.To] {
+			// Skipped glyphs keep their own provenance; they are not sources
+			// of the new ligature, even after earlier reordering.
+			if c < source && edit.MapIndex(edit.From+i) == edit.From {
 				source = c
 			}
 		}
@@ -925,6 +927,11 @@ func (rb *runBuffer) applyLayoutEdit(edit otlayout.EditSpan) {
 	rb.Joiners = inheritLayoutEdit(rb.Joiners, edit)
 	if edit.From < edit.To {
 		for i := edit.From; i < edit.From+edit.Len; i++ {
+			if _, survives := edit.SurvivorSource(i - edit.From); survives {
+				// Retained marks keep their own source anchors and flags. Cluster
+				// merging above still groups the entire ligature span at level 0.
+				continue
+			}
 			if rb.Clusters != nil {
 				rb.Clusters[i] = cluster
 			}
@@ -949,6 +956,11 @@ func inheritLayoutEdit[T any](s []T, edit otlayout.EditSpan) []T {
 	replacement := make([]T, edit.Len)
 	for i := range replacement {
 		replacement[i] = seed
+	}
+	for i := 1; i < len(replacement); i++ {
+		if source, ok := edit.SurvivorSource(i); ok {
+			replacement[i] = s[source]
+		}
 	}
 	out := append(s[:edit.From:edit.From], replacement...)
 	return append(out, s[edit.To:]...)

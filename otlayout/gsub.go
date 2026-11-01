@@ -117,7 +117,20 @@ func gsubLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		}
 	}
 	tracer().Debugf("OT lookup GSUB 2/1 (concrete): subst %v for %d", glyphs, buf.At(mpos))
+	var provenance PosItem
+	if len(ctx.buf.Pos) == len(buf) {
+		provenance = ctx.buf.Pos[mpos]
+	}
 	edit := ctx.buf.ReplaceGlyphs(mpos, mpos+1, glyphs)
+	if provenance.ligature != nil {
+		for i := mpos; i < mpos+len(glyphs); i++ {
+			ctx.buf.Pos[i].ligature = provenance.ligature
+			ctx.buf.Pos[i].ligatureComponent = provenance.ligatureComponent
+			if len(glyphs) == 1 {
+				ctx.buf.Pos[i].ligatureComponents = provenance.ligatureComponents
+			}
+		}
+	}
 	return mpos + len(glyphs), true, ctx.buf.Glyphs, edit, nil
 }
 
@@ -210,6 +223,7 @@ func gsubLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 	for _, rule := range payload.LigatureSets[inx] {
 		match := true
 		cur := mpos
+		positions := []int{mpos}
 		for _, g := range rule.Components {
 			next, ok := nextMatchable(ctx, buf, cur+1)
 			if !ok || g != buf.At(next) {
@@ -217,14 +231,15 @@ func gsubLookupType4Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 				break
 			}
 			cur = next
+			positions = append(positions, next)
 		}
 		if match {
 			if err := ctx.env.validateOutputGlyph(rule.Ligature); err != nil {
 				return pos, false, buf, nil, fmt.Errorf("GSUB 4|1: %w", err)
 			}
-			edit := ctx.buf.ReplaceGlyphs(mpos, cur+1, []ot.GlyphIndex{rule.Ligature})
+			edit := ctx.ligate(positions, rule.Ligature)
 			tracer().Debugf("OT lookup GSUB 4/1 (concrete): subst %d for %d", rule.Ligature, buf.At(mpos))
-			return mpos + 1, true, ctx.buf.Glyphs, edit, nil
+			return mpos + edit.Len, true, ctx.buf.Glyphs, edit, nil
 		}
 	}
 	return pos, false, buf, nil, nil

@@ -13,6 +13,13 @@ public APIs across buffer profiles and flush modes. Its event/progress driver
 uses the same comparison contract. The 35-case counts below refer specifically
 to `baselines.json` and its whole-input runner.
 
+The separate [SHAPE-019 component corpus](../../../../testdata/fonts/LIGATURE_MARKS.md)
+adds ten independent records in [ligatures.json](ligatures.json), with twenty
+whole-input comparisons through both public APIs. It leaves this 35-case corpus
+and the thirteen streaming records unchanged. Its preparation script is
+`testdata/scripts/capture_harfbuzz_ligatures.py`; the default operation checks
+all outputs and provenance without writing.
+
 ## Files and execution
 
 - [baselines.json](baselines.json) contains 35 cases, exact Unicode inputs,

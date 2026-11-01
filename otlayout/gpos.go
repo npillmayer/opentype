@@ -227,8 +227,16 @@ func gposLookupType5Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 			if len(lig.ComponentAnchors) == 0 {
 				return pos, false, buf, nil, nil
 			}
-			// Select last component by default (TODO: refine with caret/anchor logic)
+			// GSUB provenance identifies the original component of an intervening
+			// mark, including components of nested ligatures. Unassociated marks
+			// (and input ligatures without provenance) retain the last-component fallback.
 			compIndex := len(lig.ComponentAnchors) - 1
+			if len(ctx.buf.Pos) == len(buf) {
+				base, mark := ctx.buf.Pos[ligPos], ctx.buf.Pos[mpos]
+				if base.ligature != nil && base.ligature == mark.ligature && mark.ligatureComponent > 0 {
+					compIndex = min(mark.ligatureComponent, len(lig.ComponentAnchors)) - 1
+				}
+			}
 			if compIndex < 0 || compIndex >= len(lig.ComponentAnchors) {
 				return pos, false, buf, nil, nil
 			}

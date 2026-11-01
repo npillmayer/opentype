@@ -194,8 +194,13 @@ proposed hook order.
 There is no general combining-class sort before the reorder hook, dotted-circle
 prelude, default-ignorable cleanup, or direction-restore phase here.
 Horizontal Latin/Hebrew mark anchors are finalized before `PostprocessRun`.
-Cursive, hinted/device/variation anchor adjustments, and ligature component
-association remain incomplete. See SHAPE-007 in [the findings](SHAPING_FINDINGS.md).
+Cursive and hinted/device/variation anchor adjustments remain incomplete.
+SHAPE-019 adds GSUB provenance for GPOS mark-to-ligature component selection,
+including preserved marks and nested ligatures. It travels with position
+records across stages; final output strips this transient state. Hooks that
+adjust existing positions should retain the `PosItem` returned by `Pos` and
+modify its fields rather than replace it with a new record if later GPOS still
+needs the association. See SHAPE-007/019 in [the findings](SHAPING_FINDINGS.md).
 
 Because carry is reshaped, runtime hooks can run more than once for input that
 has not yet been emitted. Hooks must not assume one invocation per source rune.

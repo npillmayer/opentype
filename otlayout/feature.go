@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"slices"
 
 	"github.com/npillmayer/opentype/ot"
 )
@@ -345,6 +346,56 @@ type EditSpan struct {
 	// It describes the mutation already performed; PosBuffer.ApplyEdit itself
 	// always applies its explicitly requested positional replacement.
 	ResetsPositions bool
+	// Immutable skipped-glyph mapping for a ligature, relative to From so
+	// translating an isolated edit does not change the mapping. The private
+	// pointer preserves EditSpan comparability and journal snapshot isolation.
+	survivors *ligatureSurvivors
+}
+
+type ligatureSurvivors struct{ offsets []int }
+
+// SurvivorSource reports the old buffer index for a preserved output slot,
+// indexed relative to From. Slot zero is the new ligature, not a survivor.
+func (e EditSpan) SurvivorSource(output int) (int, bool) {
+	if e.survivors == nil || output <= 0 || output > len(e.survivors.offsets) {
+		return 0, false
+	}
+	return e.From + e.survivors.offsets[output-1], true
+}
+
+// MapIndex follows an input through this edit. Consumed ligature components
+// map to the ligature; preserved glyphs retain their individual identities.
+// A deleted input maps to -1.
+func (e EditSpan) MapIndex(index int) int {
+	if index < e.From {
+		return index
+	}
+	if index >= e.To {
+		return index + e.Len - (e.To - e.From)
+	}
+	if e.survivors != nil {
+		if i, found := slices.BinarySearch(e.survivors.offsets, index-e.From); found {
+			return e.From + 1 + i
+		}
+	}
+	if e.Len == 0 {
+		return -1
+	}
+	return e.From
+}
+
+// RetainedIndex follows only unchanged glyph identities, for attachment
+// targets. Unlike contextual inputs, replaced targets become unavailable.
+func (e EditSpan) RetainedIndex(index int) int {
+	if index < e.From || index >= e.To {
+		return e.MapIndex(index)
+	}
+	if e.survivors != nil {
+		if i, found := slices.BinarySearch(e.survivors.offsets, index-e.From); found {
+			return e.From + 1 + i
+		}
+	}
+	return -1
 }
 
 // BufferState bundles glyph and position buffers with a current index.
@@ -589,6 +640,21 @@ type PosItem struct {
 
 	Cluster uint32 // potentially used for shaping
 	Flags   uint16 // TODO
+
+	// GSUB provenance travels with positions through shaping stages and edits.
+	// The immutable identity distinguishes separate occurrences of a ligature.
+	ligature           *ligatureOrigin
+	ligatureComponent  int // zero for the ligature itself, otherwise one-based
+	ligatureComponents int // flattened component count for a ligature glyph; zero means one
+}
+
+// OutputPosition returns positioning and attachment diagnostics without the
+// transient GSUB provenance. Use it when emitting final glyph records; keep
+// the original item while further shaping is possible.
+func (p PosItem) OutputPosition() PosItem {
+	p.ligature = nil
+	p.ligatureComponent, p.ligatureComponents = 0, 0
+	return p
 }
 
 // NewPosBuffer allocates a position buffer of length n.
@@ -634,6 +700,11 @@ func (pb PosBuffer) ApplyEdit(edit *EditSpan) PosBuffer {
 	for i := range repl {
 		repl[i].AttachTo = -1
 	}
+	for i := 1; i < len(repl); i++ {
+		if source, ok := edit.SurvivorSource(i); ok {
+			repl[i] = pb[source]
+		}
+	}
 	out := append(pb[:edit.From:edit.From], repl...)
 	out = append(out, pb[edit.To:]...)
 	out = append(PosBuffer(nil), out...)
@@ -644,14 +715,15 @@ func (pb PosBuffer) ApplyEdit(edit *EditSpan) PosBuffer {
 		if target < 0 {
 			continue
 		}
-		if target >= edit.From && target < edit.To {
+		mapped := edit.RetainedIndex(target)
+		if mapped < 0 {
 			out[i].AttachTo = -1
 			out[i].AttachKind = AttachNone
 			out[i].AttachClass = 0
 			out[i].AnchorRef = AnchorRef{}
 			out[i].MarkAttachmentPending = false
-		} else if target >= edit.To {
-			out[i].AttachTo += int32(edit.Len - (edit.To - edit.From))
+		} else {
+			out[i].AttachTo = int32(mapped)
 		}
 	}
 	return out
@@ -1396,15 +1468,7 @@ func applySequenceLookupRecords(
 				if mapIdx[i] < 0 {
 					continue
 				}
-				if mapIdx[i] >= edit.To {
-					mapIdx[i] += delta
-				} else if mapIdx[i] >= edit.From {
-					if edit.Len == 0 {
-						mapIdx[i] = -1
-					} else {
-						mapIdx[i] = edit.From
-					}
-				}
+				mapIdx[i] = edit.MapIndex(mapIdx[i])
 			}
 		}
 	}

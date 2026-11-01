@@ -70,6 +70,7 @@ func TestAOTSGPOSBaselines(t *testing.T) {
 		"gpos_chaining3_boundary.tests:3",
 		"gpos4_simple.tests:2", // mark-to-base origin (SHAPE-007)
 		"gpos5.tests:3",        // mark on the last ligature component (SHAPE-007)
+		"gpos5.tests:2",        // preserved mark on the first component (SHAPE-019)
 		"gpos4_simple.tests:3", // unattached GDEF mark has zero final advance
 		"gpos4_simple.tests:4",
 		"gpos2_1_lookupflag.tests:3", // IgnoreBaseGlyphs and pair advances

@@ -231,8 +231,14 @@ and mark-to-mark anchors now produce design-unit offsets. Finalization runs
 after GPOS/advance zeroing and before `PostprocessRun`, incorporating target
 placement and final pen differences while retaining logical output order.
 `PosItem.MarkAttachmentPending` is cleared; attachment diagnostics remain.
-Cursive, hint/device/variation adjustments, ligature component association,
+Cursive, hint/device/variation adjustments,
 and attachment context lost at buffer/event cuts remain outside this fix.
+SHAPE-019 now preserves skipped marks and carries GSUB ligature-component
+association through a shaped span, including nested ligatures. GPOS 5 uses it
+to choose the component anchor; input ligatures and unassociated marks retain
+the last-component fallback. This provenance does not span independently shaped
+buffer/event windows and does not establish safe cuts. Final glyph records omit
+the transient identity/component data while retaining attachment diagnostics.
 Attachment indexes are not converted to a global sink index during emission;
 consumers use the finalized offsets for rendering.
 

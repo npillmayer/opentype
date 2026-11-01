@@ -57,6 +57,16 @@ refer to the buffer immediately before that entry, not the original input.
 - A contextual operation may have many entries and no single aggregate edit.
 - Equal initial/final lengths do not imply that no edits occurred.
 
+GSUB ligatures can preserve skipped glyphs within the replaced span. Such an
+entry carries an immutable survivor mapping, relative to `From`; the first
+output is the ligature, followed by the skipped glyphs in input order.
+`SurvivorSource` reports an output survivor's original slot. `MapIndex` maps
+consumed components to the ligature and survivors to their own output slots.
+`RetainedIndex`, used for existing attachment targets, instead invalidates
+consumed identities. Contiguous edits retain their original semantics.
+The mapping is private and immutable, so copied journals remain independent and
+`EditSpan` remains comparable. Translating `From`/`To` preserves the mapping.
+
 Every `ApplyFeature` invocation clears the journal on a non-nil state, including
 no-ops and early failures. Nested internal lookup calls append to that same
 journal rather than starting another feature invocation.
@@ -78,6 +88,7 @@ including edits from deeper nested contexts. For each entry:
 
 - Positions after the replaced range shift by `Len - (To - From)`.
 - Positions inside a replacement map to its first output position.
+- A preserved glyph inside a ligature replacement maps to its own output slot.
 - Positions inside a deletion become unavailable; subsequent records targeting
   them are skipped.
 
@@ -120,6 +131,18 @@ Replacement policies:
 - Clusters use the minimum consumed cluster; unsafe flags are combined with OR.
 - One-to-one edits preserve side metadata.
 - Pure insertion uses default metadata; deletion removes consumed entries.
+
+For ligature edits, skipped glyphs retain their individual metadata and position
+records. Clusters still merge across the complete match; the new ligature's
+source anchor is selected from consumed components, excluding skipped glyphs.
+Existing attachments to survivors follow their remapped slots. Component
+provenance is separate from GPOS attachment records: immutable occurrence
+identity, component index and flattened count travel with `PosItem`, so GSUB
+ligatures can allocate position storage before GPOS. Later single/multiple
+substitutions retain mark association. Nested ligatures also update associated
+marks following their final consumed component. GPOS 5 selects the corresponding
+anchor or uses its existing last-component fallback for unassociated marks.
+`OutputPosition` removes transient GSUB provenance from final sink records.
 
 Shared alternate lookups retain each contributor's value. Incompatible active
 values set a deferred `BufferState.SetAlternateSelectionError`; only a matched,

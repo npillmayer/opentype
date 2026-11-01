@@ -20,6 +20,12 @@ and the thirteen streaming records unchanged. Its preparation script is
 `testdata/scripts/capture_harfbuzz_ligatures.py`; the default operation checks
 all outputs and provenance without writing.
 
+The separate [normalization corpus](NORMALIZATION.md) adds fourteen independent
+records in [normalization.json](normalization.json), with 26 whole-input
+comparisons. SHAPE-012/013 also promote three unchanged original records:
+`baselines.json` now has 32 ordinary and three tagged cases. The remaining cases
+cover two Hebrew ordering failures and the deferred no-GPOS parser limitation.
+
 ## Files and execution
 
 - [baselines.json](baselines.json) contains 35 cases, exact Unicode inputs,
@@ -31,17 +37,22 @@ all outputs and provenance without writing.
   replaces the snapshot. It rejects a different HarfBuzz version, incomplete
   output, and missing-glyph results.
 - [text_baselines_test.go](../../text_baselines_test.go) validates all cases and
-  font hashes, including the tagged cases, and runs twenty-nine passing comparisons.
+  font hashes, including the tagged cases, and runs thirty-two passing comparisons.
   It reuses `fixture` parameter conversion, `glyphCollector`, and the exact
   positioned-glyph comparison from `hb_compare.go`.
-- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs six failing cases
-  in five top-level tests under `shaping_knownbugs`. Raw expectations remain the
+- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs three failing cases
+  in three top-level tests under `shaping_knownbugs`. Raw expectations remain the
   original HarfBuzz output; comparison explicitly converts RTL to logical order; promote cases as their blockers are resolved.
 - [normalization_mark_test.go](../../normalization_mark_test.go) checks seven
   global mark-setting cases through `ShapeEvents` as well. SHAPE-010 promotes
   three unchanged records and adds four independent captures; see the
   [normalization report](NORMALIZATION.md) for the plan-wide range contract and
   the remaining pointed-shalom mark-ordering blocker.
+- [normalization_test.go](../../normalization_test.go) checks the fourteen new
+  records, twelve through both APIs and two indexed-range cases through `Shape`.
+  It also checks four original normalization records through `ShapeEvents`.
+  The [preparation script](../../../../testdata/scripts/capture_harfbuzz_normalization.py)
+  verifies independent output and provenance without writing by default.
 - [Noto font provenance](../../../../testdata/fonts/NotoSansHebrew-README.md)
   pins the new Hebrew font and its OFL license. Latin uses the existing
   `GentiumPlus-R.ttf`, pinned by its hash in every corresponding record.

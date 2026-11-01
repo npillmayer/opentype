@@ -101,6 +101,12 @@ on an engine.
 There is no custom decomposition hook, `MarksBehavior`, `GposTag`, or
 script-specific streaming-boundary hook. Normalization modes are `Auto`,
 `None`, `Composed`, and `Decomposed` (with the `Normalization` prefix).
+Composed/decomposed modes are font-aware representation preferences. `None`
+bypasses normalization and composition hooks. `ComposeUnicode` and accepted
+`Compose` results require a nonzero cmap mapping; unavailable compositions leave
+the supported components intact. Canonical ordering precedes starter-based
+composition, with Hebrew ordering explicitly deferred. See
+[normalization](SHAPING_OVERVIEW.md#normalization).
 
 The public path reads `ApplyGPOS`, but a false value produces an all-zero
 internal policy that compilation resets to GPOS-on. The internal strictness

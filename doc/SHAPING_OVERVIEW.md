@@ -78,8 +78,13 @@ See [STREAMING_API.md](STREAMING_API.md) for exact cut semantics and limitations
 
 Active normalization is in `normalize.go`. Engine policy selects auto, none,
 composed, or decomposed mode. Auto defaults to composed, with decomposition
-preferences for `dev2` and `bng2`. Decomposition operates per rune; composition
-uses adjacent pairs and optional engine composition hooks.
+preferences for `dev2` and `bng2`. Font-supported decomposition exposes hidden
+accents before stable canonical ordering; starter-based recomposition observes
+blocking marks. Unicode and engine-hook compositions require a nonzero cmap
+mapping. Supported standalone characters can retain their original spelling;
+partial decomposition preserves supported nuclei when components are unavailable.
+Source anchors move with runes; initial level-0 groups still govern feature ranges.
+`None` bypasses normalization. Other modes are preferences, not unconditional NFC/NFD.
 
 Hebrew presentation-form fallback consults enabled, resolved GPOS `mark`
 lookups in the plan (SHAPE-010). Default and required mark support count;
@@ -87,9 +92,11 @@ lookups in the plan (SHAPE-010). Default and required mark support count;
 plan-wide, while positioning still follows its masks. This does not guarantee
 coverage for each glyph or remove normalization boundaries between event plans.
 
-This is not full font-aware normalization: general canonical ordering across
-combining sequences and cmap-aware Unicode composition/decomposition selection
-are incomplete (SHAPE-012, SHAPE-013).
+SHAPE-012/013 cover the shared normalization and font-coverage fixes. Hebrew
+explicitly bypasses the new canonical ordering pass to preserve existing behavior
+until its script-specific ordering follow-up; font-coverage checks still apply.
+Full script-specific HarfBuzz normalization conformance and safe streaming/event
+normalization boundaries are not established.
 
 ## Script/language mapping and engines
 

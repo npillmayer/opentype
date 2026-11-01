@@ -36,9 +36,9 @@ var textBaselineFindings = map[string]string{
 	"hebrew_shin_pointed":   "SHAPE-011",
 	"hebrew_vav_holam":      "",
 	"hebrew_shalom_pointed": "SHAPE-011", // Separate Hebrew mark-ordering follow-up.
-	"latin_marks_canonical": "", "latin_marks_reordered": "SHAPE-012",
+	"latin_marks_canonical": "", "latin_marks_reordered": "",
 	"latin_uncomposable_mark":     "",
-	"latin_missing_composite_nfc": "SHAPE-013", "latin_missing_composite_nfd": "SHAPE-013",
+	"latin_missing_composite_nfc": "", "latin_missing_composite_nfd": "",
 	"latin_range_after_nfc": "", "latin_range_after_nfd": "",
 	"hebrew_vav_holam_mark_on": "", "hebrew_vav_holam_mark_off": "",
 	"hebrew_vav_holam_no_gpos": "SHAPE-014",

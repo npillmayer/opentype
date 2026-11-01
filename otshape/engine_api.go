@@ -24,7 +24,10 @@ const (
 	LayoutGPOS
 )
 
-// NormalizationMode controls Unicode normalization behavior before GSUB.
+// NormalizationMode controls font-aware normalization before GSUB. Composed
+// and Decomposed are preferences: retain a supported representation when its
+// alternatives are absent from cmap. None bypasses normalization and composition
+// hooks.
 type NormalizationMode uint8
 
 const (
@@ -121,6 +124,8 @@ type RunContext interface {
 type NormalizeContext interface {
 	Font() *ot.Font
 	Selection() SelectionContext
+	// ComposeUnicode returns a Unicode composition only when the font maps it
+	// to a nonzero glyph. Custom Compose hook results are checked likewise.
 	ComposeUnicode(a, b rune) (rune, bool)
 	// HasGposMark reports enabled, resolved GPOS mark lookups for this plan.
 	// Ranged enablement counts plan-wide; mkmk alone does not. This does not

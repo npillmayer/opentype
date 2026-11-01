@@ -5,6 +5,43 @@ Verified on 2026-10-26 against source revision
 Production behavior is unchanged; public API comments now record the agreed
 logical-order and HarfBuzz level-0 cluster contracts.
 
+**SHAPE-012/013 resolution (2026-11-01):** the reordered
+Latin marks and both missing-composite cases now pass all original fields and
+run in the ordinary suite. The original 35-record corpus is unchanged: 32 cases
+are ordinary and three remain tagged. Four original normalization cases also
+run through `ShapeEvents`.
+
+Fourteen additional independent captures are stored separately in
+[`normalization.json`](normalization.json). Twelve cases run through both APIs;
+two indexed-range cases run through `Shape` because event spans have their own
+normalization barrier (SHAPE-016). Every comparison checks all six output fields.
+The cases exercise:
+
+- Precomposed, canonical and reversed accents, with original indexes on a
+  following `X`.
+- Equal-class blocking and composition across an unconsumed lower-class mark.
+- Missing a-with-dot-below: all three spellings use supported a-with-acute and
+  dot below instead of introducing a missing glyph.
+- Missing ring and A-ring-acute: retain A-ring, and decompose unavailable
+  A-ring-acute to A-ring plus acute without needing the unavailable ring.
+- Indexed ligature ranges after decomposition and reordering.
+
+The new fonts, hashes, source/license and reproducible derivation are recorded
+in [font provenance](../../../../testdata/fonts/NORMALIZATION.md). The original
+three derived fonts and all previous captures remain unchanged. Reproduce the
+new captures with `python3 testdata/scripts/capture_harfbuzz_normalization.py`;
+add `--write` only to replace them deliberately. Captures pin HarfBuzz 15.0.0,
+its binary hash, OpenType shaper/font functions, Unicode scalar clusters at
+level zero, and font-unit positions. Go tests use checked-in data only.
+
+Hebrew bypasses the new generic canonical sorting pass by explicit user decision:
+its script-specific order remains separate, while font-coverage checks apply.
+The existing passing Hebrew cases remain ordinary and the two ordering failures
+retain their complete tagged expectations. Streaming/context limits are unchanged.
+The accepted fixes, contracts, and recorded implementation verification are
+archived under [SHAPE-012](../../../../doc/SHAPING_FINDINGS.md#shape-012--canonical-equivalent-mark-orders-shape-differently)
+and [SHAPE-013](../../../../doc/SHAPING_FINDINGS.md#shape-013--normalization-ignores-font-coverage).
+
 **SHAPE-010 resolution (2026-11-01):** default vav/holam,
 explicitly disabled mark features, and explicitly requested absent features now
 pass their unchanged full captures. Four HarfBuzz 15 captures extend the corpus
@@ -147,10 +184,11 @@ go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 python3 testdata/scripts/capture_harfbuzz_text.py
 ```
 
-Remaining fixes can address font-aware normalization and canonical/Hebrew mark
-ordering independently. Effective mark support is resolved under SHAPE-010. Source-coordinate masks
-and Latin/Hebrew base/mark grouping now have ordinary regressions. Promote complete passing records when all their blockers
-are fixed. Initial-group indexed range bounds have focused coverage under
+Font-aware representation and canonical ordering are now resolved under
+SHAPE-012/013 within the agreed scope; Hebrew mark ordering remains separate.
+Effective mark support is resolved under SHAPE-010. Source-coordinate masks
+and Latin/Hebrew base/mark grouping have ordinary regressions. Promote complete
+passing records when all their blockers are fixed. Initial-group indexed range bounds have focused coverage under
 SHAPE-011; feature events inside groups remain separate. The captured ranged
 ligature examples lie wholly after the normalized prefix.
 Streaming cuts remain the next independent test axis. See

@@ -1,6 +1,6 @@
 # Capability-reduced normalization fonts
 
-These three derived fixtures isolate font capabilities for the
+These five derived fixtures isolate font capabilities for the
 [normalization baselines](../../internal/hbcmp/testdata/text/NORMALIZATION.md).
 They are intentionally modified fonts, not new upstream reference fonts.
 All input/output bytes are pinned by SHA-256; no installed fonts are used.
@@ -10,6 +10,8 @@ All input/output bytes are pinned by SHA-256; no installed fonts are used.
 | `ShaperTestLatin-NoEacute.ttf` | `GentiumPlus-R.ttf` | Remove U+00E9 from Unicode cmap subtables; retain its glyph, GSUB/GPOS, and mappings for `e` and U+0301 | `a31c0d92101751fcd0643803bfb004060db47bdb5d77018cdf659526ed92be9b` |
 | `ShaperTestHebrew-NoMark.ttf` | `NotoSansHebrew-Regular.ttf` | Remove GPOS `mark`/`mkmk` feature records and their LangSys references, renumber retained feature indexes; retain GPOS and lookup data | `176a79c8800368f4e2f6daa289e49fb35e9e1ae515bf42d4b840d981cfb231ae` |
 | `ShaperTestHebrew-NoGPOS.ttf` | `NotoSansHebrew-Regular.ttf` | Remove the entire GPOS table | `96b074f6a494d8b29b6d3204b47807e21034645a72b17d89868596fb4a351df6` |
+| `ShaperTestLatin-NoADot.ttf` | `GentiumPlus-R.ttf` | Remove U+1EA1 (a with dot below); retain `a`, `á`, acute and dot below | `7fcd4ec7b10a1545a94f3bba310b2d8089f6f9404211be66a0ad184d5071e7d0` |
+| `ShaperTestLatin-NoRingAcute.ttf` | `GentiumPlus-R.ttf` | Remove U+030A and U+01FA; retain `Å` and acute to test partial decomposition without a ring glyph | `064562fb7fe5cf6a67e2a7ba9a760f38798bfb604b19dac388b255c57d804017` |
 
 The generator also renames font family/full/PostScript/unique names to
 `Shaper Test Latin` or `Shaper Test Hebrew` variants. Copyright and licensing
@@ -42,3 +44,9 @@ HarfBuzz captures use the resulting checked-in files directly. Go's ordinary
 parser deliberately rejects the NoGPOS fixture (SHAPE-014); this is retained
 as a scope limitation, not bypassed with `IsTestfont`. The NoMark fixture keeps
 both layout tables and reaches the actual normalization fallback path.
+
+The two SHAPE-012/013 derivatives share the Latin source hash and license above.
+The original three derivatives remain byte-for-byte unchanged. The additional
+captures are in `internal/hbcmp/testdata/text/normalization.json`; reproduce them
+with `python3 testdata/scripts/capture_harfbuzz_normalization.py` (read-only by
+default; `--write` explicitly replaces the capture).

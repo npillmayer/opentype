@@ -5,6 +5,39 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## SHAPE-012/013 resolution (2026-11-01)
+
+The jointly authorized normalization fix chooses cmap-supported decompositions,
+orders combining marks stably, and recomposes against the starter with canonical
+blocking and coverage checks. Original source anchors and level-0 group-based
+feature ranges survive each pass. Hebrew explicitly retains its previous order
+until its separate script-specific ordering fix; shared coverage checks apply.
+
+Three original regressions are promoted with unchanged complete captures. The
+35-record text corpus now has 32 ordinary and three tagged cases (two Hebrew
+ordering cases and the deferred no-GPOS parser case). Fourteen new independent
+HarfBuzz 15 captures in `text/normalization.json` add 26 whole-input comparisons:
+twelve cases through both APIs and two indexed-range cases through `Shape`.
+They cover precomposed accents, equivalent mark orders, composition blocking,
+missing composites, unavailable components, partial decomposition and ranges
+after expansion/reordering. Four original normalization cases also run through
+`ShapeEvents`. No event-span or streaming-boundary guarantee is added.
+
+`otshape/normalize_test.go` verifies original anchors, equal-class stability,
+leading marks, CGJ barriers, no silent CGJ insertion, modes, partial font coverage,
+custom-hook coverage checks, and the agreed Hebrew ordering exclusion. The
+existing decomposition/source test now expects canonical mark order while
+retaining the original source association of every resulting rune.
+
+Recorded implementation verification: the full ordinary suite, focused
+shaping/layout/HarfBuzz race suite, build, and vet passed. Tagged discovery retains seven expected failing
+top-level groups, removing SHAPE-012/013, with no unexpectedly passing known-bug
+groups. Read-only preparation checks reproduced all five normalization fonts,
+all 35 original text captures, and all fourteen new captures. Original fixtures
+and oracles are unchanged. Both findings are accepted and archived with their
+stable IDs: [SHAPE-012](SHAPING_FINDINGS.md#shape-012--canonical-equivalent-mark-orders-shape-differently)
+and [SHAPE-013](SHAPING_FINDINGS.md#shape-013--normalization-ignores-font-coverage).
+
 ## Reviewed SHAPE-019 resolution (2026-11-01)
 
 GSUB ligatures preserve skipped glyphs with an edit-journal survivor mapping.
@@ -280,11 +313,11 @@ within the same Go module.
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
 | [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. All selected AOTS cases pass; six real-text cases remain behind `shaping_knownbugs`. `feature_precedence_test.go` reuses two Gentium captures with a probe engine to check engine/user feature precedence; two of its five cases are tagged (SHAPE-021). The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. `ligature_marks_test.go` compares ten component cases through both APIs. No runner invokes HarfBuzz during tests. |
-| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json`, 35 Latin/Hebrew cases in `text/baselines.json`, ten component cases in `text/ligatures.json`, and thirteen streaming/scope/progress records in `text/streaming.json`. The text reports and `testdata/fonts/LIGATURE_MARKS.md` record semantics, commands, provenance and results. |
+| [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json`, 35 Latin/Hebrew cases in `text/baselines.json`, fourteen normalization cases in `text/normalization.json`, ten component cases in `text/ligatures.json`, and thirteen streaming/scope/progress records in `text/streaming.json`. The text reports and `testdata/fonts/LIGATURE_MARKS.md` record semantics, commands, provenance and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. All fourteen selected records pass (five GSUB, nine GPOS, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
-| [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Three derived normalization fonts remove a cmap mapping, mark features, or GPOS; `fonts/NORMALIZATION.md` records their generation and licenses. The repository-authored `ShaperTestProgress.ttf` isolates expansion, deletion, and contraction; `fonts/STREAMING.md` records its reproducible construction. The five repository-authored `ShaperTestLookupOrder-*.ttf` fonts isolate GSUB/GPOS lookup order and shared alternate selection; `fonts/LOOKUP_ORDER.md` records their construction. Also contains Calibri and Go fonts. |
-| [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` prepares fonts; `recover_harfbuzz_aots.py` recovers upstream records; `capture_harfbuzz_text.py` captures/checks complete text output with HarfBuzz 15.0.0. `build_normalization_fonts.py` reproducibly derives capability-reduced fixtures with FontTools. `build_streaming_font.py` builds the progress fixture; `build_lookup_order_fonts.py` builds the lookup-order fixtures; `capture_harfbuzz_streaming.py` captures/checks the thirteen additional oracles. These are not Go test drivers. |
+| [`testdata/fonts/`](../testdata/fonts/) | Larger fonts for mapping, metrics, parser, shaping, and diagnostics. Gentium Plus supplies Latin text baselines; pinned Noto Sans Hebrew supplies Hebrew cases, with provenance and OFL license alongside it. Five derived normalization fonts remove selected cmap mappings, mark features, or GPOS; `fonts/NORMALIZATION.md` records their generation and licenses. The repository-authored `ShaperTestProgress.ttf` isolates expansion, deletion, and contraction; `fonts/STREAMING.md` records its reproducible construction. The five repository-authored `ShaperTestLookupOrder-*.ttf` fonts isolate GSUB/GPOS lookup order and shared alternate selection; `fonts/LOOKUP_ORDER.md` records their construction. Also contains Calibri and Go fonts. |
+| [`testdata/scripts/`](../testdata/scripts/) | Fixture discovery/preparation helpers. `find_test_fonts.py` indexes fonts by lookup type; `fix-maxp.py` prepares fonts; `recover_harfbuzz_aots.py` recovers upstream records; `capture_harfbuzz_text.py` and `capture_harfbuzz_normalization.py` capture/check complete text output with HarfBuzz 15.0.0. `build_normalization_fonts.py` reproducibly derives capability-reduced fixtures with FontTools. `build_streaming_font.py` builds the progress fixture; `build_lookup_order_fonts.py` builds the lookup-order fixtures; `capture_harfbuzz_streaming.py` captures/checks the thirteen additional oracles. These are not Go test drivers. |
 | [`ot-tools/`](../ot-tools/) | Manual diagnostics: `shape` prints glyph output, `view` renders glyph proofs, and `font` inspects tables. Useful for investigation; visual inspection does not replace output assertions. |
 | [`internal/fontload/`](../internal/fontload/) | Shared font-byte/SFNT loading support. It does not select or execute shaping features. |
 
@@ -372,12 +405,12 @@ review probes outside that first regression batch.
   until EOF or a forced full-buffer flush. The raw buffer cap guarantees progress,
   not equivalence to whole-run shaping. See `findFlushCut` and
   `rawFlushForGlyphPrefix` in [shape_streaming.go](../otshape/shape_streaming.go).
-- **Normalization is partial.** The active path composes adjacent pairs or
-  decomposes individual runes. It does not implement general canonical ordering
-  across combining sequences or the older font-aware representation search.
-  Unicode composition is not conditioned on availability of the composed glyph.
-  See `normalizeRuneStreamWithScratch`, `decomposeRuneStreamInto`, and
-  `composeRuneStreamInto` in [normalize.go](../otshape/normalize.go).
+- **Normalization has bounded scope.** SHAPE-012/013 add font-supported
+  decomposition, stable canonical ordering and starter-based recomposition with
+  cmap checks. Hebrew bypasses canonical sorting pending its separate ordering
+  fix. This is not full script-specific HarfBuzz normalization conformance, and
+  event/streaming boundaries can still split normalization sequences. See
+  [normalize.go](../otshape/normalize.go).
 - **Script support is selective.** Arabic joining uses a hand-maintained
   classification and selected fallback operations. Hebrew implements selected
   composition/reordering cases. Their presence and unit coverage do not establish
@@ -717,7 +750,7 @@ as the schema example. The declared `normalization` field is not applied by the
 original runner. There is no watermark/event configuration in that format, and internal masks, unsafe
 flags, and unresolved attachments are not compared.
 
-The [real-text corpus](../internal/hbcmp/testdata/text/README.md) contains 24
+The [real-text corpus](../internal/hbcmp/testdata/text/README.md) contains 35
 independent captures from installed HarfBuzz 15.0.0, with exact commands,
 executable and font hashes, script/language/direction, scalar cluster indexes
 at level 0, and font-unit positions. The test-only runner validates every font
@@ -729,13 +762,12 @@ and HarfBuzz level-0 grouping are the agreed contracts. See the
 [normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.md) for the
 conversion's rendering convention and exact cases.
 
-Fifteen cases pass, including the four full SHAPE-011 mark-grouping captures
-promoted on 2026-10-29. Nine remain tagged for Hebrew mark order, effective mark
-support, canonical ordering, font-aware normalization, or the explicit no-GPOS
-parser restriction. The combined discovery suite now has **ten failing
-top-level tests**: nine shaping assertion groups and the deferred SHAPE-014
-parser case. The historical `TestKnownBugSHAPE007HebrewMarkOffsets` retains its
-full assertion: clusters now match, but internal Hebrew mark order still differs.
+Thirty-two text cases pass, including the three promoted SHAPE-012/013
+regressions. Three remain tagged for Hebrew mark order or the explicit no-GPOS
+parser restriction. The combined discovery suite has seven failing top-level
+groups. The historical `TestKnownBugSHAPE007HebrewMarkOffsets` retains its full
+assertion: clusters and positions match, but internal Hebrew mark order differs.
+The additional normalization corpus and coverage are described above.
 
 `otshape/clusters_test.go` covers leading marks, adjacent groups, original scalar
 anchors through composition/decomposition, range starts/ends inside groups,
@@ -929,13 +961,14 @@ continue to pass, but expanding their coverage is not a current priority.
    plan-wide mark support, including mixed settings and ranged enablement; its
    complete passing baselines run in the ordinary suite. SHAPE-011 implements
    Latin/Hebrew base/mark grouping and initial-group range bounds.
-   Canonical normalization and remaining Hebrew mark order need separate fixes. Absence of
+   SHAPE-012/013 now cover canonical ordering and font-supported representation
+   choices; remaining Hebrew mark order needs its separate fix. Absence of
    GPOS itself remains outside normal parser scope (SHAPE-014, deferred).
 4. **Remaining mark positioning.** SHAPE-007/008 now resolve design-unit
    mark-to-base/ligature/mark positioning and final mark advances for horizontal
    Latin/Hebrew. SHAPE-019 also resolves ignored-mark preservation and ligature
    component association. Preserve those regressions while addressing the
-   remaining normalization and Hebrew mark-ordering blockers in complete text baselines. Cursive and hint/device/variation work
+   remaining Hebrew mark-ordering blockers in complete text baselines. Cursive and hint/device/variation work
    remain outside this scope.
 5. **Streaming and feature-scope boundaries.** The initial
    [matrix and event/progress driver](../internal/hbcmp/testdata/text/STREAMING.md)

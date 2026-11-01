@@ -3,6 +3,7 @@ package otshape
 import (
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otlayout"
+	"github.com/npillmayer/opentype/otquery"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -235,10 +236,21 @@ func (nc normalizeContext) Selection() SelectionContext {
 func (nc normalizeContext) ComposeUnicode(a, b rune) (rune, bool) {
 	s := norm.NFC.String(string([]rune{a, b}))
 	r := []rune(s)
-	if len(r) == 1 {
+	if len(r) == 1 && nc.hasGlyph(r[0]) {
 		return r[0], true
 	}
 	return 0, false
+}
+
+// A nil font is used by Unicode-only internal tests. Public shaping always
+// supplies a font; unavailable or malformed cmap entries cannot justify a
+// normalization replacement. Mapping retains its existing error handling.
+func (nc normalizeContext) hasGlyph(r rune) bool {
+	if nc.font == nil {
+		return true
+	}
+	gid, err := otquery.GlyphIndex(nc.font, r)
+	return err == nil && gid != 0
 }
 
 func (nc normalizeContext) HasGposMark() bool {

@@ -40,10 +40,10 @@ def derive(source, source_hash, family, remove):
         gpos.FeatureList.FeatureCount = len(kept)
     else:
         for table in font["cmap"].tables:
-            # Remove every encoding's U+00E9 entry; retain the glyph and all
-            # other tables, so the missing capability is Unicode mapping.
+            # Retain outlines and layout tables; only cmap coverage changes.
             if table.isUnicode():
-                table.cmap.pop(0x00E9, None)
+                for cp in ([0x00E9] if remove == "cmap" else remove):
+                    table.cmap.pop(cp, None)
     # Do not publish the derivative under the original family's reserved name.
     names = {1: family, 2: "Regular", 3: family + "-Regular-1",
              4: family + " Regular", 6: family.replace(" ", "") + "-Regular",
@@ -73,6 +73,12 @@ def main():
         "ShaperTestHebrew-NoMark.ttf": derive("NotoSansHebrew-Regular.ttf",
             "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
             "Shaper Test Hebrew No Mark", "marks"),
+        "ShaperTestLatin-NoADot.ttf": derive("GentiumPlus-R.ttf",
+            "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+            "Shaper Test Latin No ADot", [0x1EA1]),
+        "ShaperTestLatin-NoRingAcute.ttf": derive("GentiumPlus-R.ttf",
+            "fa09788adcc651d77eba7d96f8cc3a600d6484c58e3b4ff79c2b2464dbfea6f8",
+            "Shaper Test Latin No Ring Acute", [0x030A, 0x01FA]),
     }
     source = TTFont(FONTS / "GentiumPlus-R.ttf")
     license_text = next(n.toUnicode() for n in source["name"].names

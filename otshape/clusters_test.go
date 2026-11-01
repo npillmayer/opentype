@@ -40,7 +40,7 @@ func TestClusterNormalizationPreservesSources(t *testing.T) {
 		groups, sources []uint32
 	}{
 		{"a\u0323\u0301x", NormalizationComposed, "\u1ea1\u0301x", []uint32{10, 10, 13}, []uint32{10, 12, 13}},
-		{"\u00e9\u0323x", NormalizationDecomposed, "e\u0301\u0323x", []uint32{10, 10, 10, 12}, []uint32{10, 10, 11, 12}},
+		{"\u00e9\u0323x", NormalizationDecomposed, "e\u0323\u0301x", []uint32{10, 10, 10, 12}, []uint32{10, 11, 10, 12}},
 		{"x\u0301y", NormalizationNone, "x\u0301y", []uint32{10, 10, 12}, []uint32{10, 11, 12}},
 	} {
 		t.Run(tc.wantRunes, func(t *testing.T) {

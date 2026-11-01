@@ -21,16 +21,6 @@ func TestKnownBugSHAPE007HebrewMarkOffsets(t *testing.T) {
 	runTextBaselineID(t, "hebrew_shin_pointed")
 }
 
-func TestKnownBugSHAPE012CanonicalOrdering(t *testing.T) {
-	runTextBaselineID(t, "latin_marks_reordered")
-}
-
-func TestKnownBugSHAPE013UnavailableComposition(t *testing.T) {
-	for _, id := range []string{"latin_missing_composite_nfc", "latin_missing_composite_nfd"} {
-		t.Run(id, func(t *testing.T) { runTextBaselineID(t, id) })
-	}
-}
-
 // The normal parser deliberately requires GPOS. This baseline records that
 // capability boundary, not an accidental parser regression; see SHAPE-014.
 func TestKnownBugSHAPE014AbsentGPOS(t *testing.T) {

@@ -5,6 +5,32 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## SHAPE-010 resolution (2026-11-01)
+
+Normalization now derives mark support from resolved GPOS lookup contributors
+and their enablement, including shared lookups, unmasked defaults and required
+features. Focused plan tests cover empty/absent features, inactive contributors,
+disabled GPOS, and ranges. The agreed signal is `mark`-only and plan-wide;
+`mkmk` alone does not suppress Hebrew presentation-form fallback.
+
+Three existing vav/holam regressions are promoted with unchanged expectations.
+Four independent HarfBuzz captures add mark-only, mkmk-only, ranged-on and
+ranged-off coverage. All 31 previous records and provenance are unchanged.
+The text corpus now has 35 cases: 29 ordinary and six tagged. Seven global
+mark-setting cases also run through `ShapeEvents`; indexed ranges use `Shape`
+because event-plan normalization boundaries remain a separate SHAPE-016 issue.
+
+Pointed shalom now has the correct seven glyphs, clusters and per-glyph positions;
+its full comparison stays tagged for the separate Hebrew internal mark-ordering
+follow-up. SHAPE-007/011 are not reopened.
+
+Recorded implementation verification: the full ordinary suite passed;
+tagged discovery retained ten failing top-level tests, removing exactly the three
+promoted subtests, with no new failures, panics, or timeouts.
+`go build ./...` and `go vet ./...` passed. Read-only recapture verified all 35
+independent HarfBuzz records. SHAPE-010 is accepted and archived in
+[Resolved findings](SHAPING_FINDINGS.md#shape-010--default-mark-positioning-is-missed-during-normalization).
+
 ## SHAPE-017 resolution (2026-11-01)
 
 GSUB 2 empty sequences delete their input and journal the edit. Regression tests
@@ -866,8 +892,10 @@ continue to pass, but expanding their coverage is not a current priority.
 3. **Normalization and cluster preservation.** The focused discovery batch now
    covers canonical-equivalent mark orders (SHAPE-012), missing composed cmap
    mappings (SHAPE-013), source ranges after composition (SHAPE-002), and
-   default/enabled/disabled/absent Hebrew mark features (SHAPE-010). SHAPE-011 now
-   implements Latin/Hebrew base/mark grouping and initial-group range bounds.
+   default/enabled/disabled/absent Hebrew mark features. SHAPE-010 now resolves
+   plan-wide mark support, including mixed settings and ranged enablement; its
+   complete passing baselines run in the ordinary suite. SHAPE-011 implements
+   Latin/Hebrew base/mark grouping and initial-group range bounds.
    Canonical normalization and remaining Hebrew mark order need separate fixes. Absence of
    GPOS itself remains outside normal parser scope (SHAPE-014, deferred).
 4. **Remaining mark positioning.** SHAPE-007/008 now resolve design-unit

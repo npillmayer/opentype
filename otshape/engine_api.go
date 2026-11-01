@@ -122,6 +122,9 @@ type NormalizeContext interface {
 	Font() *ot.Font
 	Selection() SelectionContext
 	ComposeUnicode(a, b rune) (rune, bool)
+	// HasGposMark reports enabled, resolved GPOS mark lookups for this plan.
+	// Ranged enablement counts plan-wide; mkmk alone does not. This does not
+	// guarantee coverage of a particular glyph or predict later mask hooks.
 	HasGposMark() bool
 }
 

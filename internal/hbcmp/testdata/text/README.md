@@ -10,12 +10,12 @@ No expected value comes from the repository shaper.
 The later [streaming/scope extension](STREAMING.md) contains thirteen captures in
 [streaming.json](streaming.json), reuses four of these cases, and tests both
 public APIs across buffer profiles and flush modes. Its event/progress driver
-uses the same comparison contract. The 31-case counts below refer specifically
+uses the same comparison contract. The 35-case counts below refer specifically
 to `baselines.json` and its whole-input runner.
 
 ## Files and execution
 
-- [baselines.json](baselines.json) contains 31 cases, exact Unicode inputs,
+- [baselines.json](baselines.json) contains 35 cases, exact Unicode inputs,
   complete HarfBuzz output, font hashes, capture command arguments, and the
   version and SHA-256 of the capturing executable.
 - [capture_harfbuzz_text.py](../../../../testdata/scripts/capture_harfbuzz_text.py)
@@ -24,12 +24,17 @@ to `baselines.json` and its whole-input runner.
   replaces the snapshot. It rejects a different HarfBuzz version, incomplete
   output, and missing-glyph results.
 - [text_baselines_test.go](../../text_baselines_test.go) validates all cases and
-  font hashes, including the tagged cases, and runs twenty-two passing comparisons.
+  font hashes, including the tagged cases, and runs twenty-nine passing comparisons.
   It reuses `fixture` parameter conversion, `glyphCollector`, and the exact
   positioned-glyph comparison from `hb_compare.go`.
-- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs nine failing cases
+- [text_knownbugs_test.go](../../text_knownbugs_test.go) runs six failing cases
   in five top-level tests under `shaping_knownbugs`. Raw expectations remain the
   original HarfBuzz output; comparison explicitly converts RTL to logical order; promote cases as their blockers are resolved.
+- [normalization_mark_test.go](../../normalization_mark_test.go) checks seven
+  global mark-setting cases through `ShapeEvents` as well. SHAPE-010 promotes
+  three unchanged records and adds four independent captures; see the
+  [normalization report](NORMALIZATION.md) for the plan-wide range contract and
+  the remaining pointed-shalom mark-ordering blocker.
 - [Noto font provenance](../../../../testdata/fonts/NotoSansHebrew-README.md)
   pins the new Hebrew font and its OFL license. Latin uses the existing
   `GentiumPlus-R.ttf`, pinned by its hash in every corresponding record.

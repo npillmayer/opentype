@@ -5,6 +5,34 @@ Verified on 2026-10-26 against source revision
 Production behavior is unchanged; public API comments now record the agreed
 logical-order and HarfBuzz level-0 cluster contracts.
 
+**SHAPE-010 resolution (2026-11-01):** default vav/holam,
+explicitly disabled mark features, and explicitly requested absent features now
+pass their unchanged full captures. Four HarfBuzz 15 captures extend the corpus
+to 35 records (29 ordinary, six tagged), preserving all 31 previous records and
+capture provenance:
+
+| New case | Settings | Independent result |
+| --- | --- | --- |
+| `hebrew_vav_holam_mark_only` | `mark=1,mkmk=0` | Separate vav/holam; logical GIDs `[124,46]`, holam X offset 92 |
+| `hebrew_vav_holam_mkmk_only` | `mark=0,mkmk=1` | Presentation-form fallback GID 126 |
+| `hebrew_mark_range_on` | Two vav/holam pairs separated by space; both features globally off and on in `[3:5)` | Both pairs stay separate; only the second holam has X offset 92 |
+| `hebrew_mark_range_off` | Same input; both features off in `[0:2)` | Same complete output as the ranged-on case |
+
+These captures establish the agreed plan-wide normalization signal: `mark`
+support, including ranged enablement, suppresses fallback throughout the plan;
+`mkmk` alone does not. Positioning still obeys ranges. Every record contains all
+six output fields, exact command arguments, and font/tool hashes. The capture
+script reproduces them; Go tests remain offline. Seven global-setting cases
+also run through `ShapeEvents`. Indexed ranges do not imply equivalent event
+spans, whose normalization barriers remain SHAPE-016.
+
+Pointed shalom now produces all seven expected glyphs with matching clusters
+and per-glyph positions, but the two initial shin marks remain reversed. Its
+full original oracle remains tagged for the existing Hebrew ordering follow-up.
+The accepted fix and contract are archived in
+[SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md#shape-010--default-mark-positioning-is-missed-during-normalization).
+The dated discovery diagnostics below remain historical.
+
 **SHAPE-002 update (2026-10-27):** `latin_range_after_nfd` now passes its full
 unchanged capture and runs in the ordinary suite. The corpus has 11 passing and
 13 tagged cases. Original discovery diagnostics below retain their dated context.
@@ -119,8 +147,8 @@ go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 python3 testdata/scripts/capture_harfbuzz_text.py
 ```
 
-Remaining fixes can address font-aware normalization, canonical/Hebrew mark
-ordering, and effective mark support independently. Source-coordinate masks
+Remaining fixes can address font-aware normalization and canonical/Hebrew mark
+ordering independently. Effective mark support is resolved under SHAPE-010. Source-coordinate masks
 and Latin/Hebrew base/mark grouping now have ordinary regressions. Promote complete passing records when all their blockers
 are fixed. Initial-group indexed range bounds have focused coverage under
 SHAPE-011; feature events inside groups remain separate. The captured ranged

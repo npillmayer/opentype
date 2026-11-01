@@ -122,9 +122,13 @@ switch is not exposed by the policy interface. See [SHAPER_PLAN.md](SHAPER_PLAN.
 for unsafe flags, syllables, or plan IDs. Codepoint setters mutate metadata; they
 do not automatically remap the glyph.
 
-`HasGposMark` is currently computed from allocated `mark/mkmk` masks, not from
-a definitive check that corresponding GPOS lookups will execute. Do not treat it
-as a complete font capability query.
+`HasGposMark` reports enabled, resolved GPOS `mark` lookup contributors for the
+selected font/script/language plan. Defaults and required features count even
+without a mask; `mkmk` alone, empty bindings, and absent requested features do
+not. A ranged enablement counts across the entire plan for normalization;
+positioning still respects the ranges. This is not a per-glyph coverage query
+and cannot predict later mask hooks. Feature-event spans retain separate plans
+and normalization boundaries (SHAPE-016).
 
 ## Actual plan-time order
 

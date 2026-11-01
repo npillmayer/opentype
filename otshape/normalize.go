@@ -175,14 +175,29 @@ func composeRuneStreamInto(
 }
 
 func planHasGposMark(pl *plan) bool {
-	if pl == nil {
+	if pl == nil || !pl.Policy.ApplyGPOS {
 		return false
 	}
-	if ms, ok := pl.maskForFeature(ot.T("mark")); ok && ms.Mask != 0 {
-		return true
-	}
-	if ms, ok := pl.maskForFeature(ot.T("mkmk")); ok && ms.Mask != 0 {
-		return true
+	// Normalization asks about plan-wide mark support, not the mask at a
+	// particular input position. Only resolved mark lookup contributors count:
+	// mkmk alone cannot replace the Hebrew presentation-form fallback.
+	mark := ot.T("mark")
+	for _, op := range pl.GPOS.Lookups {
+		for _, feature := range op.Features {
+			if feature.Tag != mark {
+				continue
+			}
+			// Defaults and required features can run without an allocated mask.
+			// Use the contributor's mask, not the shared lookup's combined mask.
+			if feature.Mask == 0 || pl.Masks.GlobalMask&feature.Mask != 0 {
+				return true
+			}
+			for _, r := range pl.featureRanges {
+				if r.Feature == mark && r.On && (r.Start != 0 || r.End != 0) {
+					return true
+				}
+			}
+		}
 	}
 	return false
 }

@@ -1948,6 +1948,282 @@
           }
         ]
       }
+    },
+    {
+      "id": "hebrew_vav_holam_mark_only",
+      "text": "וֹ",
+      "font_path": "testdata/fonts/NotoSansHebrew-Regular.ttf",
+      "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/NotoSansHebrew-Regular.ttf",
+        "--unicodes=U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark=1,mkmk=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "NotoSansHebrew-Regular.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": [
+            "mark=1",
+            "mkmk=0"
+          ]
+        },
+        "input": [
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 46,
+            "cl": 0,
+            "dx": 92,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hebrew_vav_holam_mkmk_only",
+      "text": "וֹ",
+      "font_path": "testdata/fonts/NotoSansHebrew-Regular.ttf",
+      "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/NotoSansHebrew-Regular.ttf",
+        "--unicodes=U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark=0,mkmk=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "NotoSansHebrew-Regular.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": [
+            "mark=0",
+            "mkmk=1"
+          ]
+        },
+        "input": [
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 126,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hebrew_mark_range_on",
+      "text": "וֹ וֹ",
+      "font_path": "testdata/fonts/NotoSansHebrew-Regular.ttf",
+      "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/NotoSansHebrew-Regular.ttf",
+        "--unicodes=U+05D5,U+05B9,U+0020,U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark=0,mkmk=0,mark[3:5]=1,mkmk[3:5]=1"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "NotoSansHebrew-Regular.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": [
+            "mark=0",
+            "mkmk=0",
+            "mark[3:5]=1",
+            "mkmk[3:5]=1"
+          ]
+        },
+        "input": [
+          1493,
+          1465,
+          32,
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 46,
+            "cl": 3,
+            "dx": 92,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          },
+          {
+            "g": 106,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 270,
+            "ay": 0
+          },
+          {
+            "g": 46,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hebrew_mark_range_off",
+      "text": "וֹ וֹ",
+      "font_path": "testdata/fonts/NotoSansHebrew-Regular.ttf",
+      "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+      "command": [
+        "hb-shape",
+        "testdata/fonts/NotoSansHebrew-Regular.ttf",
+        "--unicodes=U+05D5,U+05B9,U+0020,U+05D5,U+05B9",
+        "--shapers=ot",
+        "--font-funcs=ot",
+        "--font-size=upem",
+        "--script=Hebr",
+        "--language=he",
+        "--direction=rtl",
+        "--cluster-level=0",
+        "--single-par",
+        "--no-glyph-names",
+        "--output-format=json",
+        "--features=mark[0:2]=0,mkmk[0:2]=0"
+      ],
+      "fixture": {
+        "schema_version": 1,
+        "context": {
+          "font": "NotoSansHebrew-Regular.ttf",
+          "script": "Hebr",
+          "language": "he",
+          "dir": "rtl",
+          "features": [
+            "mark[0:2]=0",
+            "mkmk[0:2]=0"
+          ]
+        },
+        "input": [
+          1493,
+          1465,
+          32,
+          1493,
+          1465
+        ],
+        "output": [
+          {
+            "g": 46,
+            "cl": 3,
+            "dx": 92,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 3,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          },
+          {
+            "g": 106,
+            "cl": 2,
+            "dx": 0,
+            "dy": 0,
+            "ax": 270,
+            "ay": 0
+          },
+          {
+            "g": 46,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 0,
+            "ay": 0
+          },
+          {
+            "g": 124,
+            "cl": 0,
+            "dx": 0,
+            "dy": 0,
+            "ax": 301,
+            "ay": 0
+          }
+        ]
+      }
     }
   ]
 }

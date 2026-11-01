@@ -48,6 +48,10 @@ CASES = [
     ("latin_shared_alternate_salt", "ShaperTestLookupOrder-SharedAlternates.ttf", "Latn", "en", "ltr", "f", ["salt=1", "ss01=0"]),
     ("latin_shared_alternate_ss01", "ShaperTestLookupOrder-SharedAlternates.ttf", "Latn", "en", "ltr", "f", ["salt=0", "ss01=2"]),
     ("latin_shared_alternate_equal", "ShaperTestLookupOrder-SharedAlternates.ttf", "Latn", "en", "ltr", "f", ["salt=1", "ss01=1"]),
+    ("hebrew_vav_holam_mark_only", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", ["mark=1", "mkmk=0"]),
+    ("hebrew_vav_holam_mkmk_only", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9", ["mark=0", "mkmk=1"]),
+    ("hebrew_mark_range_on", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9 \u05d5\u05b9", ["mark=0", "mkmk=0", "mark[3:5]=1", "mkmk[3:5]=1"]),
+    ("hebrew_mark_range_off", "NotoSansHebrew-Regular.ttf", "Hebr", "he", "rtl", "\u05d5\u05b9 \u05d5\u05b9", ["mark[0:2]=0", "mkmk[0:2]=0"]),
 ]
 
 

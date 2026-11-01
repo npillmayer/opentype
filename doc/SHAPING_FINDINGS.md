@@ -100,7 +100,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | fixed (agreed scope) | Ranges use original scalar anchors across compaction and normalization |
 | [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
 | [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | fixed (contract resolved) | Logical sink order agreed; plain Hebrew passes after explicit oracle adaptation |
-| [SHAPE-010](#shape-010--default-mark-positioning-is-missed-during-normalization) | reproduced | Hebrew presentation-form fallback ignores default-enabled GPOS mark support |
 | [SHAPE-012](#shape-012--canonical-equivalent-mark-orders-shape-differently) | reproduced | Canonical ordering is missing before composition |
 | [SHAPE-013](#shape-013--normalization-ignores-font-coverage) | reproduced | Composition/decomposition ignores available cmap mappings |
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
@@ -117,6 +116,7 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-006 — contextual continuation](#shape-006--contextual-lookup-revisits-matched-input),
 [SHAPE-007 — final mark positioning](#shape-007--mark-attachments-do-not-resolve-to-origins),
 [SHAPE-008 — GDEF mark advances](#shape-008--marks-retain-nominal-advances),
+[SHAPE-010 — normalization mark support](#shape-010--default-mark-positioning-is-missed-during-normalization),
 [SHAPE-011 — base/mark clusters](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0),
 [SHAPE-017 — GSUB deletion](#shape-017--gsub-deletion-is-ignored),
 [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks),
@@ -229,59 +229,6 @@ composition, cluster, mark-order, and positioning differences.
 go test ./internal/hbcmp -run 'TestHarfBuzzTextBaselines/hebrew_shalom$|TestTextLogicalOutputContract' -count=1 -v
 ```
 
-## SHAPE-010 — Default mark positioning is missed during normalization
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE010HebrewComposition`
-(`hebrew_vav_holam` and `hebrew_shalom_pointed`).
-**Verified:** real-text batch revision/date above.
-
-**Expected behavior and basis:** the Hebrew engine's own fallback policy
-rejects presentation-form composition when GPOS mark support is present.
-HarfBuzz likewise retains separate vav and holam glyphs for this font. Existing
-`TestComposeFallbackDisabledWhenGposMarkPresent` tests that policy with a mock
-context, but does not test the context supplied by the public shaping pipeline.
-
-**Reproduction:** Noto Sans Hebrew, U+05D5 U+05B9, Hebr/he/RTL, default
-features, buffers `3/1/4`. Expected GIDs are `[46,124]`, both cluster 0;
-the holam has X offset 92 and advance 0, the vav advance 301. Actual output
-is one GID 126, cluster 0, offset 0, advance 301, with nil error. GID 126
-maps from the presentation form U+FB4B. The same contraction occurs at input
-positions 4/5 of pointed shalom, whose complete baseline expects seven glyphs
-but receives six. All exact records are in the
-[real-text report](../internal/hbcmp/testdata/text/README.md).
-
-**Implementation evidence:** `planHasGposMark` in
-[normalize.go](../otshape/normalize.go) tests `plan.Masks.ByFeature` for a nonzero
-`mark`/`mkmk` mask. `compileUserFeatureMasks` in [plan_compile.go](../otshape/plan_compile.go)
-allocates those masks only for explicit user features. Default GPOS features
-can execute with mask zero and therefore do not satisfy this check. The
-result reaches `NormalizeContext.HasGposMark`, permitting `hebrewCompose` in
-[othebrew.go](../otshape/othebrew/othebrew.go) to map vav + holam to U+FB4B.
-The pointed-shin case independently demonstrates active default mark lookups
-through its attachment metadata, despite the absence of user feature masks.
-
-**Normalization extension (2026-10-26):** the vav/holam matrix now checks
-default, explicitly enabled, disabled, and absent mark features. With explicit
-`mark=1,mkmk=1`, the complete output now matches after SHAPE-007/011. With
-`mark=0,mkmk=0`, HarfBuzz uses fallback GID 126 while our output stays
-`[124,46]`: allocating masks is incorrectly treated as enabled support.
-The NoMark fixture removes those features while retaining GPOS. Its default
-fallback passes; explicitly requesting the absent features again incorrectly
-suppresses fallback and emits `[124,46]` instead of `[126]`. The last two
-cases extend `TestKnownBugSHAPE010HebrewComposition`. Exact fixtures and output
-are in the [normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.md).
-
-**Fix scope:** derive effective mark support from resolved font/plan state,
-including enablement, rather than mask allocation alone. Resolving composition
-will not by itself fix internal mark order; the tagged tests retain all
-position and cluster expectations. SHAPE-007/011 now resolve mark offsets and
-base/mark grouping within their agreed scopes. Absence of the entire GPOS table is
-separately blocked at the parser and deferred under SHAPE-014.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE010' -count=1 -v
-```
-
 ## SHAPE-012 — Canonical-equivalent mark orders shape differently
 
 **Status:** reproduced. **Test:** `TestKnownBugSHAPE012CanonicalOrdering`.
@@ -372,9 +319,9 @@ continue to validate its stored capture and font hash.
 **Scope:** extending production font acceptance requires a separate parser-scope
 decision and is deferred here. The adapter does not bypass the restriction with
 `IsTestfont`. A companion NoMark fixture retains GPOS but removes `mark`/`mkmk`
-features: its default fallback passes, and explicit requests for those absent
-features reproduce SHAPE-010. Thus the in-scope fallback tests are not blocked
-by this broader font-acceptance limitation.
+features: both default fallback and explicit requests for those absent features
+now pass after SHAPE-010. These in-scope regressions are independent of the
+broader font-acceptance limitation.
 
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE014' -count=1 -v
@@ -602,6 +549,11 @@ now have cluster 0 and correct per-glyph offsets, but glyph order remains
 identifies this remaining follow-up, not a failure of the accepted grouping fix.
 Choose its implementation scope separately; retain the full tagged assertion.
 Tiny-buffer attachment-context failures are tracked under SHAPE-015.
+
+After SHAPE-010, `TestKnownBugSHAPE010HebrewComposition/hebrew_shalom_pointed`
+retains the same internal shin-mark ordering difference. Its seven-glyph count,
+vav/holam composition, clusters and per-glyph positions now match; its complete
+expectation remains unchanged. This does not reopen SHAPE-007 or SHAPE-011.
 
 ## Resolved findings
 
@@ -903,8 +855,9 @@ remains tagged for the [Hebrew mark-ordering follow-up](#hebrew-internal-mark-or
 Noto Sans Hebrew mark offsets are exactly 227 and 539. SHAPE-011 subsequently
 fixed grouping: output is now `[96/0,79/0,100/0]` instead of
 `[96/0,100/0,79/0]`. Its four complete combining-mark text cases now pass unchanged
-in the ordinary suite. Normalization blockers remain
-SHAPE-010/012. Cursive resolution, hinted anchor points, device/variation
+in the ordinary suite. Effective mark support was subsequently fixed under
+SHAPE-010; canonical normalization remains SHAPE-012. Cursive resolution, hinted
+anchor points, device/variation
 adjustments, ignored-mark preservation/component association (SHAPE-019), and
 streaming/event context (SHAPE-015/016) are outside this fix. Adjacent marks on
 ligatures retain the existing last-component choice.
@@ -965,6 +918,67 @@ go test ./internal/hbcmp -run '^TestAOTSGPOSBaselines/gpos4_simple' -count=1 -v
 go test ./otshape ./otshape/otcore -run '^TestGDEFMarkAdvance' -count=1
 ```
 
+### SHAPE-010 — Default mark positioning is missed during normalization
+
+**Status:** fixed; accepted 2026-11-01. The three standalone vav/holam
+regressions now run in the ordinary suite. The historical
+`TestKnownBugSHAPE010HebrewComposition` retains only `hebrew_shalom_pointed`
+for the separate [Hebrew mark-ordering follow-up](#hebrew-internal-mark-ordering-follow-up).
+
+**Cause:** normalization inferred GPOS mark support from allocated user-feature
+masks. It missed unmasked default features and treated disabled or absent
+requested features as enabled support. Consequently, Hebrew vav + holam
+incorrectly composed to presentation-form U+FB4B with default features, while
+explicitly disabled or absent mark features incorrectly suppressed fallback.
+The Hebrew engine's fallback policy was correct; the public pipeline supplied
+the wrong `NormalizeContext.HasGposMark` signal.
+
+**Fix and agreed contract:** `planHasGposMark` inspects resolved
+GPOS lookup contributors, including nonrepresentative contributors of a shared
+lookup (SHAPE-020). GPOS must be enabled by the plan policy. Unmasked default
+and required `mark` contributors count; masked contributors require an enabled
+global value or ranged enablement. Mask allocation, an empty feature binding,
+an absent requested feature, and `mkmk` alone do not count.
+
+This is a plan-wide normalization decision: an enabled ranged `mark` lookup
+suppresses Hebrew presentation-form fallback throughout that plan, while
+positioning still obeys the range masks. Independent HarfBuzz 15 captures
+confirm both mixed `mark`/`mkmk` settings and ranged on/off behavior. It is not
+a per-glyph coverage guarantee and does not predict later `SetupMasks` hooks.
+Existing engine/user precedence remains SHAPE-021; event spans still normalize
+separately (SHAPE-016). No public interface signature changed.
+
+**Regressions and remaining limitations:** `hebrew_vav_holam`,
+`hebrew_vav_holam_mark_off`, and `hebrew_vav_holam_no_mark_requested` are promoted
+with unchanged complete HarfBuzz expectations. Four additional captures cover
+mark-only, mkmk-only, ranged enablement and ranged disablement. Both APIs cover
+the seven global-setting cases; the two indexed-range cases use `Shape`.
+`TestNormalizationMarkSupport` and `TestNormalizationMarkContributorEnablement`
+cover required/default features, empty/absent features, shared lookup provenance,
+contributor masks, and disabled GPOS.
+
+Pointed shalom now has all seven expected glyphs with matching clusters and
+per-glyph positions. Only the two marks on its initial shin remain reversed;
+the full oracle stays tagged for the
+[Hebrew mark-ordering follow-up](#hebrew-internal-mark-ordering-follow-up).
+SHAPE-007/011 remain resolved within their accepted scopes. Canonical ordering
+and cmap-aware representation remain SHAPE-012/013. Absence of the entire GPOS
+table is separately blocked at the parser and deferred under SHAPE-014.
+
+**Recorded implementation verification (2026-11-01):** `go test ./... -count=1`, `go build ./...`, and `go vet ./...`
+passed. Read-only recapture verified all 35 independent HarfBuzz records.
+Tagged discovery still has
+ten failing top-level tests, with precisely the three promoted subtests removed
+and no new failures, fixture failures, panics, or timeouts. All 31 previous
+capture records and capture provenance remain unchanged; the corpus now has
+35 cases (29 ordinary, six tagged).
+
+```sh
+go test ./otshape -run '^TestNormalizationMark' -count=1
+go test ./internal/hbcmp -run 'TestSHAPE010EventBaselines|TestHarfBuzzTextBaselines' -count=1
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE010' -count=1 -v
+```
+
 ### SHAPE-011 — Combining-mark clusters differ from HarfBuzz level 0
 
 **Fixed:** implemented and reviewed 2026-10-29 within the agreed Latin/Hebrew
@@ -1020,9 +1034,9 @@ assertion fields were changed.
 
 **Remaining scope:** the complete historical pointed-shin assertion stays tagged
 for the [Hebrew mark-ordering follow-up](#hebrew-internal-mark-ordering-follow-up).
-Canonical normalization (SHAPE-012), cmap-aware normalization (SHAPE-013),
-effective Hebrew mark support (SHAPE-010), streaming/limits (SHAPE-015), and
-feature-event barriers (SHAPE-016) remain open. General emoji and other
+Effective Hebrew mark support was subsequently fixed under SHAPE-010. Canonical
+normalization (SHAPE-012), cmap-aware normalization (SHAPE-013), streaming/limits
+(SHAPE-015), and feature-event barriers (SHAPE-016) remain open. General emoji and other
 script-specific sequence rules are not claimed. Conservative partial compaction
 still rejects repeated output clusters; separate source anchors do not prove
 that a prefix is safe to emit.

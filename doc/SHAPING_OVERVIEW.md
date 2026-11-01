@@ -81,6 +81,12 @@ composed, or decomposed mode. Auto defaults to composed, with decomposition
 preferences for `dev2` and `bng2`. Decomposition operates per rune; composition
 uses adjacent pairs and optional engine composition hooks.
 
+Hebrew presentation-form fallback consults enabled, resolved GPOS `mark`
+lookups in the plan (SHAPE-010). Default and required mark support count;
+`mkmk` alone does not. Ranged mark enablement suppresses that fallback
+plan-wide, while positioning still follows its masks. This does not guarantee
+coverage for each glyph or remove normalization boundaries between event plans.
+
 This is not full font-aware normalization: general canonical ordering across
 combining sequences and cmap-aware Unicode composition/decomposition selection
 are incomplete (SHAPE-012, SHAPE-013).

@@ -34,20 +34,22 @@ var textBaselineFindings = map[string]string{
 	"latin_cafe_nfc": "", "latin_cafe_nfd": "", "hebrew_shin": "",
 	"hebrew_shalom":         "",
 	"hebrew_shin_pointed":   "SHAPE-011",
-	"hebrew_vav_holam":      "SHAPE-010",
-	"hebrew_shalom_pointed": "SHAPE-010",
+	"hebrew_vav_holam":      "",
+	"hebrew_shalom_pointed": "SHAPE-011", // Separate Hebrew mark-ordering follow-up.
 	"latin_marks_canonical": "", "latin_marks_reordered": "SHAPE-012",
 	"latin_uncomposable_mark":     "",
 	"latin_missing_composite_nfc": "SHAPE-013", "latin_missing_composite_nfd": "SHAPE-013",
 	"latin_range_after_nfc": "", "latin_range_after_nfd": "",
-	"hebrew_vav_holam_mark_on": "", "hebrew_vav_holam_mark_off": "SHAPE-010",
+	"hebrew_vav_holam_mark_on": "", "hebrew_vav_holam_mark_off": "",
 	"hebrew_vav_holam_no_gpos": "SHAPE-014",
-	"hebrew_vav_holam_no_mark": "", "hebrew_vav_holam_no_mark_requested": "SHAPE-010",
+	"hebrew_vav_holam_no_mark": "", "hebrew_vav_holam_no_mark_requested": "",
 	"hebrew_shin_reordered": "",
 	// Same rules, swapped LookupList order; the control runs calt first in both.
 	"latin_lookup_order_liga_first": "", "latin_lookup_order_calt_first": "",
 	"latin_position_order_kern_first": "", "latin_position_order_mark_first": "",
 	"latin_shared_alternate_salt": "", "latin_shared_alternate_ss01": "", "latin_shared_alternate_equal": "",
+	"hebrew_vav_holam_mark_only": "", "hebrew_vav_holam_mkmk_only": "",
+	"hebrew_mark_range_on": "", "hebrew_mark_range_off": "",
 }
 
 // Load every record even for a filtered run: missing fonts, fields or cases

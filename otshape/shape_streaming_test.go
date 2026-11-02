@@ -2,6 +2,7 @@ package otshape
 
 import (
 	"errors"
+	"github.com/npillmayer/opentype/otlayout"
 	"io"
 	"reflect"
 	"strings"
@@ -27,7 +28,7 @@ func TestResolveStreamingConfigOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveStreamingConfig failed: %v", err)
 	}
-	if cfg.highWatermark != 300 || cfg.lowWatermark != 150 || cfg.maxBuffer != 600 {
+	if cfg.highWatermark != 300 || cfg.lowWatermark != 150 || cfg.maxBuffer != MinBuffer {
 		t.Fatalf("unexpected config high=%d low=%d max=%d", cfg.highWatermark, cfg.lowWatermark, cfg.maxBuffer)
 	}
 }
@@ -37,7 +38,7 @@ func TestResolveStreamingConfigInvalid(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for low>high")
 	}
-	_, err = resolveStreamingConfig(BufferOptions{HighWatermark: 64, MaxBuffer: 32})
+	_, err = resolveStreamingConfig(BufferOptions{HighWatermark: MinBuffer + 1, MaxBuffer: MinBuffer})
 	if err == nil {
 		t.Fatalf("expected error for max<high")
 	}
@@ -154,42 +155,6 @@ func TestCompactCarryDropsPrefix(t *testing.T) {
 	}
 }
 
-func TestRawFlushForGlyphPrefixContiguousCoverage(t *testing.T) {
-	run := newRunBuffer(0)
-	run.Glyphs = append(run.Glyphs, 10, 11, 12, 13)
-	run.Clusters = []uint32{10, 11, 12, 13}
-
-	flush, ok := rawFlushForGlyphPrefix(run, 3, 10, 4)
-	if !ok {
-		t.Fatalf("expected flush mapping to succeed")
-	}
-	if flush != 3 {
-		t.Fatalf("raw flush=%d, want 3", flush)
-	}
-}
-
-func TestRawFlushForGlyphPrefixRejectsGap(t *testing.T) {
-	run := newRunBuffer(0)
-	run.Glyphs = append(run.Glyphs, 10, 11)
-	run.Clusters = []uint32{7, 9}
-
-	flush, ok := rawFlushForGlyphPrefix(run, 2, 7, 4)
-	if ok {
-		t.Fatalf("expected flush mapping to fail, got raw flush=%d", flush)
-	}
-}
-
-func TestRawFlushForGlyphPrefixRejectsRepeatedCluster(t *testing.T) {
-	run := newRunBuffer(0)
-	run.Glyphs = append(run.Glyphs, 10, 11, 12, 13)
-	run.Clusters = []uint32{7, 7, 8, 9}
-
-	flush, ok := rawFlushForGlyphPrefix(run, 3, 7, 4)
-	if ok {
-		t.Fatalf("expected flush mapping to fail for repeated cluster, got raw flush=%d", flush)
-	}
-}
-
 func TestFindFlushCutRespectsLowWatermark(t *testing.T) {
 	cfg := streamingConfig{highWatermark: 4, lowWatermark: 2, maxBuffer: 8}
 	st := newStreamingState(cfg)
@@ -200,6 +165,7 @@ func TestFindFlushCutRespectsLowWatermark(t *testing.T) {
 	run := newRunBuffer(0)
 	run.Glyphs = append(run.Glyphs, 100, 101, 102, 103)
 	run.Clusters = []uint32{10, 11, 12, 13}
+	run.stream = unitStreamTrace(4)
 
 	cut := findFlushCut(run, st)
 	want := flushDecision{glyphCut: 2, rawFlush: 2, ready: true}
@@ -208,7 +174,7 @@ func TestFindFlushCutRespectsLowWatermark(t *testing.T) {
 	}
 }
 
-func TestFindFlushCutForcedProgressAtMaxBuffer(t *testing.T) {
+func TestFindFlushCutRejectsUncertifiedBoundaryAtMaxBuffer(t *testing.T) {
 	cfg := streamingConfig{highWatermark: 4, lowWatermark: 3, maxBuffer: 4}
 	st := newStreamingState(cfg)
 	st.rawRunes = []rune{'a', 'b', 'c', 'd'}
@@ -220,7 +186,7 @@ func TestFindFlushCutForcedProgressAtMaxBuffer(t *testing.T) {
 	run.Clusters = []uint32{0, 2}
 
 	cut := findFlushCut(run, st)
-	want := flushDecision{glyphCut: 2, rawFlush: 4, ready: true}
+	want := flushDecision{}
 	if !reflect.DeepEqual(cut, want) {
 		t.Fatalf("flush cut=%#v, want %#v", cut, want)
 	}
@@ -256,6 +222,7 @@ func TestFindFlushCutSkipsUnsafeInteriorBoundary(t *testing.T) {
 	run.Glyphs = append(run.Glyphs, 30, 31, 32, 33)
 	run.Clusters = []uint32{0, 1, 2, 3}
 	run.UnsafeFlags = []uint16{0, unsafeFlagToBreak, unsafeFlagToBreak, 0}
+	run.stream = unitStreamTrace(4)
 
 	cut := findFlushCut(run, st)
 	want := flushDecision{glyphCut: 3, rawFlush: 3, ready: true}
@@ -264,7 +231,7 @@ func TestFindFlushCutSkipsUnsafeInteriorBoundary(t *testing.T) {
 	}
 }
 
-func TestFindFlushCutUnsafeEverywhereNeedsForceProgress(t *testing.T) {
+func TestFindFlushCutUnsafeEverywhereNeverForcesProgress(t *testing.T) {
 	run := newRunBuffer(0)
 	run.Glyphs = append(run.Glyphs, 40, 41, 42, 43)
 	run.Clusters = []uint32{0, 2, 4, 6}
@@ -291,7 +258,7 @@ func TestFindFlushCutUnsafeEverywhereNeedsForceProgress(t *testing.T) {
 	stForce.nextCluster = 4
 
 	cut = findFlushCut(run, stForce)
-	want := flushDecision{glyphCut: 4, rawFlush: 4, ready: true}
+	want := flushDecision{}
 	if !reflect.DeepEqual(cut, want) {
 		t.Fatalf("flush cut=%#v, want %#v", cut, want)
 	}
@@ -306,5 +273,37 @@ func TestWriteRunBufferPrefixToSinkClusterBoundaryRejectsMisalignedCut(t *testin
 	err := writeRunBufferPrefixToSink(run, sink, FlushOnClusterBoundary, 1)
 	if err == nil {
 		t.Fatalf("expected error for non-cluster-aligned cut")
+	}
+}
+
+func unitStreamTrace(n int) *otlayout.StreamTrace {
+	t := otlayout.NewStreamTrace(n)
+	for i := 0; i < n; i++ {
+		t.Sources = append(t.Sources, otlayout.SourceSpan{Start: i, End: i + 1})
+	}
+	t.KeepFrom = n - 1
+	return t
+}
+
+func TestFindFlushCutMapsExpansionAndContraction(t *testing.T) {
+	st := newStreamingState(streamingConfig{4, 2, 4})
+	st.rawRunes = []rune("abcd")
+	st.rawClusters = []uint32{50, 51, 52, 53}
+	st.nextCluster = 54
+	run := newRunBuffer(0)
+	run.Glyphs = append(run.Glyphs, 1, 2, 3, 4)
+	run.Clusters = []uint32{50, 50, 52, 53}
+	run.stream = unitStreamTrace(4)
+	run.stream.Sources = []otlayout.SourceSpan{{Start: 0, End: 2}, {Start: 0, End: 2}, {Start: 2, End: 3}, {Start: 3, End: 4}}
+	run.stream.Join(0, 2)
+	if got := findFlushCut(run, st); got != (flushDecision{2, 2, true}) {
+		t.Fatalf("cut=%+v", got)
+	}
+	// A contraction is equally valid: two raw runes represented by one glyph.
+	run.Glyphs = run.Glyphs[1:]
+	run.Clusters = run.Clusters[1:]
+	run.stream.Sources = run.stream.Sources[1:]
+	if got := findFlushCut(run, st); got != (flushDecision{1, 2, true}) {
+		t.Fatalf("cut=%+v", got)
 	}
 }

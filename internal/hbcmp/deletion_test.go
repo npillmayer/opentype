@@ -57,15 +57,19 @@ func TestSHAPE017ZeroOutputLimit(t *testing.T) {
 		want          []hbShapedGlyph
 	}{
 		{"EOF", "ddd", 4, 3, true, false, nil},
-		{"capacity", "dddd", 2, 2, false, true, nil},
-		{"exact_capacity", "dd", 2, 2, false, true, nil},
-		{"earlier_output", "adddd", 2, 3, false, true, []hbShapedGlyph{{G: 1, Cl: 0, AX: 600}}},
+		{"capacity", strings.Repeat("d", otshape.MinBuffer+1), otshape.MinBuffer, otshape.MinBuffer, false, true, nil},
+		{"exact_capacity", strings.Repeat("d", otshape.MinBuffer), otshape.MinBuffer, otshape.MinBuffer, false, true, nil},
+		{"earlier_output", "  " + strings.Repeat("d", otshape.MinBuffer), otshape.MinBuffer, otshape.MinBuffer + 1, false, true, []hbShapedGlyph{{G: 7, Cl: 0, AX: 600}}},
 	} {
 		for _, entry := range []string{"runes", "events"} {
 			for _, boundary := range []otshape.FlushBoundary{otshape.FlushOnRunBoundary, otshape.FlushOnClusterBoundary} {
 				t.Run(tc.name+"/"+entry+"/"+map[otshape.FlushBoundary]string{otshape.FlushOnRunBoundary: "run", otshape.FlushOnClusterBoundary: "cluster"}[boundary], func(t *testing.T) {
 					source, sink, err := shapeDeletionInput(t, params, tc.input, entry, 1, tc.max, boundary)
-					if errors.Is(err, otshape.ErrZeroOutputBufferFull) != tc.limit || (!tc.limit && err != nil) {
+					sentinel := otshape.ErrZeroOutputBufferFull
+					if tc.name == "earlier_output" {
+						sentinel = otshape.ErrBufferFull
+					}
+					if errors.Is(err, sentinel) != tc.limit || (!tc.limit && err != nil) {
 						t.Fatalf("error=%v limit=%v", err, tc.limit)
 					}
 					if source.consumed != tc.consumed || source.eof != tc.eof || source.calls > tc.consumed+1 {

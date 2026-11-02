@@ -62,10 +62,12 @@ type BufferOptions struct {
 	// HighWatermark is the preferred max fill level before shaping starts.
 	// If zero, an internal default is used.
 	HighWatermark int
-	// LowWatermark is the minimum cursor position before considering a flush cut.
+	// LowWatermark is the preferred raw-prefix length for a safe flush.
+	// A shorter safe prefix may be emitted at capacity.
 	// If zero, an internal default is used.
 	LowWatermark int
-	// MaxBuffer is a hard cap used for forced progress when no safe cut appears.
-	// If zero, an internal default is used.
+	// MaxBuffer caps retained raw runes. Zero defaults to MinBuffer; smaller
+	// positive values are silently raised to MinBuffer. At capacity, lack of a
+	// certified cut returns ErrBufferFull, never a forced unsafe flush.
 	MaxBuffer int
 }

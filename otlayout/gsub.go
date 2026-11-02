@@ -109,6 +109,9 @@ func gsubLookupType2Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 		return pos, false, buf, nil, nil
 	}
 	glyphs := payload.Sequences[inx]
+	if ctx.buf.MaxGlyphs > 0 && len(glyphs) > ctx.buf.MaxGlyphs-(buf.Len()-1) {
+		return pos, false, buf, nil, fmt.Errorf("%w: maximum %d entries", ErrGlyphLimit, ctx.buf.MaxGlyphs)
+	}
 	// An empty sequence is a successful deletion. ReplaceGlyphs journals it
 	// and keeps positions aligned; the next candidate shifts into mpos.
 	for i, glyph := range glyphs {

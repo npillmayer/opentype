@@ -1,8 +1,11 @@
 package hbcmp
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -63,6 +66,17 @@ func loadTextBaselineFile(t *testing.T, path string, assignments map[string]stri
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if strings.HasSuffix(path, ".gz") {
+		reader, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reader.Close()
+		data, err = io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	var corpus struct {
 		SchemaVersion int `json:"schema_version"`

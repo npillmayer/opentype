@@ -153,7 +153,10 @@ Follow the overall ordering in [TESTING.md](TESTING.md).
 plans, engine initialization, group-start ranges, matched-input masks and their
 focused Latin/Hebrew regressions are implemented and accepted; see the
 [archived resolution](SHAPING_FINDINGS.md#shape-016--feature-scopes-sever-unrelated-lookup-context). Remaining
-work is safe buffer boundaries (SHAPE-015) and broader attachment compatibility. SHAPE-022 subsequently fixed the focused
+work includes broader attachment compatibility. SHAPE-015 subsequently
+implemented the shared Latin/Hebrew buffer contract, with conservative fallback
+and explicit supported limits; see its
+[archived resolution](SHAPING_FINDINGS.md#shape-015--streaming-cuts-lose-shaping-context). SHAPE-022 subsequently fixed the focused
 mark-to-mark predecessor-selection defect. SHAPE-021 precedence is fixed and
 accepted as of 2026-11-02; see its
 [archived contract](SHAPING_FINDINGS.md#shape-021--engine-and-user-feature-settings-combine-as-off-wins). Do not restart a broad coverage effort or

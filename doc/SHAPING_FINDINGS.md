@@ -73,7 +73,7 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: expected failures remain under SHAPE-014 and SHAPE-015.
+# Discovery suite: the deferred SHAPE-014 parser-policy case remains.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Fixed mask regression, covering both public entry points.
@@ -99,7 +99,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | fixed (agreed scope) | Ranges use original scalar anchors across compaction and normalization |
 | [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | fixed (contract resolved) | Logical sink order agreed; plain Hebrew passes after explicit oracle adaptation |
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
-| [SHAPE-015](#shape-015--streaming-cuts-lose-shaping-context) | reproduced | Buffer cuts change ligatures, pair positioning, and normalization |
 
 Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
@@ -114,6 +113,7 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-011 — base/mark clusters](#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0),
 [SHAPE-012 — canonical normalization](#shape-012--canonical-equivalent-mark-orders-shape-differently),
 [SHAPE-013 — font-aware normalization](#shape-013--normalization-ignores-font-coverage),
+[SHAPE-015 — safe streaming and limits](#shape-015--streaming-cuts-lose-shaping-context),
 [SHAPE-016 — shared feature-scope context](#shape-016--feature-scopes-sever-unrelated-lookup-context),
 [SHAPE-017 — GSUB deletion](#shape-017--gsub-deletion-is-ignored),
 [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks),
@@ -234,62 +234,6 @@ broader font-acceptance limitation.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE014' -count=1 -v
 ```
 
-## SHAPE-015 — Streaming cuts lose shaping context
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE015StreamingContext`.
-
-**Contract decision (2026-10-27):** require a generous minimum buffer capacity
-and impose documented practical sequence/context limits. Hundreds or thousands
-of slots are acceptable; exact limits remain open. Supported runs must preserve
-the oracle output, while invalid configurations or exhausted safe buffering
-must fail explicitly. Forced incorrect output is not acceptable. See the
-[agreed buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented).
-The tiny-buffer reproductions below describe currently accepted configurations;
-after enforcement, applicable cases become specific rejection tests, accompanied
-by boundary regressions at supported sizes. No production or test behavior was
-changed by this decision.
-
-**Expected behavior and basis:** buffer sizes and flush modes should not alter
-the complete shaped output. Independently captured whole-text HarfBuzz results
-supply all GIDs, original scalar clusters, advances, and offsets, in the agreed
-logical order. Passing whole-input controls distinguish these cases from
-pre-existing normalization/mark failures.
-
-**Reproduction:** Gentium `office office office`, `AVATAR AVATAR`, and three
-decomposed `café` words; Noto Hebrew `שלום שלום שלום`; and synthetic `afifiafifi`.
-The [matrix report](../internal/hbcmp/testdata/text/STREAMING.md) specifies every
-feature setting, watermark, and failing cell. Both public entry points and
-both flush modes are affected.
-
-**Observed:** with high/low/max `3/1/8`, the office case emits 15 glyphs instead
-of 14: a final `ffi` dependency is split. The accented text emits 15 instead of
-14, splitting the second expected `é` at cluster 9 into `e` at 9 and acute at
-10. With `3/3/3`, Hebrew loses the first vav's pair adjustment: offset/advance
-`0/301` instead of `-10/291`. Whole-input controls pass every field. Disabled
-ligature/kerning controls and synthetic expansion pass every configuration.
-Some particular alignments pass, including accented text with `3/3/3`;
-passing at one small size does not establish safe cuts generally.
-
-**Implementation evidence:** [shape_streaming.go](../otshape/shape_streaming.go)
-selects and flushes prefixes using the current run's boundary information,
-with forced progress at the cap. These results show that emitted prefixes and
-retained context are insufficient for the tested lookup/normalization
-relationships. A complete repair must consider both safe-cut information and
-hard-cap policy; this discovery batch does not prescribe that implementation.
-
-**SHAPE-017 update (2026-11-01):** deletion now works. Sixteen original
-mixed/all-deletion tiny/forced comparisons, plus eight from the new leading/
-trailing-deletion capture, retain their complete expectations here. Mixed
-outputs lose kerning or cluster context at cuts; all-deleted carry at capacity
-returns the agreed `ErrZeroOutputBufferFull` instead of unsafe progress. This
-error is separately tested as a valid conservative limit, not reported as a new
-lookup defect. Reclassification of unsupported profiles belongs to the broader
-buffer contract; whole/lookahead/carry deletion comparisons are ordinary.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE015' -count=1 -timeout=30s -v
-```
-
 ## Remaining discovery work
 
 The shared-API and initial AOTS batches are not a complete defect inventory.
@@ -358,10 +302,10 @@ existing tests retain overlap precedence and substitution-mask inheritance.
 Eight streaming-matrix cells moved to the ordinary suite: the `lookahead` and
 `carry` rune profiles for both `stream_range` and `scope_nested`, in both flush
 modes. All compare complete independent output. The tiny/forced `stream_range`
-cases still split ligature context (SHAPE-015); their complete assertions now
-live in that tagged group. The AOTS streaming alternate case subsequently
+cases originally split ligature context. SHAPE-015 subsequently promoted their
+complete assertions unchanged; small capacity requests now exercise clamping. The AOTS streaming alternate case subsequently
 passed with SHAPE-003 and was promoted unchanged to
-`TestSHAPE003AOTSAlternatesStreaming`; SHAPE-015 remains unresolved.
+`TestSHAPE003AOTSAlternatesStreaming`. All short streaming cells are now ordinary.
 
 **Limitations and provisional preference:** ranges splitting a composed character
 or merged source cluster are not part of this resolution. The user's tentative
@@ -816,7 +760,8 @@ the same rule to feature-event boundaries inside a group.
   and `hebrew_shin_reordered` captures. The corpus has 15 ordinary / 9 tagged
   cases. [The streaming matrix](../internal/hbcmp/streaming_baselines_test.go)
   promotes 32 mark cells unchanged, bringing its totals to 182 ordinary / 138
-  tagged; eight tiny-buffer mark cells remain under SHAPE-015.
+  tagged at this stage; SHAPE-015 subsequently promoted all short matrix cells
+  unchanged, with small requests now exercising capacity clamping.
 - [Cluster tests](../otshape/clusters_test.go) cover leading marks, normalization
   provenance, range bounds, surviving marks after ligature edits, metadata
   copies/reordering/reuse, and event-input scratch isolation.
@@ -840,7 +785,7 @@ subsequently promoted unchanged under
 Effective Hebrew mark support was subsequently fixed under SHAPE-010, and
 canonical ordering/font-aware representation under SHAPE-012/013 within their
 agreed scope. SHAPE-023 subsequently resolved the recorded Hebrew ordering
-failures; streaming/limits (SHAPE-015) remain open;
+failures; SHAPE-015 subsequently implemented bounded conservative streaming;
 SHAPE-016 subsequently removes feature-event barriers within a carry. General emoji and other
 script-specific sequence rules are not claimed. Conservative partial compaction
 still rejects repeated output clusters; separate source anchors do not prove
@@ -882,8 +827,9 @@ accepted shin/dot/qamats case. The user explicitly chose to preserve Hebrew's
 existing order in this fix, while sharing the font-coverage checks. SHAPE-023
 subsequently replaced that exclusion with modified Hebrew classes and an early
 reorder hook, promoting both original full oracles unchanged. SHAPE-016 subsequently removed event-span barriers within each buffered
-carry. Script-specific modified classes and streaming safety (SHAPE-015) remain
-separate; this is not full HarfBuzz normalization conformance. No sequence limits or error semantics were introduced.
+carry. SHAPE-015 subsequently implemented bounded conservative streaming.
+Script-specific modified classes remain outside this fix; this is not full
+HarfBuzz normalization conformance. No sequence limits or error semantics were introduced.
 
 **Recorded implementation verification (2026-11-01), covering both fixes:**
 the full ordinary suite, focused shaping/layout/HarfBuzz race tests,
@@ -947,10 +893,65 @@ which also records the combined implementation verification.
 go test ./internal/hbcmp -run 'TestSHAPE012013|TestHarfBuzzTextBaselines/latin_missing_composite' -count=1
 ```
 
+### SHAPE-015 — Streaming cuts lose shaping context
+
+**Status:** fixed; accepted 2026-11-02 within the shared Latin/Hebrew streaming
+contract. Conservative whole-run fallback and supported-limit errors are part
+of that contract; arbitrary custom-engine or broader script conformance is not claimed.
+
+**Original defect:** forced cuts changed ligatures, pair positioning, and
+normalization. For example Gentium `office office office` with high/low/max
+`3/1/8` emitted 15 glyphs instead of the independent HarfBuzz expectation of 14.
+Tiny Hebrew buffers lost pair adjustments. Both APIs and flush modes were affected.
+
+**Agreed design:** minimum/default raw capacity 4096 runes; silently raise
+smaller positive requests. Limit initial base/mark groups to 256 original scalars,
+without resetting at feature events. Intermediate normalized/glyph buffers grow
+on demand to an emergency ceiling of 65536 entries each. Preserve existing lookup
+execution limits. No extra EOF probe beyond full raw capacity. Emit only final
+prefixes; retain earlier context un-emitted and fail explicitly if no safe cut
+fits. Exact counting, errors, and fallback policy are documented in
+[STREAMING_API.md](STREAMING_API.md#agreed-buffer-contract-2026-11-02).
+
+**Implementation:** a raw-source dependency trace records successful lookup
+reads, unfinished right-edge attempts, normalization, and edits, including nested
+lookups and ignored glyphs. Future backward context is retained at stage snapshots;
+event mode includes features a later event could enable. Prefix and suffix must
+both restart independently. Provenance supports expansion/contraction/deletion
+without assuming one raw rune per output glyph. No forced unsafe flush remains.
+
+Unknown run/plan hooks and unsupported traversal use conservative whole-run
+fallback. Hebrew event normalization also falls back when root plan-wide `mark`
+support is absent, preserving the accepted presentation-form contract. The
+existing distant mark/base or mark/ligature predecessor-search limitation is
+separate; it may prevent a cut and cause a capacity error. This fix does not
+change those lookup semantics or claim broader script conformance.
+
+**Regression promotion:** all 116 formerly tagged matrix cells now join the
+ordinary suite with unchanged HarfBuzz captures and complete field assertions.
+The short matrix has 340 ordinary cells; small capacities now test clamping.
+Four new full-text HarfBuzz 15 captures cover 11,200–12,000-scalar Latin, pointed
+Hebrew, ranges/scopes, and synthetic expansion/deletion/ligatures. Forty-eight
+configurations cover both APIs/modes and default/4096/8192 capacity, requiring
+at least three pre-EOF emission cycles. Limit and dependency tests cover explicit
+errors, original indexes, unfinished context, nested flags, and prefix retention.
+
+**Recorded implementation verification (2026-11-02):** `go test ./... -count=1`,
+`go vet ./...`, and `go test -race ./otshape/... ./otlayout -count=1` passed. The tagged discovery
+selection (`-run KnownBug`) fails only for the deferred SHAPE-014 missing-GPOS
+parser policy. Original short captures are unchanged; the new long captures are
+reproducible with the recorded HarfBuzz tool.
+
+```sh
+go test ./otshape/... ./otlayout ./internal/hbcmp -count=1 -timeout=180s
+go test ./internal/hbcmp -run '^TestSHAPE015' -count=1 -timeout=180s
+```
+
 ### SHAPE-016 — Feature scopes sever unrelated lookup context
 
 **Status:** fixed; accepted 2026-11-01 within the buffered-carry scope.
-Safe streaming cuts remain SHAPE-015. SHAPE-022 subsequently fixed the
+SHAPE-015 subsequently implemented conservative safe streaming with explicit
+limits. SHAPE-022 subsequently fixed the
 mark-to-mark predecessor-selection defect; broader compatibility remains separate.
 
 **Expected behavior and basis:** a `liga` scope must not disable an otherwise
@@ -989,8 +990,9 @@ Cursive partner selection and reverse traversal redesign are outside this fix.
 
 **Regression coverage:** six original `scope_pair` event comparisons (whole/lookahead/
 carry, both flush modes) are promoted unchanged. The four tiny/forced event
-comparisons retain their complete oracle under SHAPE-015. The original matrix
-now has 224 ordinary and 116 tagged comparisons. Eleven new independent
+comparisons initially retained their complete oracle under SHAPE-015. The
+matrix had 224 ordinary and 116 tagged comparisons at this stage; all 340 are
+now ordinary after SHAPE-015, with small capacities clamped. Eleven new independent
 HarfBuzz 15 captures initially added forty passing comparisons and four tagged
 SHAPE-022 comparisons. All 44 now pass after SHAPE-022; see [SCOPES.md](../internal/hbcmp/testdata/text/SCOPES.md).
 Two existing normalization/range captures now also pass through `ShapeEvents`.
@@ -999,7 +1001,9 @@ inheritance through nested edits and clones, shared engine hooks, original
 coordinates after compaction, stable random choices across combined carry rebuilds, and combined-plan validation
 failure.
 
-**Remaining limitations:** SHAPE-015 safe flushing/capacity remains open.
+**Remaining limitations:** SHAPE-015 subsequently resolved safe flushing and
+capacity handling within the shared Latin/Hebrew contract. Its whole-run fallback
+and supported limits remain applicable.
 SHAPE-021 subsequently resolved engine/user precedence. The new mark-range capture exposed the independent
 SHAPE-022 predecessor-selection defect, subsequently fixed with its complete
 expectation promoted unchanged. SHAPE-023 subsequently resolved the recorded
@@ -1020,7 +1024,8 @@ go test ./otlayout ./otshape -count=1
 
 **Status:** fixed; accepted 2026-11-01. Passing comparisons run in
 `TestHarfBuzzStreamingBaselines`; the former `TestKnownBugSHAPE017GSUBDeletion`
-wrapper is removed. Remaining streaming comparisons belong to SHAPE-015.
+wrapper is removed. SHAPE-015 subsequently promoted the remaining streaming
+comparisons unchanged, with small capacity requests now clamped to 4096.
 
 **Cause and fix:** GSUB type 2 treated an empty replacement sequence as “not
 applied.” Empty sequences now delete through `ReplaceGlyphs` and its edit
@@ -1040,8 +1045,9 @@ input whose length exactly equals the cap: an additional read would be needed
 to discover EOF. Previously emitted output remains; provisional empty carry is
 not discarded. `ShapeEvents` still checks for unclosed feature scopes at EOF.
 This fixes the missing zero-output progress path in `Shape` and premature carry
-discard in `ShapeEvents`. The broader minimum capacity, context limits, and
-safe-cut policy remain under SHAPE-015.
+discard in `ShapeEvents`. SHAPE-015 subsequently implemented the minimum
+capacity, supported limits and safe-cut policy. This error now also wraps
+`ErrBufferFull`; capacity checks use the effective capacity after clamping.
 
 **Regression coverage:** the normal-parsed
 [progress font](../testdata/fonts/STREAMING.md) contains `sub d by NULL` and both
@@ -1063,13 +1069,12 @@ cluster merging, syllable-isolated execution, retained lookahead context after
 an initially empty result, bounded capacity errors, exact-cap input, preservation
 of earlier sink writes, and feature-scope closure after all-deletion.
 
-**Remaining scope:** tiny/forced mixed-deletion profiles still lose kerning
-context; all-deleted profiles now fail explicitly at capacity. These full-output
-comparisons, including the new edge capture, remain tagged under SHAPE-015 with
-unchanged expectations. Separate ordinary tests assert the exact capacity error.
-General buffer-contract work can later reclassify unsupported configurations.
-SHAPE-016 subsequently removes event barriers within a carry. Ignored-mark preservation was subsequently
-resolved under SHAPE-019.
+**Subsequent streaming resolution:** SHAPE-015 promoted all remaining deletion
+comparisons unchanged. The historical tiny/forced requests now exercise silent
+clamping to 4096; separate long baselines exercise actual repeated boundaries.
+Ordinary tests retain the exact zero-output capacity error at the effective
+limit. SHAPE-016 resolved event barriers within a carry, and SHAPE-019 resolved
+ignored-mark preservation.
 
 **Recorded implementation verification (2026-11-01):** full ordinary and race
 suites, build, and vet passed. Discovery has ten failing top-level tests, down
@@ -1116,8 +1121,8 @@ are unchanged.
   were promoted unchanged: `scope_nested` whole/runes and `scope_accent`
   whole/lookahead/carry/runes, both flush modes. All output fields remain checked.
 
-**Remaining scope:** eight tiny/forced scope cells retain their complete oracles
-under SHAPE-015. SHAPE-016 subsequently removed scope context barriers within
+**Remaining scope:** SHAPE-015 subsequently promoted the eight tiny/forced
+scope cells unchanged; their small requests now exercise capacity clamping. SHAPE-016 subsequently removed scope context barriers within
 each buffered carry. Reverse chaining remains separate; contextual progression
 was subsequently fixed under
 [SHAPE-006](#shape-006--contextual-lookup-revisits-matched-input).
@@ -1187,8 +1192,9 @@ maps, partial errors, component clamping and source/mask/position correspondence
 **Boundaries:** this builds on accepted SHAPE-005/007/008/017 without reopening
 them. SHAPE-016 subsequently removed feature-event context barriers within each
 buffered carry. SHAPE-022 subsequently fixed mark-to-mark predecessor selection.
-Streaming cuts (SHAPE-015), broader attachment compatibility, and general
-script-specific ligature matching policy remain outside this fix.
+SHAPE-015 subsequently implemented safe cuts within its bounded streaming
+contract. Broader attachment compatibility and general script-specific ligature
+matching policy remain outside this fix.
 The Hebrew synthetic case verifies logical RTL
 positioning, not complete Hebrew shaping conformance. No existing oracle or
 fixture bytes changed, and no remaining tagged assertion was weakened.
@@ -1276,7 +1282,8 @@ top-level tests remain, with no other changed failing tests/subtests. Build and
 vet also passed during implementation.
 
 **Remaining scope:** SHAPE-021 subsequently resolved setting precedence;
-streaming/context limitations remain under SHAPE-015. Arabic's registered pause schedule is now honored by the shared
+SHAPE-015 subsequently implemented the shared Latin/Hebrew streaming contract,
+including conservative fallback and explicit limits. Arabic's registered pause schedule is now honored by the shared
 planner, but passing existing Arabic tests does not establish Arabic/Syriac
 conformance. No resolved or deferred finding was reopened.
 
@@ -1393,8 +1400,8 @@ no captured output or font bytes changed. Discovery retains six expected failing
 top-level groups, removing only SHAPE-022, with no unexpected passing known-bug
 groups, build errors, panics, or timeouts. SHAPE-021 subsequently resolved feature
 precedence, and SHAPE-023 subsequently resolved the recorded Hebrew ordering
-failures. Streaming safety (SHAPE-015) and broader attachment compatibility
-remain outside this change.
+failures. SHAPE-015 subsequently implemented the shared streaming contract;
+broader attachment compatibility remains outside this change.
 
 ```sh
 go test ./otlayout ./internal/hbcmp -run '^TestSHAPE022' -count=1
@@ -1462,7 +1469,8 @@ and `go vet ./...` passed. Tagged
 discovery fails only in SHAPE-004/014/015, with no unexpected known-bug passes,
 build errors, panics or timeouts. See [TESTING.md](TESTING.md).
 
-**Remaining scope:** safe streaming cuts remain SHAPE-015; no new buffer limits,
+**Subsequent streaming resolution:** SHAPE-015 supplies safe cuts and explicit
+limits for the shared Latin/Hebrew pipeline. SHAPE-023 introduced no buffer limits,
 CGJ insertion, truncation, or broad script work was introduced. Full-output CGJ
 rendering is not claimed by the lower normalization-barrier tests. Existing
 SHAPE-007/010/011/012/013/022 resolutions retain their accepted scope.

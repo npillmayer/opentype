@@ -43,7 +43,15 @@ func normalizeRuneStreamWithScratch(
 	tmpAClusters []uint32,
 	tmpBRunes []rune,
 	tmpBClusters []uint32,
+	work ...*normalizationWork,
 ) ([]rune, []uint32, []rune, []uint32, []rune, []uint32) {
+	var budget *normalizationWork
+	if len(work) > 0 {
+		budget = work[0]
+	}
+	if !budget.check(len(runes)) {
+		return nil, nil, tmpARunes, tmpAClusters, tmpBRunes, tmpBClusters
+	}
 	if len(runes) == 0 {
 		return runes, clusters, tmpARunes, tmpAClusters, tmpBRunes, tmpBClusters
 	}
@@ -63,6 +71,7 @@ func normalizeRuneStreamWithScratch(
 	}
 
 	nctx := newNormalizeContext(font, ctx, planHasGposMark(pl))
+	nctx.work = budget
 	runes, clusters = decomposeSupportedRunes(tmpARunes, tmpAClusters, runes, clusters, nctx, mode)
 	tmpARunes, tmpAClusters = runes, clusters
 	class := normalizationClass(ctx)
@@ -112,6 +121,9 @@ func decomposeSupportedRunes(
 		shortest := mode == NormalizationComposed &&
 			!unicode.Is(unicode.M, r) && (i+1 == len(runes) || !unicode.Is(unicode.M, runes[i+1]))
 		decomposed := supportedDecomposition(r, nctx, shortest)
+		if !nctx.work.check(len(outRunes) + len(decomposed)) {
+			return outRunes, outClusters
+		}
 		for _, dr := range decomposed {
 			outRunes = append(outRunes, dr)
 			outClusters = append(outClusters, cluster)
@@ -253,6 +265,7 @@ func composeRuneStreamInto(
 				composed, ok = nctx.ComposeUnicode(a, r)
 			}
 			if ok {
+				nctx.work.compose(outClusters[starter], cluster)
 				outRunes[starter] = composed
 				outClusters[starter] = min(outClusters[starter], cluster)
 				continue

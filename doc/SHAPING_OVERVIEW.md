@@ -131,8 +131,10 @@ Known limitations include:
 - Ranges splitting merged source sequences remain unresolved. Mask preservation,
   source-coordinate ranges, alternate selection, and exact forward lookup starts
   have SHAPE-001/002/003/018 ordinary regressions.
-- Streaming can discard needed shaping context; forced flushing does not prove
-  equivalence to a complete run.
+- Streaming follows the shared Latin/Hebrew contract in
+  [STREAMING_API.md](STREAMING_API.md): conservative cuts, whole-run fallback
+  where dependencies cannot be bounded, and explicit capacity/limit errors.
+  No forced unsafe flush remains; arbitrary custom-engine streaming is not claimed.
 - GPOS cursive attachments lack final coordinate resolution. Mark attachments
   are finalized for horizontal Latin/Hebrew; component association, streaming
   context, and normalization remain partial.

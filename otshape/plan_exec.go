@@ -35,6 +35,7 @@ func (e *planExecutor) owns() bool {
 func (e *planExecutor) apply(pl *plan) error {
 	assert(e.owns(), "plan executor does not own run buffer")
 	assert(len(e.run.Masks) == e.run.Len(), "plan executor requires prepared masks")
+	e.retainStreamContext(pl)
 	if err := e.applyGSUB(pl); err != nil {
 		return err
 	}
@@ -45,6 +46,7 @@ func (e *planExecutor) apply(pl *plan) error {
 		}
 		appliedGPOS = true
 	}
+	e.retainStreamContext(pl)
 	e.applyPositionPolicies(pl, appliedGPOS)
 	return e.finishMarkAttachments(pl)
 }
@@ -84,6 +86,9 @@ func (e *planExecutor) applyTable(pl *plan, table planTable) error {
 		if fn, ok := pl.Hooks.pauseHook(st.Pause); ok {
 			if err := fn(e.run); err != nil {
 				return err
+			}
+			if e.run.limitErr != nil {
+				return e.run.limitErr
 			}
 		}
 	}

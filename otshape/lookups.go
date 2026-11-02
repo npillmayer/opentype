@@ -45,8 +45,14 @@ func (e *planExecutor) applyLookups(pl *plan, table planTable, lookups []lookupO
 	}
 
 	st := otlayout.NewBufferState(e.run.Glyphs, e.run.Pos)
+	st.MaxGlyphs = e.run.maxEntries
+	if e.run.stream != nil && !e.run.stream.Disabled {
+		st.Stream = e.run.stream
+	}
 	defer func() { e.run.Glyphs, e.run.Pos = st.Glyphs, st.Pos }()
 	for _, op := range lookups {
+		e.run.Glyphs, e.run.Pos = st.Glyphs, st.Pos
+		e.retainStreamContext(pl)
 		alt := 0
 		if op.Flags.has(lookupRandom) {
 			alt = -1
@@ -129,6 +135,9 @@ func (e *planExecutor) applyLookupIsolatedSpan(
 		}
 	}
 	sub := otlayout.NewBufferState(subGlyphs, subPos)
+	if st.MaxGlyphs > 0 {
+		sub.MaxGlyphs = st.MaxGlyphs - (st.Len() - (end - start))
+	}
 	var edits []otlayout.EditSpan
 	_, err := e.applyLookupSpanInternal(pl, op, feat, sub, alt, 0, sub.Len(), start, false, &edits)
 	newLen := sub.Len()

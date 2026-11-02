@@ -1,5 +1,26 @@
 # Shaping Engine and Test Strategy
 
+**SHAPE-015 resolution (2026-11-02):** all 340
+short streaming comparisons are ordinary regressions, preserving the full
+HarfBuzz captures. Small `MaxBuffer` requests now test silent clamping to 4096.
+Four new compressed full-text captures (11,200–12,000 scalars) exercise repeated
+boundaries at default, minimum, and larger capacities through both APIs/modes,
+including pointed Hebrew, normalization/ligatures/kerning, feature ranges/events,
+and substitution growth/deletion. All 48 long configurations require at least
+three pre-EOF emission cycles. Supported-limit and fallback errors have separate
+contract tests. See [STREAMING_API.md](STREAMING_API.md) for the implemented
+limits and conservative scope. Dated snapshots below retain investigation history.
+Use `-timeout=180s` for the complete shaping/HarfBuzz suite; it now includes long
+inputs rather than only the former tiny examples.
+
+The accepted fix is archived in
+[Resolved findings](SHAPING_FINDINGS.md#shape-015--streaming-cuts-lose-shaping-context).
+Recorded implementation verification: the full ordinary suite, `go vet ./...`,
+and race tests for `./otshape/... ./otlayout` passed. The tagged `KnownBug`
+selection retains only the deferred SHAPE-014 missing-GPOS parser case; there
+are no remaining tagged shaping defects in the current findings set. This does
+not establish complete shaping conformance or expand the supported script scope.
+
 Current coverage and open findings are described below; resolved issues have
 compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
@@ -301,7 +322,7 @@ SHAPE-021 subsequently resolved setting precedence; no broad script-conformance
 claim is made.
 
 ```sh
-go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=30s
+go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=180s
 python3 testdata/scripts/capture_harfbuzz_text.py
 PYTHONPATH=/path/to/fonttools/Lib python3 testdata/scripts/build_lookup_order_fonts.py
 ```
@@ -544,12 +565,12 @@ review probes outside that first regression batch.
   incomplete. Context lost at streaming/event boundaries is separate. See
   [mark_attachments.go](../otshape/mark_attachments.go) and
   [gpos.go](../otlayout/gpos.go).
-- **Streaming safety is incomplete.** Cuts consult clusters and optional unsafe
-  flags, but the production pipeline does not populate sufficient contextual
-  safety information. When glyph count changes, partial flushing is deferred
-  until EOF or a forced full-buffer flush. The raw buffer cap guarantees progress,
-  not equivalence to whole-run shaping. See `findFlushCut` and
-  `rawFlushForGlyphPrefix` in [shape_streaming.go](../otshape/shape_streaming.go).
+- **Streaming is conservative and bounded.** SHAPE-015 traces raw-source
+  dependencies, retains future backward context, and requires independently
+  restartable prefix/suffix boundaries. Unknown engine hooks and unsupported
+  traversal use whole-run fallback. Full capacity without a certified cut
+  returns an explicit error; there is no forced flush. This preserves the
+  existing lookup semantics, including remaining attachment-target limitations.
 - **Normalization has bounded scope.** SHAPE-012/013 add font-supported
   decomposition, stable canonical ordering and starter-based recomposition with
   cmap checks. Hebrew uses modified combining classes under SHAPE-023. This is
@@ -940,24 +961,30 @@ SHAPE-016 now applies the same initial-group rule to feature events within a
 buffered carry, with independent Latin/Hebrew regressions.
 
 The [streaming/scope matrix](../internal/hbcmp/testdata/text/STREAMING.md) contains
-thirteen independent captures and reuses four original text cases. Five buffer
-profiles × both public entry points × both flush modes yield 340 executions:
-224 pass, 116 remain tagged. The runner validates actual push/pop schedules
-against the equivalent HB ranges at every scalar and checks complete output,
-EOF consumption, early emission, and bounded source/sink activity. Ten additional
-empty-input and balanced empty-scope checks pass. Remaining matrix failures
-cover streaming context/capacity (SHAPE-015); SHAPE-016 scope context is resolved.
-SHAPE-011 promoted 32 mark cells unchanged; eight tiny-buffer mark cells remain
-under SHAPE-015 with complete cluster/position expectations.
-SHAPE-002 promoted eight matrix cells; remaining tiny/forced range failures
-retain full expectations under SHAPE-015. The AOTS streaming range case now
-passes after SHAPE-003 and is an ordinary regression. The reviewed SHAPE-018 fix
-promoted eight more complete matrix cells: whole nested scopes and whole/lookahead/carry
-accented scopes, rune input with both flush modes. Eight remaining tiny/forced
-scope cells retain their full expectations under SHAPE-015.
-Run with `-timeout=30s` to bound loops without source/sink activity. Actual
-zero-output progress and explicit capacity errors are covered by SHAPE-017;
-whole/lookahead/carry deletion captures pass unchanged.
+thirteen independent captures and reuses four original text cases. Five profiles
+× both APIs × both flush modes yield **340 ordinary comparisons** after SHAPE-015;
+all expected output fields are unchanged. Tiny requests are clamped, so early
+emission is required only when input exceeds the effective capacity. Ten additional
+empty-input/balanced-scope checks remain ordinary.
+
+`TestSHAPE015LongStreamingHarfBuzz` compares four new complete captures in
+`streaming_long.json.gz`, using default, 4096, and 8192 capacity (48 configurations).
+It verifies complete GIDs, clusters, advances and offsets, at least three pre-EOF
+emission cycles, and independently validated equivalent range/event schedules.
+The compressed JSON is an ordinary full HarfBuzz capture, not a repeated-unit
+expectation generated by this implementation. Preparation/check command:
+
+```sh
+python3 testdata/scripts/capture_harfbuzz_streaming_long.py
+```
+
+SHAPE-015 unit/public tests cover capacity clamping/configuration errors,
+256/257-scalar groups across events, normalized/glyph expansion ceilings, nested
+context and flags, ignored glyphs, unfinished lookahead, edit provenance, and
+custom-engine whole-run fallback. SHAPE-017 capacity tests now use the real 4096
+minimum, preserve the empty-output sentinel, and verify earlier emitted output.
+The ordinary suite keeps all independent output assertions; errors are expected
+only in explicit supported-limit/fallback tests.
 
 Go tests require neither HarfBuzz nor Python/FontTools. HarfBuzz is needed only
 for capture/check preparation; FontTools is needed only to derive/check the
@@ -1115,23 +1142,15 @@ continue to pass, but expanding their coverage is not a current priority.
    component association; SHAPE-023 resolves the recorded Hebrew mark-ordering
    blockers in complete text baselines. Cursive and hint/device/variation work
    remain outside this scope.
-5. **Streaming and feature-scope boundaries.** The initial
-   [matrix and event/progress driver](../internal/hbcmp/testdata/text/STREAMING.md)
-   are implemented: independent Latin/Hebrew and synthetic expectations cover
-   ligatures, pairs, normalization, mark failures, nested push/pop restoration,
-   compaction, EOF tails, expansion, contraction, and deletion. Five buffer
-   profiles, both APIs, and both flush modes distinguish passing cells from
-   remaining matrix failures (SHAPE-015). SHAPE-017 now covers deletion,
-   zero-output completion at EOF, and explicit capacity errors before known EOF.
-   The [agreed buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented)
-   permits a generous required minimum and practical sequence/context limits.
-   When implemented, test explicit rejection below the minimum, specific errors
-   on limit exhaustion, and exact output across boundaries in long inputs at
-   supported buffer sizes. Tiny-buffer acceptance is not a future requirement.
-   SHAPE-016 adds scoped events inside initial groups and equivalent indexed
-   ranges; SHAPE-022 now prevents mark-to-mark attachment across a base. Further
-   coverage can add scopes inside substitution-merged clusters, additional
-   feature values, longer combining sequences, and broader buffer sweeps.
+5. **Streaming and feature-scope boundaries.** SHAPE-015 implements the
+   [buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-11-02): silent
+   clamping to 4096, supported group/expansion limits, conservative safe cuts,
+   and explicit exhaustion errors. All short matrix cells are ordinary; long
+   independent captures exercise real repeated boundaries. SHAPE-016 covers
+   shared event context and SHAPE-022 mark-to-mark barriers. Future expansion
+   can address additional fonts, scopes inside substitution-merged clusters,
+   and more script-specific dependencies, without weakening the current full
+   oracle comparisons or reopening deferred work automatically.
 
 Arabic joining, Syriac shaping, script-specific cursive behavior, and broader
 script coverage remain follow-up work after these Latin/Hebrew priorities.

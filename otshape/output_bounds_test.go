@@ -90,8 +90,9 @@ func TestInvalidMultipleOutputPublicSinkBoundary(t *testing.T) {
 					input = strings.Repeat(string(rune(18)), 40) + input
 				}
 				sink := &collectSink{}
-				shaper := NewShaper(&partialProgressSinkEngine{})
+				shaper := NewShaper(clusterPolicyEngine{NormalizationNone})
 				params := standardParams(font)
+				params.Features = []FeatureRange{{Feature: ot.T("test"), On: true}}
 				var err error
 				if events {
 					err = shaper.ShapeEvents(params, NewInputEventSource(strings.NewReader(input)), sink, singleBufOpts)

@@ -60,6 +60,8 @@ func scopePush(at int, tag string, enabled bool) scopeChange {
 
 func scopeRecipe(id string) []scopeChange {
 	switch id {
+	case "long_ranges":
+		return []scopeChange{scopePush(3500, "kern", false), scopePush(4095, "liga", true), {at: 7000}, {at: 7000}, scopePush(7000, "liga", true), {at: 8200}}
 	case "stream_range":
 		return []scopeChange{scopePush(8, "liga", true), {at: 11}}
 	case "scope_nested":
@@ -271,59 +273,31 @@ func runStreamCase(t *testing.T, c textBaseline, profile streamProfile, entry st
 	if profile.name == "whole" && len(sink.emissions) > 0 && !sink.emissions[0].eof {
 		t.Fatal("whole-input run emitted before EOF")
 	}
-	if profile.name != "whole" && len(source.runes) > profile.max && len(want) > 0 && (len(sink.emissions) == 0 || sink.emissions[0].consumed == len(source.runes)) {
+	if profile.name != "whole" && len(source.runes) > max(profile.max, otshape.MinBuffer) && len(want) > 0 && (len(sink.emissions) == 0 || sink.emissions[0].consumed == len(source.runes)) {
 		t.Fatal("small-buffer case did not exercise output before all input was consumed")
 	}
-	t.Logf("input=%d calls=%d output=%d emissions=%v", source.consumed, source.calls, len(sink.glyphs), sink.emissions)
+	if strings.HasPrefix(profile.name, "long") {
+		cycles := map[int]bool{}
+		for _, emission := range sink.emissions {
+			if !emission.eof {
+				cycles[emission.consumed] = true
+			}
+		}
+		if len(cycles) < 3 {
+			t.Fatalf("only %d pre-EOF emission cycles", len(cycles))
+		}
+	}
+	t.Logf("input=%d calls=%d output=%d", source.consumed, source.calls, len(sink.glyphs))
 	if mismatch := comparePositionedGlyphs(sink.glyphs, want); mismatch != nil {
 		t.Fatalf("%s opts=%+v: %v\ngot=%+v\nwant=%+v", c.ID, opts, mismatch, sink.glyphs, want)
 	}
 }
 
-// Exact failing configurations are assigned after discovery. Never turn an
-// unexpected pass/fail into a runtime skip or an assertion of buggy output.
-func streamingFinding(id, profile, entry string) string {
-	switch id {
-	case "latin_uncomposable_mark", "hebrew_vav_holam_mark_on":
-		if profile == "tiny" {
-			return "015" // Attachment context is lost; the full oracle remains unchanged.
-		}
-		return ""
-	case "progress_delete", "progress_all_deleted", "progress_delete_edges":
-		if profile == "tiny" || profile == "forced" {
-			// Full output remains the oracle. Mixed deletion still loses pair
-			// context at cuts; zero output at capacity now fails explicitly.
-			return "015"
-		}
-		return ""
-	}
-	if profile == "whole" {
-		return ""
-	}
-	switch id {
-	case "stream_ligatures":
-		return "015"
-	case "stream_accents":
-		if profile != "forced" {
-			return "015"
-		}
-	case "stream_kerning", "stream_hebrew", "stream_range", "scope_nested", "scope_pair", "scope_accent", "progress_contract":
-		// SHAPE-018 fixes scope masks; tiny/forced cuts still lose context.
-		if profile == "tiny" || profile == "forced" {
-			return "015"
-		}
-	}
-	return ""
-}
-
-func runStreamingMatrix(t *testing.T, finding string) {
+func runStreamingMatrix(t *testing.T) {
 	t.Helper()
 	for _, c := range loadStreamingBaselines(t) {
 		for _, p := range streamProfiles(len(c.Fixture.Input)) {
 			for _, entry := range []string{"runes", "events"} {
-				if streamingFinding(c.ID, p.name, entry) != finding {
-					continue
-				}
 				for _, mode := range []struct {
 					name     string
 					boundary otshape.FlushBoundary
@@ -335,7 +309,7 @@ func runStreamingMatrix(t *testing.T, finding string) {
 	}
 }
 
-func TestHarfBuzzStreamingBaselines(t *testing.T) { runStreamingMatrix(t, "") }
+func TestHarfBuzzStreamingBaselines(t *testing.T) { runStreamingMatrix(t) }
 
 func TestStreamingEmptyInput(t *testing.T) {
 	cases := loadStreamingBaselines(t)
@@ -350,6 +324,19 @@ func TestStreamingEmptyInput(t *testing.T) {
 	for _, entry := range []string{"runes", "events"} {
 		for _, p := range streamProfiles(0) {
 			t.Run(entry+"/"+p.name, func(t *testing.T) { runStreamCase(t, c, p, entry, otshape.FlushOnRunBoundary) })
+		}
+	}
+}
+
+func TestSHAPE015LongStreamingHarfBuzz(t *testing.T) {
+	cases := loadTextBaselineFile(t, "testdata/text/streaming_long.json.gz", map[string]string{"long_latin": "", "long_ranges": "", "long_hebrew": "", "long_progress": ""}, nil)
+	for _, c := range cases {
+		for _, p := range []streamProfile{{"long-default", 0, 0, 0}, {"long-capacity", 4096, 1024, 4096}, {"long-larger", 6000, 2000, 8192}} {
+			for _, entry := range []string{"runes", "events"} {
+				for _, mode := range []otshape.FlushBoundary{otshape.FlushOnRunBoundary, otshape.FlushOnClusterBoundary} {
+					t.Run(fmt.Sprintf("%s/%s/%s/%d", c.ID, p.name, entry, mode), func(t *testing.T) { runStreamCase(t, c, p, entry, mode) })
+				}
+			}
 		}
 	}
 }

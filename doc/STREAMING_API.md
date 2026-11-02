@@ -1,55 +1,51 @@
 # Streaming Shaping: Implementation and Remaining Guarantees
 
-Validated against the source on 2026-10-26. The repeated fill/shape/flush/compact
-loop is implemented. Context-safe equivalence to shaping a complete run is not
-established and has known counterexamples; see [TESTING.md](TESTING.md).
+SHAPE-015 implements conservative safe streaming for the shared Latin/Hebrew
+pipeline. Output is final when emitted; a request that cannot establish a safe
+boundary within its capacity fails explicitly. This does not establish broader
+script or arbitrary custom-engine conformance. The accepted fix and regression
+evidence are archived under
+[SHAPE-015](SHAPING_FINDINGS.md#shape-015--streaming-cuts-lose-shaping-context).
 
-## Agreed buffer contract (2026-10-27; not yet implemented)
+## Agreed buffer contract (2026-11-02)
 
-Prefer a generous, reusable buffer and explicit supported limits over complex
-logic for arbitrarily small buffers. A required minimum of hundreds or thousands
-of slots is acceptable. Exact sizes and units remain to be selected; the current
-4096-codepoint default is not evidence that the guarantees below already hold.
-Latin and Hebrew are the initial supported scope.
+| Limit | Value and behavior |
+| --- | --- |
+| Raw rune capacity | `MinBuffer = 4096`; default 4096. Smaller positive `MaxBuffer` values are silently raised. Callers may request more. |
+| Initial base/mark group | `MaxInputGroup = 256` original scalars, before normalization. |
+| Each normalized-rune or glyph buffer | `MaxIntermediateEntries = 65536`; storage grows as needed and scratch is reused. This is an emergency expansion ceiling, not an upfront allocation. |
+| Lookup execution | Existing 64 nested invocations and 65536 work units per application remain enforced. |
 
-The agreed requirements are:
+Group counting follows `formInputClusters`: marks (including variation selectors)
+and ZWJ extend the preceding group; an ordinary new base, including ZWNJ, starts
+a new group. Leading marks form one group. Feature events do not reset the count.
+The 257th scalar fails with the original group-start index. EOF or a larger raw
+capacity does not bypass this limit. No characters are inserted or truncated.
 
-1. Keep incomplete normalization and base/mark sequences buffered. Impose a
-   documented practical maximum on such sequences; supporting arbitrarily long
-   combining sequences is not required.
-2. Provide sufficient capacity for supported ligatures and their surrounding
-   substitution/positioning context. Ligature component count alone is not the
-   required source-window size. Account for normalization and substitution
-   expansion separately from raw input capacity.
-3. Emit only a prefix whose glyphs, clusters, advances, and offsets cannot change
-   with further input. Retain any preceding context needed to shape the suffix.
-   A sufficiently large buffer still needs a safe-cut rule: a ligature or mark
-   sequence can begin near its end.
-4. Treat watermarks as scheduling preferences, subordinate to safe progress.
-   Reject configurations below the required capacity. If an accepted request
-   reaches a hard limit without a safe cut, return an explicit error instead of
-   forcing a cut that changes shaping. Already emitted output must be final;
-   errors do not imply rollback of earlier sink writes.
-5. Preserve shaping context across feature push/pop boundaries for features
-   that remain enabled. SHAPE-016 now implements this within each buffered run;
-   safe output across buffer cuts remains separate.
+Watermarks are scheduling preferences. Emit and discard only at a boundary where
+both the prefix and suffix can be shaped independently. Keep necessary earlier
+context **un-emitted**; there is no replay of already-emitted overlap. The raw
+capacity is also the context budget; there is no additional fixed context count.
 
-Choose the minimum capacity together with practical sequence/context limits
-and reserved carry/lookahead space. Prefer conservative bounds and explicit
-rejection of unsupported requirements to elaborate attempts to fit every font
-and input into a tiny window. The numeric limits, precise sequence-counting
-rules, and error API are implementation decisions still to be specified. No
-silent truncation or insertion of characters is authorized by this policy.
+At full capacity, no extra rune is read merely to discover EOF. Consequently an
+input ending exactly at capacity can fail when no safe cut exists and EOF is
+still unknown. Increasing capacity can help; retry from the original input with
+a fresh sink. Errors are not resumable and do not roll back earlier sink writes.
 
-Tests must distinguish invalid configuration, supported shaping, and resource
-exhaustion. Supported cases must match the independent full-output oracle;
-cases exceeding documented limits must assert the specific error and any
-already-emitted valid prefix. Do not accept an arbitrary error as a substitute
-for correct shaping. Once the minimum is enforced, tiny-buffer discovery cases
-will become rejection tests where applicable. Add long Latin/Hebrew inputs
-with ligatures, pairs, marks, and scopes deliberately straddling boundaries at
-the supported minimum and default sizes, so larger buffers do not merely hide
-the existing failures. Current tests and behavior remain unchanged for now.
+Error categories, recognizable through wrapping:
+
+- `ErrBufferConfig`: negative or contradictory watermark/capacity settings.
+- `ErrBufferFull`: no certified cut at raw capacity. `ErrZeroOutputBufferFull`
+  remains the more specific sentinel for provisional empty output and also wraps
+  `ErrBufferFull`.
+- `ErrSupportedLimit`: input-group, intermediate-buffer, or lookup-execution
+  limits. `LimitError` exposes resource, limit, and original index for input,
+  normalization, and hook-growth limits; layout failures also retain
+  `otlayout.ErrGlyphLimit` or `otlayout.ErrLookupLimit`.
+
+These are supported-operation limits, not a total-memory guarantee: raw copies,
+positions, provenance, scratch capacity, font data, and event scope storage are
+separate. Raising `MaxBuffer` does not raise the intermediate ceiling.
 
 ## Public API
 
@@ -84,8 +80,7 @@ alternate, and negatives for random selection; oversized positives leave the
 glyph unchanged by that substitution. A request-local seed is shared by all
 event plans. Random lookup attempts derive their generator from that seed, the
 original scalar anchor, and the outer lookup index, so reshaping the same carry
-anchor repeats the choice. Separate requests can differ. This does not repair
-context loss. SHAPE-018 now anchors forward lookup starts to the checked glyph,
+anchor repeats the choice. Separate requests can differ.  SHAPE-018 now anchors forward lookup starts to the checked glyph,
 including its mask/value and source anchor; reverse traversal remains separate. See [SHAPE-003](SHAPING_FINDINGS.md#shape-003--feature-values-do-not-select-alternates).
 
 When active features share one alternate lookup in a stage, equal values run
@@ -129,7 +124,7 @@ Current defaults in `resolveStreamingConfig` are:
 | --- | ---: | --- |
 | `HighWatermark` | 3500 | Raw codepoints buffered before an ordinary shaping attempt |
 | `LowWatermark` | 1024 | Raw codepoints covered by a candidate flush prefix |
-| `MaxBuffer` | 4096 | Maximum raw codepoints held before forced-progress handling |
+| `MaxBuffer` | 4096 | Maximum retained raw codepoints |
 
 Zero selects a default, including `LowWatermark=0`; callers cannot use zero to
 request an explicit zero threshold. If a smaller high watermark is supplied
@@ -138,7 +133,8 @@ If high exceeds the default max and max is omitted, max is raised to high.
 
 Negative values are rejected. The resolved configuration must satisfy
 `high > 0`, `0 <= low <= high`, and `max >= high`.
-Explicit inconsistent nonzero values return an error rather than being clamped.
+Positive `MaxBuffer` below 4096 is first raised to 4096; remaining contradictions
+return `ErrBufferConfig`. No other explicit threshold is silently adjusted.
 
 ## Current loop
 
@@ -152,7 +148,8 @@ reading. It then:
    are preserved during execution (SHAPE-001 fixed). The exact hook order is described in
    [SHAPER_INTERFACES.md](SHAPER_INTERFACES.md).
 4. Handles zero output as described below; otherwise calls `findFlushCut`.
-5. If no cut is ready, fills up to max and reshapes.
+5. If no cut is ready, fills up to max and reshapes; if already at max, returns
+   `ErrBufferFull`.
 6. Emits the selected glyph prefix, then removes the corresponding raw prefix
    with `compactCarry`.
 7. Repeats until EOF and no carry remains.
@@ -165,7 +162,7 @@ before EOF is known and output is still empty, they return
 `ErrZeroOutputBufferFull`, detectable with `errors.Is`. Input ending exactly at
 the cap is included: no extra read is made to discover EOF. Earlier sink writes
 remain. This SHAPE-017 rule also handles empty normalized/mapped results; it does
-not establish a general safe-cut rule for nonempty output (SHAPE-015).
+also serves as the empty-output branch of SHAPE-015.
 
 Compaction preserves global raw cluster IDs. It copies the unconsumed suffix
 within the existing slices; it does not renumber clusters or simply remove
@@ -176,42 +173,59 @@ Source errors abort before shaping that newly filled carry. Lookup/hook errors
 prevent emission of the failing chunk. Previously written output and consumed
 input are not rolled back.
 
-## Actual cut selection
+## Safe cut selection
 
-For a nonempty shaped run:
+At EOF the complete shaped carry can be emitted, subject to supported limits.
+Before EOF, a separate raw-source trace certifies boundaries. Public clusters
+and source anchors keep their existing meanings.
 
-1. At EOF, flush the entire run and all raw carry.
-2. If shaped glyph count differs from raw rune count, do not partially compact.
-   Wait for more input, or flush the whole buffer when max is reached.
-3. Otherwise enumerate contiguous cluster spans in glyph order.
-4. Check the boundary with `isBreakSafeCut`.
-5. Require `rawFlushForGlyphPrefix` to demonstrate strictly consecutive,
-   one-to-one cluster coverage starting at the raw carry's first cluster.
-   Repeated, decreasing, or skipped cluster IDs reject partial compaction.
-6. Select the first eligible prefix covering at least the low watermark.
-7. At max, if no prefix qualifies, force a full-buffer flush.
+- Initial groups and compositions cannot be split; the last initial group stays
+  buffered for possible additional marks/composition.
+- Successful lookup attempts join the raw intervals they read, including nested
+  lookups, ignored glyphs, context, and attachments. Failed attempts reaching the
+  unfinished right edge retain their entire dependency interval. Interior
+  non-matches alone do not forbid a cut.
+- Before lookup stages and between operations, retain backward context for future
+  starts. Count eligible glyphs with the lookup's own flags, including nested
+  flags. Mark/base and mark/ligature scans retain the most recent eligible
+  covered target; mark/mark retains the nearest eligible predecessor. This
+  follows current lookup semantics without changing target selection.
+- Event requests also retain context for selectable features that later events
+  could enable, even when currently absent from the combined plan.
+- Raw-source intervals follow edits immediately, including nested expansion,
+  contraction, deletion, and surviving skipped marks. A candidate must separate
+  all output prefix/suffix source intervals and complete public clusters.
 
-This is more conservative than the earlier proposed general cluster mapping,
-but the forced full flush can still break contextual shaping.
+The first certified prefix meeting the low watermark is emitted. At capacity a
+shorter certified prefix may be used. If none exists, return `ErrBufferFull`.
+Length changes and repeated clusters no longer require a full-buffer flush.
 
-`isBreakSafeCut` treats interior boundaries as unsafe only when both adjacent
-glyphs carry one of the internal unsafe-to-break/concat bits. Missing flag
-storage permits the cut; a cut at the run end is always allowed. The predicate
-exists and is unit-tested, but the production pipeline does not generate
-sufficient unsafe-span information, and `RunContext` provides no flag setter.
-There is no script boundary-veto hook.
+Unknown/stateful run or plan hooks, stage pauses, and per-syllable processing use
+whole-run fallback. Normalization hooks require the optional
+`ShapingEngineStreamingNormalization` locality promise; the Hebrew engine
+implements it. Reverse chaining also falls back when a buffered glyph can
+participate. These requests work if EOF is discovered within capacity; otherwise
+they fail without forced output.
 
-A cluster boundary is therefore a candidate, not proof that context can safely
-be discarded. Joining, ligatures, pair positioning, cursive attachment, and
-combining sequences can require context across that boundary.
+Hebrew presentation-form fallback depends on plan-wide `mark` support. Event
+requests whose root plan lacks that support use whole-run fallback, because a
+future event could change normalization of earlier text. The existing plan-wide
+contract is preserved, including the conservative no-mark-font case. Shared
+lookup contributors with differing plan-wide random policies also trigger event
+fallback; differing joiner policies trigger it when joiners are present. A future
+feature selection could otherwise change those policies for earlier text.
+
+Conservative dependencies may retain more text than strictly necessary. In
+particular the existing mark/base and mark/ligature predecessor search can reach
+distant targets; this change does not repair that separate target-selection
+limitation. A larger buffer or whole-input request may be needed.
 
 ## Flush modes and output
 
 The sink's agreed order is logical shaping order, also for RTL; the caller owns
 visual ordering. Cluster anchors refer to zero-based original input scalars,
 with HarfBuzz level-0 grouping/merging. Latin/Hebrew base/mark formation is now
-implemented (SHAPE-011). Per-glyph source anchors are retained separately, but
-the conservative partial-compaction rules still reject repeated output clusters. Logical ordering does not mean retaining
+implemented (SHAPE-011). Per-glyph source anchors are retained separately, and the trace supports repeated output clusters. Logical ordering does not mean retaining
 original scalar order within a cluster after normalization/script reordering.
 
 - `FlushOnRunBoundary` writes the selected prefix in glyph order. The name does
@@ -280,7 +294,7 @@ This does not implement all cursive or script-specific matching rules.
 GPOS mark-to-mark attachment additionally stops at the nearest eligible
 predecessor, which must be a GDEF mark in Mark2Coverage (SHAPE-022). An intervening
 base/ligature or eligible uncovered mark blocks attachment to earlier marks.
-This does not add general ligature/component compatibility or safe-cut guarantees.
+This does not add general ligature/component compatibility.
 
 The root plan is validated before ingestion. Push/pop only stores assignments;
 a nonempty carry compiles its combined plan before shaping. Compilation or
@@ -294,49 +308,23 @@ to reuse. Request random seeds remain stable across combined-plan rebuilds.
 These changes resolve SHAPE-016's event barrier; SHAPE-015 still governs safe
 buffer cuts. SHAPE-021 now resolves engine/user setting precedence for both APIs.
 
-## Guarantees, counterexamples, and tests
+## Verification and remaining scope
 
-The code asserts raw-array alignment, monotonic raw clusters, resolved
-configuration validity, raw buffer size, and emitted cut bounds. It does not
-assert a complete semantic context-safety invariant or prove progress for every
-possible engine transformation.
+`TestHarfBuzzStreamingBaselines` retains all 340 complete comparisons from the
+original short matrix. The tiny profiles now test silent capacity clamping and
+output correctness; they are not evidence of streaming at tiny capacities.
+`TestSHAPE015LongStreamingHarfBuzz` uses four separately captured complete
+HarfBuzz 15 outputs (11,200–12,000 scalars), both APIs and flush modes, default
+settings, explicit 4096 capacity, and a larger 8192 capacity. It requires at least
+three pre-EOF emission cycles and compares every output field. Indexed features
+and equivalent nested event schedules cross actual streaming windows.
 
-SHAPE-017 now tests all-deletion through both public APIs, including bounded
-source activity, EOF completion, exact-cap and over-cap errors, preservation of
-previous output, and retention of lookahead after an initially empty result.
-`findFlushCut` still returns no decision for empty output; both loops handle
-that case explicitly before calling it.
+Focused tests cover 256/257-scalar groups across events, emergency expansion
+limits, unknown-engine fallback, exact-cap EOF behavior, zero-output carry,
+earlier emitted output, context/lookahead, ignored glyphs, nested lookups,
+source provenance, and buffer ownership. The source/sink budgets and test timeout
+also detect failure to make progress.
 
-The review reproduced:
-
-- A cursive attachment lost with high/low/max `1/1/2`, compared with default
-  buffering on `gpos3_font1.otf`, input U+0012 U+0013, feature `test`.
-
-SHAPE-002's indexed-range reproduction now passes: mask assignment uses retained
-original scalar anchors after compaction and normalization. Ordinary tests cover
-that correspondence; initial base/mark groups use their first scalar for range
-selection, including equivalent feature-event scopes (SHAPE-011/016).
-
-Current tests include configuration/fill/compaction/cut helpers in
-`shape_streaming_test.go`, loop exercises in `shape_streaming_loop_test.go`,
-flush tests, event-stack tests, and engine streaming-parity tests.
-Arabic parity uses non-joining digits; Hebrew parity uses plain letters.
-Passing these tests and the full suite does not establish arbitrary-context
-equivalence.
-
-## Remaining acceptance criteria
-
-The mechanical streaming loop and basic parity tests are implemented. Completion
-still requires:
-
-1. A context-retention/boundary policy covering joining, lookback/lookahead,
-   normalization, substitutions, and attachments, including max-buffer handling.
-2. Broader script-specific sequence rules beyond the initial Latin/Hebrew
-   group-start policy now shared by ranges and feature events (SHAPE-011/016).
-3. Attachment/context retention across buffer cuts, and cursive finalization.
-   Feature-event spans no longer require separate attachment-index rebasing.
-4. Termination tests for empty shaped output and other length-changing cases.
-5. Independent expected outputs and boundary sweeps, not only comparison of two
-   configurations of the same implementation.
-
-Use [TESTING.md](TESTING.md) for commands and fixture conventions.
+Broader script-specific shaping, cursive finalization, unrestricted custom
+engines, and arbitrary-length dependencies remain outside this guarantee.
+See [TESTING.md](TESTING.md) for commands and fixture conventions.

@@ -69,7 +69,9 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 	}
 	ing := newStreamIngestor(cfg)
 	st := ing.state()
-	ws := newShapeWorkspace(cfg.maxBuffer)
+	ws := newShapeWorkspace(cfg.highWatermark)
+	ws.events = true
+	ws.rootMark = planHasGposMark(rootPlan)
 	stack := newPlanStack(rootFeatures)
 	scopesByID := map[uint16]featureSet{stack.currentPlanID(): stack.currentFeatures()}
 
@@ -106,6 +108,9 @@ func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink
 
 		cut := findFlushCut(run, st)
 		if !cut.ready {
+			if len(st.rawRunes) == st.cfg.maxBuffer {
+				return st.fullError()
+			}
 			if _, err := ing.fillEventsLimit(src, stack, scopesByID, st.cfg.maxBuffer); err != nil {
 				return err
 			}
@@ -181,6 +186,9 @@ func fillEventsUntilBufferLimit(
 		}
 		switch ev.Kind {
 		case InputEventRune:
+			if err := st.checkInputRune(ev.Rune); err != nil {
+				return read, err
+			}
 			st.rawRunes = append(st.rawRunes, ev.Rune)
 			st.rawClusters = append(st.rawClusters, st.nextCluster)
 			st.rawPlanIDs = append(st.rawPlanIDs, stack.currentPlanID())
@@ -225,6 +233,9 @@ func shapeEventCarry(ws *shapeWorkspace, st *streamingState, compiler planCompil
 	}
 	runes, clusters := ws.copyRaw(st)
 	runes, clusters, sources := ws.normalize(runes, clusters, compiler.params.Font, compiler.ctx, engine, pl)
+	if ws.err != nil {
+		return nil, ws.err
+	}
 	run := ws.mapMain(runes, clusters, sources, nil, compiler.params.Font)
 	if err := shapeMappedRun(run, engine, pl); err != nil {
 		return nil, err

@@ -47,7 +47,7 @@ Keep lower-level packages independent of the shaping engines.
 - [SHAPING_FINDINGS.md](doc/SHAPING_FINDINGS.md): stable `SHAPE-NNN` findings,
   reproductions, decisions, and fix/promotion process.
 - [STREAMING_API.md](doc/STREAMING_API.md): current buffering behavior and the
-  agreed, not yet fully implemented buffer contract.
+  implemented buffer contract, supported limits and conservative fallback scope.
 - [SHAPER_INTERFACES.md](doc/SHAPER_INTERFACES.md) and
   [SHAPING_OVERVIEW.md](doc/SHAPING_OVERVIEW.md): interfaces and pipeline overview.
 - [PARTIAL_PROGRESS.md](doc/PARTIAL_PROGRESS.md): lookup edits, progress, and
@@ -73,9 +73,10 @@ from a guarantee that the current code actually provides.
   finding for regression coverage and the subsequent SHAPE-018 forward-start fix.
 - Buffering may require a generous minimum capacity and practical sequence/
   context limits. Prefer simpler safe-boundary logic over supporting tiny
-  buffers. Emit only final output; reject invalid capacity or fail explicitly
-  when safe progress cannot fit within a hard limit. Exact limits and error
-  semantics remain to be agreed. See the buffer contract for test implications;
+  buffers. Emit only final output. Silently raise positive raw capacity requests below
+  4096; initial base/mark groups are limited to 256 original scalars and each
+  intermediate buffer to 65536 entries. Fail explicitly when no safe progress
+  fits, without an extra EOF probe at capacity. See the buffer contract for errors and test implications;
   do not silently weaken existing assertions.
 
 ## Parsing and implementation guidance
@@ -157,10 +158,10 @@ go test ./... -count=1
 go test ./otshape/... ./otlayout ./internal/hbcmp -count=1
 
 # Discovery suite; expected to fail while documented findings remain open.
-go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=30s
+go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=180s
 
 # One finding; change the ID and packages as appropriate.
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE015' -count=1 -timeout=30s -v
+go test ./otshape/... ./internal/hbcmp -run '^TestSHAPE015' -count=1 -timeout=180s -v
 ```
 
 Format changed Go files with `gofmt`. Run focused tests during development and

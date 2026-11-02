@@ -40,7 +40,8 @@ record sequence into logical order; it does not sort marks or relax fields.
 pointed-shalom oracles, and the already-passing reordered-shin control through
 both APIs: 24 complete comparisons. The range case has an explicit push/pop
 recipe, independently validated against its scalar ranges. All runs keep the
-whole input buffered; safe streaming cuts are SHAPE-015.
+whole input buffered. SHAPE-015 separately verifies repeated boundaries with a
+long pointed-Hebrew capture under the implemented buffer contract.
 
 The original two known bugs are promoted unchanged into the ordinary text
 suite. Lower normalization tests cover source indexes, leading marks,

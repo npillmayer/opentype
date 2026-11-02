@@ -10,11 +10,15 @@ import (
 // Slice alignment rule:
 // If a side-array is non-nil, its length must equal len(Glyphs).
 type runBuffer struct {
-	owner  any // only one mutating owner allowed at any time
-	front  int // index of the first glyph in the buffer
-	end    int // index pointing just behind the last glyph in the buffer
-	Glyphs otlayout.GlyphBuffer
-	Pos    otlayout.PosBuffer // optional until positioning becomes necessary
+	stream       *otlayout.StreamTrace
+	streamEvents bool
+	limitErr     error
+	maxEntries   int
+	owner        any // only one mutating owner allowed at any time
+	front        int // index of the first glyph in the buffer
+	end          int // index pointing just behind the last glyph in the buffer
+	Glyphs       otlayout.GlyphBuffer
+	Pos          otlayout.PosBuffer // optional until positioning becomes necessary
 
 	Codepoints    []rune   // optional codepoint alignment for normalization/reorder hooks
 	Clusters      []uint32 // optional output groups anchored to original scalar indexes
@@ -55,6 +59,7 @@ func (rb *runBuffer) Reset() {
 	if rb == nil {
 		return
 	}
+	rb.stream, rb.limitErr, rb.maxEntries = nil, nil, 0
 	rb.Glyphs = rb.Glyphs[:0]
 	if rb.Pos != nil {
 		rb.Pos = rb.Pos[:0]
@@ -606,6 +611,9 @@ func (rb *runBuffer) InsertGlyphs(index int, glyphs []ot.GlyphIndex) (int, int) 
 		index = n
 	}
 	insertLen := len(glyphs)
+	if !rb.allowGrowth(insertLen) {
+		return index, index
+	}
 
 	clusterSeed := uint32(0)
 	sourceSeed := uint32(0)
@@ -674,6 +682,9 @@ func (rb *runBuffer) InsertGlyphCopies(index int, source int, count int) (int, i
 		index = n
 	}
 
+	if !rb.allowGrowth(count) {
+		return index, index
+	}
 	gid := rb.Glyphs[source]
 	insertGlyphs := make([]ot.GlyphIndex, count)
 	for i := range insertGlyphs {
@@ -964,4 +975,19 @@ func inheritLayoutEdit[T any](s []T, edit otlayout.EditSpan) []T {
 	}
 	out := append(s[:edit.From:edit.From], replacement...)
 	return append(out, s[edit.To:]...)
+}
+
+func (rb *runBuffer) allowGrowth(count int) bool {
+	if rb.limitErr != nil {
+		return false
+	}
+	if rb.maxEntries > 0 && count > rb.maxEntries-rb.Len() {
+		index := uint32(0)
+		if len(rb.SourceAnchors) > 0 {
+			index = rb.SourceAnchors[0]
+		}
+		rb.limitErr = &LimitError{"glyph buffer", rb.maxEntries, index}
+		return false
+	}
+	return true
 }

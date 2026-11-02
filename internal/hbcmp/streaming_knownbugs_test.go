@@ -1,9 +1,0 @@
-//go:build shaping_knownbugs
-
-package hbcmp
-
-import "testing"
-
-// Every cell compares against independent whole-text output. These do not
-// assert buggy output or auto-skip newly passing cells: promote them instead.
-func TestKnownBugSHAPE015StreamingContext(t *testing.T) { runStreamingMatrix(t, "015") }

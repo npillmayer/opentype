@@ -84,6 +84,32 @@ independent instances; nil retains the fallback to reuse. Event pushes no longer
 compile separate plans or leave a later scope's plan state active for earlier
 text. The root plan is still compiled up front to validate defaults.
 
+## Streaming locality and growth limits
+
+SHAPE-015 gives run/plan hooks, pauses, and per-syllable work conservative
+whole-run buffering: EOF must fit within raw capacity, or shaping returns
+`ErrBufferFull`. Engines with no such hooks can use the shared dependency trace.
+Normalization hooks may opt in with:
+
+```go
+type ShapingEngineStreamingNormalization interface {
+    StreamingNormalization() (local bool, dependsOnGposMark bool)
+}
+```
+
+This promises stateless behavior depending only on the supplied pair/mark
+sequence, font, selection, and declared plan-wide mark support. It does not
+certify arbitrary run or plan hooks. The Hebrew engine reports both values true;
+its event requests with no root mark support use whole-run fallback because a
+future feature event could change earlier normalization. See
+[STREAMING_API.md](STREAMING_API.md#safe-cut-selection).
+
+`RunContext.InsertGlyphs` and `InsertGlyphCopies` cannot grow a public shaping
+run beyond 65536 entries. A rejected insertion leaves buffers unchanged and
+records a supported-limit error returned by the pipeline before any current
+carry is emitted. Earlier output remains final. The hooks keep their existing
+void signatures; callers need not handle an additional insertion return value.
+
 ## Optional hooks
 
 Hooks are discovered with type assertions. They are not all mandatory methods

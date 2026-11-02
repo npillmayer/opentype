@@ -2,8 +2,10 @@ package otshape
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/npillmayer/opentype/ot"
+	"github.com/npillmayer/opentype/otlayout"
 	"golang.org/x/text/language"
 )
 
@@ -86,7 +88,7 @@ func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts Bu
 	}
 	ing := newStreamIngestor(cfg)
 	strState := ing.state()
-	ws := newShapeWorkspace(cfg.maxBuffer)
+	ws := newShapeWorkspace(cfg.highWatermark)
 
 	for {
 		if _, err := ing.fillRunes(src); err != nil {
@@ -101,6 +103,9 @@ func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts Bu
 
 		runes, clusters := ws.copyRaw(strState)
 		runes, clusters, sources := ws.normalize(runes, clusters, params.Font, ctx, engine, plan)
+		if ws.err != nil {
+			return ws.err
+		}
 		run := ws.mapMain(runes, clusters, sources, nil, params.Font)
 		if err := shapeMappedRun(run, engine, plan); err != nil {
 			return err
@@ -121,6 +126,9 @@ func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts Bu
 		}
 		cut := findFlushCut(run, strState)
 		if !cut.ready {
+			if len(strState.rawRunes) == strState.cfg.maxBuffer {
+				return strState.fullError()
+			}
 			if _, err := ing.fillRunesLimit(src, strState.cfg.maxBuffer); err != nil {
 				return err
 			}
@@ -175,13 +183,19 @@ func shapeMappedRun(run *runBuffer, engine ShapingEngine, pl *plan) error {
 	if hook, ok := engine.(ShapingEngineMaskHook); ok {
 		hook.SetupMasks(rc)
 	}
+	if run.limitErr != nil {
+		return run.limitErr
+	}
 	if err := exec.apply(pl); err != nil {
+		if errors.Is(err, otlayout.ErrGlyphLimit) || errors.Is(err, otlayout.ErrLookupLimit) {
+			return fmt.Errorf("%w: %w", ErrSupportedLimit, err)
+		}
 		return err
 	}
 	if hook, ok := engine.(ShapingEnginePostprocessHook); ok {
 		hook.PostprocessRun(rc)
 	}
-	return nil
+	return run.limitErr
 }
 
 func selectionContextFromParams(params Params) SelectionContext {

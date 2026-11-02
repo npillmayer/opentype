@@ -223,3 +223,7 @@ func hebrewReorder(start, end int, codepoint func(int) rune, swap func(int, int)
 		}
 	}
 }
+
+// StreamingNormalization reports the locality of the Hebrew normalization hooks.
+// Presentation-form fallback also depends on plan-wide GPOS mark support.
+func (Shaper) StreamingNormalization() (bool, bool) { return true, true }

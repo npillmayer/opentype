@@ -212,6 +212,7 @@ func (pc planContext) FeatureNeedsFallback(tag ot.Tag) bool {
 }
 
 type normalizeContext struct {
+	work        *normalizationWork
 	font        *ot.Font
 	selection   SelectionContext
 	hasGposMark bool

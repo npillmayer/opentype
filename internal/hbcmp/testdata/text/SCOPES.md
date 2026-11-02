@@ -50,8 +50,9 @@ instead of the former `(-999,360)` caused by attachment across the intervening
 independently addressable. No capture or comparison field was changed.
 
 The original `scope_pair` matrix capture remains in `streaming.json`: six event
-comparisons are promoted unchanged, and four tiny/forced cases retain the full
-expectation under SHAPE-015. The two existing normalization/range captures also
+comparisons were promoted under SHAPE-016, and SHAPE-015 subsequently promoted
+the four tiny/forced cases unchanged. Small capacity requests now test clamping;
+separate long baselines exercise actual repeated boundaries. The two existing normalization/range captures also
 now run as equivalent events. This batch does not claim safe streaming cuts,
 cursive correctness or general script conformance. Engine/user precedence was
 subsequently resolved under

@@ -405,6 +405,10 @@ func (e EditSpan) RetainedIndex(index int) int {
 // Mutation ownership and partial-progress invariants are documented in
 // doc/PARTIAL_PROGRESS.md.
 type BufferState struct {
+	// Stream optionally records raw-input dependencies for incremental shaping.
+	Stream *StreamTrace
+	// MaxGlyphs bounds expansion; zero leaves direct layout callers unrestricted.
+	MaxGlyphs               int
 	inputMasks              []uint32 // owned copy, kept aligned through nested edits
 	lookupMask              uint32
 	Glyphs                  GlyphBuffer
@@ -441,6 +445,7 @@ func (b *BufferState) inputEnabled(index int) bool {
 }
 
 func (b *BufferState) recordEdit(edit EditSpan) {
+	b.Stream.edit(edit)
 	if b.inputMasks != nil && !(edit.To-edit.From == 1 && edit.Len == 1) {
 		old := b.inputMasks
 		value := uint32(0)
@@ -527,6 +532,8 @@ func (b *BufferState) CloneShared() *BufferState {
 		random = &copy
 	}
 	return &BufferState{
+		Stream:                  b.Stream.clone(),
+		MaxGlyphs:               b.MaxGlyphs,
 		inputMasks:              slices.Clone(b.inputMasks),
 		lookupMask:              b.lookupMask,
 		alternateSelectionError: b.alternateSelectionError,
@@ -822,6 +829,8 @@ func applyLookupConcrete(
 		flag:        clookup.Flag,
 		gdef:        gdef,
 	}
+	st.Stream.begin(st.Index)
+	defer st.Stream.end()
 	pos, ok, buf, pbuf, edit, err := dispatchLookup(&ctx)
 	if st != nil {
 		if buf != nil {
@@ -858,6 +867,7 @@ func dispatchLookup(ctx *applyCtx) (int, bool, GlyphBuffer, PosBuffer, *EditSpan
 		} else {
 			subType = ot.GSubLookupType(subType)
 		}
+		ctx.streamTrace().resetAttempt()
 		tracer().Debugf("subtable #%d type %d format %d", i, subType, subnode.Format)
 		var (
 			pos  int
@@ -875,6 +885,7 @@ func dispatchLookup(ctx *applyCtx) (int, bool, GlyphBuffer, PosBuffer, *EditSpan
 			return pos, ok, buf, pbuf, edit, fmt.Errorf("subtable %d type %d format %d: %w", i, subType, subnode.Format, err)
 		}
 		if ok {
+			ctx.streamTrace().commitAttempt()
 			return pos, ok, buf, pbuf, edit, err
 		}
 	}
@@ -1048,19 +1059,23 @@ func skipGlyph(ctx *applyCtx, g ot.GlyphIndex) bool {
 
 func nextMatchable(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool) {
 	for i := pos; i < buf.Len(); i++ {
+		ctx.streamTrace().read(i)
 		if !skipGlyph(ctx, buf.At(i)) {
 			return i, true
 		}
 	}
+	ctx.streamTrace().read(buf.Len())
 	return 0, false
 }
 
 func prevMatchable(ctx *applyCtx, buf GlyphBuffer, pos int) (int, bool) {
 	for i := pos; i >= 0; i-- {
+		ctx.streamTrace().read(i)
 		if !skipGlyph(ctx, buf.At(i)) {
 			return i, true
 		}
 	}
+	ctx.streamTrace().read(-1)
 	return 0, false
 }
 
@@ -1089,6 +1104,7 @@ type matchSeqFn func(ctx *applyCtx, buf GlyphBuffer, pos int) ([]int, bool)
 // matchCoverageAt checks the lookup's designated start. Searching for the next
 // candidate belongs to the caller, which must recheck that candidate's settings.
 func matchCoverageAt(ctx *applyCtx, buf GlyphBuffer, pos int, cov ot.Coverage) (mpos, inx int, ok bool) {
+	ctx.streamTrace().read(pos)
 	if pos < 0 || pos >= buf.Len() || skipGlyph(ctx, buf.At(pos)) || !ctx.buf.inputEnabled(pos) {
 		return 0, 0, false
 	}
@@ -1555,4 +1571,11 @@ func identifyFeatureTag(tag ot.Tag) (LayoutTagType, error) {
 		return 0, errFontFormat(fmt.Sprintf("feature '%s' seems not to be registered", tag))
 	}
 	return typ, nil
+}
+
+func (ctx *applyCtx) streamTrace() *StreamTrace {
+	if ctx == nil || ctx.buf == nil {
+		return nil
+	}
+	return ctx.buf.Stream
 }

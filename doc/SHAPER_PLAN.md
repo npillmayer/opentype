@@ -171,8 +171,8 @@ Important limits:
 
 - Masks initialized before `SetupMasks` are preserved. Feature values and ranges
   follow the SHAPE-001/002/003/011/018 contracts. SHAPE-016 extends the same
-  original-coordinate group-start policy to event scopes. Safe streaming
-  boundaries remain separate (SHAPE-015).
+  original-coordinate group-start policy to event scopes. SHAPE-015 supplies
+  conservative safe streaming within the shared Latin/Hebrew buffer contract.
 - An internal `Strict` policy and its test exist, but the public compile path
   does not enable it. The former `ZeroMarks` and `FallbackMarkPos` policies
   were removed as unused on 2026-11-01.
@@ -183,8 +183,9 @@ Important limits:
   private plan notes; they are not universally fatal. This contradicts the old
   blanket claim that the public shaper is strict about incomplete fonts.
 - Latin/Hebrew mark finalization and mark advances follow SHAPE-007/008. Cursive
-  positioning and safe streaming remain separate limitations; this scheduling
-  fix makes no broader positioning or script-conformance claim.
+  positioning remains separate. SHAPE-015 subsequently implements bounded
+  conservative streaming; this scheduling fix makes no broader positioning or
+  script-conformance claim.
 - The sink contract is logical shaping order, including RTL. Final visual
   ordering belongs to the caller (SHAPE-009 resolved). A vertical-metrics
   pipeline and variation application remain absent from plan execution.

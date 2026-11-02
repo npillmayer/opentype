@@ -1,12 +1,51 @@
 # Streaming and feature-scope baseline matrix
 
+**SHAPE-015 resolution (2026-11-02):** all **340** original
+matrix comparisons pass as ordinary regressions, including the 116 formerly
+tagged cells. Captured output is unchanged. Requested capacities below 4096 are
+silently raised; the old profile names are retained for reproducibility, but
+`tiny` and `forced` no longer mean a tiny actual cap or a forced unsafe flush.
+The accepted fix and recorded implementation verification are archived in
+[SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md#shape-015--streaming-cuts-lose-shaping-context).
+The dated results below describe the original defects.
+
+`streaming_long.json.gz` adds four independent full-text HarfBuzz 15 captures:
+
+| Case | Input | Features |
+| --- | --- | --- |
+| `long_latin` | `office AVATAR cafe` + U+0301 + space, repeated 600 times (12000 scalars) | defaults |
+| `long_ranges` | same complete text | `liga=0,liga[4095:8200]=1,kern=1,kern[3500:7000]=0` |
+| `long_hebrew` | pointed `שָׁלוֹם ` repeated 1400 times (11200 scalars) | defaults |
+| `long_progress` | `abdfi a ` repeated 1400 times (11200 scalars) | `test=1` |
+
+Each output was captured by shaping the entire text once; expectations are not
+assembled from shorter outputs. Font paths/hashes, exact commands, scalar input,
+and every output field are retained in the compressed JSON. The fonts and
+HarfBuzz executable are the same documented fixtures/tool as the short corpus.
+`capture_harfbuzz_streaming_long.py` checks byte-identical captures by default;
+`--write` explicitly replaces the compressed snapshot. Deterministic gzip uses
+mtime zero. No preparation tools are needed by Go tests.
+
+The long test runs **48 configurations**: four captures × three profiles × both
+APIs × both flush modes. Profiles are defaults; high/low/max `4096/1024/4096`;
+and `6000/2000/8192`. Every configuration requires at least three pre-EOF output
+cycles and compares the complete independent output. Range/event equivalence is
+validated at every original scalar. Nested events disable kern at 3500, enable
+liga at 4095, restore kern at 7000 while keeping liga enabled, and restore liga
+at 8200. Use `-timeout=180s` for the expanded suite.
+
+See [the implemented buffer contract](../../../../doc/STREAMING_API.md#agreed-buffer-contract-2026-11-02)
+for explicit group/expansion limits, safe capacity errors, and whole-run fallback.
+
+## Historical discovery and promotions
+
 Verified on 2026-10-26 against source revision
 `f36813fa22e1b0795a66a4860975612f4c7ce9cc` plus this batch's tests, fixtures,
 tools, and documentation. No production behavior changed.
 
 **Later contract decision (2026-10-27):** a generous required minimum buffer
 and practical sequence/context limits are now agreed; see the
-[buffer contract](../../../../doc/STREAMING_API.md#agreed-buffer-contract-2026-10-27-not-yet-implemented).
+[buffer contract](../../../../doc/STREAMING_API.md#agreed-buffer-contract-2026-11-02).
 The results below include the SHAPE-002 promotions described next. Once enforced, configurations below
 the minimum will require explicit rejection tests, and boundary coverage must
 also use long inputs at supported sizes. No assertions have been relaxed here.
@@ -177,11 +216,11 @@ that output only for `progress_all_deleted`, records the original newline as
 output is rejected; other cases cannot silently acquire empty expectations.
 
 ```sh
-# Ordinary tests, including 224 matrix executions and ten empty-input checks:
-go test ./internal/hbcmp -count=1 -timeout=30s
+# Ordinary tests, including 340 short and 48 long streaming comparisons:
+go test ./internal/hbcmp -count=1 -timeout=180s
 
-# Complete discovery suite: two failing top-level groups (SHAPE-014/015).
-go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=30s
+# Remaining discovery selection: deferred SHAPE-014 only.
+go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -run KnownBug -count=1 -timeout=30s
 
 # Observe consumption/emission for the promoted whole-input scope regression:
 go test ./internal/hbcmp -run 'TestHarfBuzzStreamingBaselines/scope_pair/whole/events/run$' -count=1 -timeout=30s -v
@@ -191,18 +230,17 @@ python3 testdata/scripts/capture_harfbuzz_streaming.py
 python3 testdata/scripts/build_streaming_font.py  # recorded FontTools version required
 ```
 
-The ordinary full suite passes. One tagged matrix group covers SHAPE-015
-(stream context/capacity). The separate [scope corpus](SCOPES.md) now has all
+The historical ordinary subset passed; the matrix is now entirely ordinary
+after SHAPE-015, as recorded above. The separate [scope corpus](SCOPES.md) now has all
 44 comparisons passing after SHAPE-022.
 The obsolete SHAPE-016 wrapper is removed. SHAPE-018 forward-scan cells were promoted
-or retained under SHAPE-015 as described above. The remaining cells
-are statically assigned by `streamingFinding`; no outcome-driven skip or buggy
-expectation is used. Promote cells when their full independent comparison passes.
+or retained under SHAPE-015 as described above. No outcome-driven skip or buggy expectation is used. The obsolete SHAPE-015
+wrapper and its historical static assignment are removed.
 
 This completes the initial runner/event/progress setup. Remaining expansion
 includes scopes inside substitution-merged clusters, additional feature values, longer
 combining sequences, error/cancellation scenarios beyond the existing unit
 tests, and broader buffer sweeps. All-deletion completion at EOF and explicit
-zero-output capacity errors are covered by the resolved SHAPE-017. Context-safe
-streaming mark placement remains blocked by recorded production defects. See
+zero-output capacity errors are covered by the resolved SHAPE-017. SHAPE-015 now covers the shared Latin/Hebrew streaming boundary contract;
+remaining attachment and script limitations stay separate. See
 [SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md).

@@ -1,7 +1,6 @@
 package otshape
 
 import (
-	"errors"
 	"fmt"
 	"io"
 )
@@ -11,12 +10,12 @@ import (
 // additional context may change the result. Earlier sink writes are retained.
 // This conservative limit also applies when input ends exactly at MaxBuffer,
 // since discovering EOF would require another source read.
-var ErrZeroOutputBufferFull = errors.New("otshape: buffer full before zero-output shaping can be finalized")
+var ErrZeroOutputBufferFull = fmt.Errorf("%w: zero-output shaping cannot be finalized", ErrBufferFull)
 
 const (
 	defaultHighWatermark = 3500
 	defaultLowWatermark  = 1024
-	defaultMaxBuffer     = 4096
+	defaultMaxBuffer     = MinBuffer
 )
 
 const (
@@ -38,7 +37,7 @@ func (cfg streamingConfig) valid() bool {
 
 func resolveStreamingConfig(opts BufferOptions) (streamingConfig, error) {
 	if opts.HighWatermark < 0 || opts.LowWatermark < 0 || opts.MaxBuffer < 0 {
-		return streamingConfig{}, fmt.Errorf("otshape: streaming watermarks must be >= 0")
+		return streamingConfig{}, fmt.Errorf("%w: streaming watermarks must be >= 0", ErrBufferConfig)
 	}
 	cfg := streamingConfig{
 		highWatermark: defaultHighWatermark,
@@ -54,12 +53,12 @@ func resolveStreamingConfig(opts BufferOptions) (streamingConfig, error) {
 		cfg.lowWatermark = cfg.highWatermark
 	}
 	if opts.MaxBuffer > 0 {
-		cfg.maxBuffer = opts.MaxBuffer
+		cfg.maxBuffer = max(MinBuffer, opts.MaxBuffer)
 	} else if cfg.maxBuffer < cfg.highWatermark {
 		cfg.maxBuffer = cfg.highWatermark
 	}
 	if !cfg.valid() {
-		return streamingConfig{}, fmt.Errorf("otshape: invalid streaming watermark config high=%d low=%d max=%d", cfg.highWatermark, cfg.lowWatermark, cfg.maxBuffer)
+		return streamingConfig{}, fmt.Errorf("%w: high=%d low=%d max=%d", ErrBufferConfig, cfg.highWatermark, cfg.lowWatermark, cfg.maxBuffer)
 	}
 	return cfg, nil
 }
@@ -70,6 +69,8 @@ type streamingState struct {
 	rawClusters []uint32
 	rawPlanIDs  []uint16
 	nextCluster uint32
+	groupStart  uint32
+	groupCount  int
 	eof         bool
 	cfg         streamingConfig
 }
@@ -127,6 +128,9 @@ func fillUntilBufferLimit(src RuneSource, st *streamingState, limit int) (int, e
 		if err != nil {
 			return read, err
 		}
+		if err := st.checkInputRune(r); err != nil {
+			return read, err
+		}
 		st.rawRunes = append(st.rawRunes, r)
 		st.rawClusters = append(st.rawClusters, st.nextCluster)
 		st.nextCluster++
@@ -173,46 +177,47 @@ func findFlushCut(run *runBuffer, st *streamingState) flushDecision {
 			ready:    true,
 		}
 	}
-	low := st.cfg.lowWatermark
-	if low > len(st.rawRunes) {
-		low = len(st.rawRunes)
-	}
-	if run.Len() != len(st.rawRunes) {
-		// Length-changing transformations (compose/ligature expansion/deletion) do
-		// not preserve enough provenance for safe partial raw compaction.
-		// Defer partial flushes and rely on EOF/maxBuffer full flush instead.
-		if len(st.rawRunes) >= st.cfg.maxBuffer {
-			return flushDecision{
-				glyphCut: run.Len(),
-				rawFlush: len(st.rawRunes),
-				ready:    true,
-			}
-		}
+	// Both halves must restart independently. Lookup observations and retained
+	// future context certify raw boundaries; output provenance selects the matching
+	// glyph prefix even after contraction, expansion, deletion, or reordering.
+	trace := run.stream
+	if trace == nil || trace.Disabled || len(trace.Sources) != run.Len() {
 		return flushDecision{}
 	}
-	rawStart := st.rawClusters[0]
-	for _, span := range clusterSpans(run) {
-		if !isBreakSafeCut(run, span.end) {
-			continue
-		}
-		rawFlush, ok := rawFlushForGlyphPrefix(run, span.end, rawStart, len(st.rawRunes))
-		if !ok {
-			continue
-		}
-		if rawFlush >= low {
-			return flushDecision{
-				glyphCut: span.end,
-				rawFlush: rawFlush,
-				ready:    true,
-			}
-		}
+	low := min(st.cfg.lowWatermark, len(st.rawRunes))
+	fallback := flushDecision{}
+	// Prefix ends and suffix starts can be checked in linear time even when
+	// normalization reordered glyphs within a source group.
+	suffixStart := make([]int, run.Len()+1)
+	suffixStart[run.Len()] = len(st.rawRunes)
+	for i := run.Len() - 1; i >= 0; i-- {
+		suffixStart[i] = min(trace.Sources[i].Start, suffixStart[i+1])
 	}
-	if len(st.rawRunes) >= st.cfg.maxBuffer {
-		return flushDecision{
-			glyphCut: run.Len(),
-			rawFlush: len(st.rawRunes),
-			ready:    true,
+	glyph := 0
+	for raw := 1; raw <= trace.KeepFrom && raw < len(trace.Unsafe); raw++ {
+		if trace.Unsafe[raw] {
+			continue
 		}
+		for glyph < run.Len() && trace.Sources[glyph].End <= raw {
+			glyph++
+		}
+		if glyph == 0 {
+			continue
+		}
+		if suffixStart[glyph] < raw || !isBreakSafeCut(run, glyph) {
+			continue
+		}
+		if glyph < run.Len() && run.Clusters[glyph-1] == run.Clusters[glyph] {
+			continue
+		}
+		cut := flushDecision{glyphCut: glyph, rawFlush: raw, ready: true}
+		if raw >= low {
+			return cut
+		}
+		fallback = cut
+	}
+	if len(st.rawRunes) == st.cfg.maxBuffer {
+		return fallback
 	}
 	return flushDecision{}
 }
@@ -231,40 +236,4 @@ func isBreakSafeCut(run *runBuffer, cut int) bool {
 	// A boundary is unsafe only when both sides carry unsafe flags, i.e. the cut
 	// would slice through an unsafe span instead of landing at its edge.
 	return left == 0 || right == 0
-}
-
-func rawFlushForGlyphPrefix(run *runBuffer, glyphCut int, rawStart uint32, rawLen int) (int, bool) {
-	assert(run != nil, "run buffer is nil")
-	if glyphCut < 0 || glyphCut > run.Len() || rawLen < 0 {
-		return 0, false
-	}
-	if glyphCut == 0 {
-		return 0, true
-	}
-	if len(run.Clusters) != run.Len() {
-		return 0, false
-	}
-	next := rawStart
-	for i := 0; i < glyphCut; i++ {
-		cl := run.Clusters[i]
-		if cl != next {
-			// Partial raw compaction is only safe for strict 1:1 cluster coverage.
-			// Any repeat/decrease/gap can hide source runes consumed by collapsed
-			// or merged clusters, which would duplicate output on the next cycle.
-			// In that case we defer progress until EOF or maxBuffer force-flush.
-			return 0, false
-		}
-		next++
-		if next-rawStart > uint32(rawLen) {
-			return 0, false
-		}
-	}
-	rawFlush := int(next - rawStart)
-	if rawFlush < 0 || rawFlush > rawLen {
-		return 0, false
-	}
-	if rawFlush == 0 {
-		return 0, false
-	}
-	return rawFlush, true
 }

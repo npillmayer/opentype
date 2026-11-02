@@ -273,6 +273,11 @@ ligature, pair, or contextual input match; backtrack/lookahead remain available
 across settings boundaries, and ignored-glyph skipping still follows lookup flags.
 This does not implement all cursive or script-specific matching rules.
 
+GPOS mark-to-mark attachment additionally stops at the nearest eligible
+predecessor, which must be a GDEF mark in Mark2Coverage (SHAPE-022). An intervening
+base/ligature or eligible uncovered mark blocks attachment to earlier marks.
+This does not add general ligature/component compatibility or safe-cut guarantees.
+
 The root plan is validated before ingestion. Push/pop only stores assignments;
 a nonempty carry compiles its combined plan before shaping. Compilation or
 validation failure suppresses that carry's output. The combined plan uses the

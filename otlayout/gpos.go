@@ -276,22 +276,18 @@ func gposLookupType6Fmt1(ctx *applyCtx, sub *ot.LookupNode, buf GlyphBuffer, pos
 			if markInx < 0 || markInx >= len(p.MarkToMarkFmt1.Mark1Records) {
 				return pos, false, buf, nil, nil
 			}
-			// find mark2 glyph before mark1
-			mark2Pos := -1
-			mark2Inx := -1
-			for i := mpos - 1; i >= 0; {
-				prev, ok := prevInputMatchable(ctx, buf, i)
-				if !ok {
-					break
-				}
-				if inx, ok := p.MarkToMarkFmt1.Mark2Coverage.Match(buf.At(prev)); ok {
-					mark2Pos = prev
-					mark2Inx = inx
-					break
-				}
-				i = prev - 1
+			// Mark attachment considers the nearest eligible predecessor, not
+			// the nearest glyph in Mark2Coverage. Bases and ligatures are barriers
+			// even when ordinary lookup flags would skip them. Preserve mark
+			// filtering/attachment classes and the input mask while searching.
+			targetCtx := *ctx
+			targetCtx.flag &^= ot.LOOKUP_FLAG_IGNORE_BASE_GLYPHS | ot.LOOKUP_FLAG_IGNORE_LIGATURES | ot.LOOKUP_FLAG_IGNORE_MARKS
+			mark2Pos, ok := prevInputMatchable(&targetCtx, buf, mpos-1)
+			if !ok || glyphClass(ctx.gdef, buf.At(mark2Pos)) != ot.MarkGlyph {
+				return pos, false, buf, nil, nil
 			}
-			if mark2Pos < 0 || mark2Inx < 0 || mark2Inx >= len(p.MarkToMarkFmt1.Mark2Records) {
+			mark2Inx, ok := p.MarkToMarkFmt1.Mark2Coverage.Match(buf.At(mark2Pos))
+			if !ok || mark2Inx < 0 || mark2Inx >= len(p.MarkToMarkFmt1.Mark2Records) {
 				return pos, false, buf, nil, nil
 			}
 			markRec := p.MarkToMarkFmt1.Mark1Records[markInx]

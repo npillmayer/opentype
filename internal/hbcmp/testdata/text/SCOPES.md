@@ -3,7 +3,11 @@
 **Status:** SHAPE-016 is fixed and accepted; its contract and recorded
 implementation verification are archived in
 [SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md#shape-016--feature-scopes-sever-unrelated-lookup-context).
-SHAPE-022 remains open with unchanged full expectations.
+SHAPE-022 is also fixed and accepted; its four comparisons pass in the ordinary
+suite with unchanged full expectations. The predecessor-selection scope and
+recorded implementation verification are archived in the
+[SHAPE-022 resolution](../../../../doc/SHAPING_FINDINGS.md#shape-022--mark-to-mark-attachment-crosses-an-intervening-base).
+Broader ligature/component compatibility remains separate.
 
 Prepared 2026-11-01 with HarfBuzz 15.0.0. `scopes.json` records the exact capture
 commands, tool/font hashes, scalar inputs, settings and all six output fields.
@@ -36,14 +40,14 @@ shaping. Full GIDs, clusters, offsets and advances are compared to HarfBuzz.
 | `scope_implicit_restore` | A popped scope restores default ligation without explicit global `liga` | ordinary |
 | `scope_nested_ligatures` | Nested overrides and pop restore enclosing assignments | ordinary |
 | `scope_hebrew_group` | An event inside vav + holam preserves RTL grouping and mark placement | ordinary |
-| `scope_mark_inside` | Same group-range test with default `mkmk`; exposes attachment across a base | tagged SHAPE-022 |
+| `scope_mark_inside` | Same group-range test with default `mkmk`; prevents attachment across a base | ordinary (SHAPE-022) |
 
-Eleven captures produce forty ordinary and four tagged comparisons.
-`scope_mark_inside` is retained unchanged: the final accent should have `(0,0)`
-offsets, but attaches across the intervening `x` and receives `(-999,360)`.
-This affects both entry points independently of SHAPE-016. Its separately
-captured `mkmk=0` control isolates range/group selection without weakening the
-failing assertion.
+Eleven captures now produce 44 ordinary comparisons. SHAPE-022 promotes
+`scope_mark_inside` unchanged: the final accent has the expected `(0,0)` offsets,
+instead of the former `(-999,360)` caused by attachment across the intervening
+`x`. Its separately captured `mkmk=0` control remains unchanged. The ordinary
+`TestSHAPE022MarkAttachmentCrossesBase` keeps the four promoted executions
+independently addressable. No capture or comparison field was changed.
 
 The original `scope_pair` matrix capture remains in `streaming.json`: six event
 comparisons are promoted unchanged, and four tiny/forced cases retain the full

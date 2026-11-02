@@ -103,7 +103,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
 | [SHAPE-015](#shape-015--streaming-cuts-lose-shaping-context) | reproduced | Buffer cuts change ligatures, pair positioning, and normalization |
 | [SHAPE-021](#shape-021--engine-and-user-feature-settings-combine-as-off-wins) | reproduced | Engine and user feature settings combine so that "off" wins, contrary to the agreed precedence |
-| [SHAPE-022](#shape-022--mark-to-mark-attachment-crosses-an-intervening-base) | reproduced | Mark-to-mark search crosses an intervening base |
 
 Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
@@ -121,7 +120,8 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-017 — GSUB deletion](#shape-017--gsub-deletion-is-ignored),
 [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks),
 [SHAPE-019 — ligature mark preservation](#shape-019--ligature-substitution-deletes-ignored-marks),
-and [SHAPE-020 — stage lookup order](#shape-020--default-features-run-in-feature-order-instead-of-lookup-order).
+[SHAPE-020 — stage lookup order](#shape-020--default-features-run-in-feature-order-instead-of-lookup-order),
+and [SHAPE-022 — mark-to-mark predecessor selection](#shape-022--mark-to-mark-attachment-crosses-an-intervening-base).
 
 The original AOTS baseline batch added SHAPE-005/006 in the former
 `internal/hbcmp/aots_knownbugs_test.go` (removed after the SHAPE-019 promotion).
@@ -385,36 +385,6 @@ leaves the existing text baselines unchanged.
 
 ```sh
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE021' -count=1 -v
-```
-
-## SHAPE-022 — Mark-to-mark attachment crosses an intervening base
-
-**Status:** reproduced 2026-11-01 during SHAPE-016 verification; no fix included.
-This documents the previously separate mark-to-mark compatibility limitation,
-without reopening SHAPE-007 or SHAPE-019.
-
-**Reproduction:** Gentium `x\u0301x\u0301`, Latn/en/LTR,
-`mark=1,mark[1:3]=0`, whole-input buffers `5/1/6`. Equivalent events push
-`mark=0` at scalar 1 and pop at 3. The first initial group retains mark positioning;
-the second starts inside the disabled range. Both APIs produce the correct four
-GIDs and clusters, but the final accent has offsets `(-999,360)` instead of
-HarfBuzz's `(0,0)`. All advances and the first accent's `(31,0)` match.
-
-**Cause:** `gposLookupType6Fmt1` searches back through a nonmatching base for an
-earlier glyph in Mark2Coverage. It can attach the second accent to the first
-accent across `x`. HarfBuzz's mark-to-mark search requires the preceding matched
-glyph to be a mark and enforces ligature/component compatibility.
-This is independent of event-span splitting: the equivalent `Shape` range also
-fails. The separate `mkmk=0` control passes both APIs and both flush modes.
-
-**Regression:** `TestKnownBugSHAPE022MarkAttachmentCrossesBase` retains all six
-HarfBuzz output fields in four comparisons. Capture/provenance and its passing
-control are in [SCOPES.md](../internal/hbcmp/testdata/text/SCOPES.md).
-Choose the repair scope separately; broader attachment compatibility is not
-silently included in SHAPE-016.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE022' -count=1
 ```
 
 ## Remaining discovery work
@@ -1042,7 +1012,8 @@ go test ./internal/hbcmp -run 'TestSHAPE012013|TestHarfBuzzTextBaselines/latin_m
 ### SHAPE-016 — Feature scopes sever unrelated lookup context
 
 **Status:** fixed; accepted 2026-11-01 within the buffered-carry scope.
-Safe streaming cuts remain SHAPE-015; mark-to-mark compatibility remains SHAPE-022.
+Safe streaming cuts remain SHAPE-015. SHAPE-022 subsequently fixed the
+mark-to-mark predecessor-selection defect; broader compatibility remains separate.
 
 **Expected behavior and basis:** a `liga` scope must not disable an otherwise
 enabled `kern` relationship across its boundary. Event settings are independently
@@ -1082,8 +1053,8 @@ Cursive partner selection and reverse traversal redesign are outside this fix.
 carry, both flush modes) are promoted unchanged. The four tiny/forced event
 comparisons retain their complete oracle under SHAPE-015. The original matrix
 now has 224 ordinary and 116 tagged comparisons. Eleven new independent
-HarfBuzz 15 captures add forty passing comparisons plus four tagged SHAPE-022
-comparisons; see [SCOPES.md](../internal/hbcmp/testdata/text/SCOPES.md).
+HarfBuzz 15 captures initially added forty passing comparisons and four tagged
+SHAPE-022 comparisons. All 44 now pass after SHAPE-022; see [SCOPES.md](../internal/hbcmp/testdata/text/SCOPES.md).
 Two existing normalization/range captures now also pass through `ShapeEvents`.
 Lower tests cover all twelve contextual format paths, ignored marks, mask
 inheritance through nested edits and clones, shared engine hooks, original
@@ -1091,9 +1062,10 @@ coordinates after compaction, stable random choices across combined carry rebuil
 failure.
 
 **Remaining limitations:** SHAPE-015 safe flushing/capacity and SHAPE-021 engine
-precedence remain separate. The new mark-range capture exposes an independent
-mark-to-mark compatibility defect, SHAPE-022; its complete expectation remains
-tagged. Hebrew internal ordering and other script-specific work stay deferred.
+precedence remain separate. The new mark-range capture exposed the independent
+SHAPE-022 predecessor-selection defect, subsequently fixed with its complete
+expectation promoted unchanged. Broader attachment compatibility, Hebrew
+internal ordering and other script-specific work stay deferred.
 
 **Recorded implementation verification (2026-11-01):** the full ordinary suite,
 targeted layout/shaping/HarfBuzz race tests, build, and vet passed. Discovery
@@ -1275,8 +1247,10 @@ maps, partial errors, component clamping and source/mask/position correspondence
 
 **Boundaries:** this builds on accepted SHAPE-005/007/008/017 without reopening
 them. SHAPE-016 subsequently removed feature-event context barriers within each
-buffered carry. Streaming cuts (SHAPE-015), mark-to-mark compatibility (SHAPE-022),
-and general script-specific ligature matching policy remain outside this fix. The Hebrew synthetic case verifies logical RTL
+buffered carry. SHAPE-022 subsequently fixed mark-to-mark predecessor selection.
+Streaming cuts (SHAPE-015), broader attachment compatibility, and general
+script-specific ligature matching policy remain outside this fix.
+The Hebrew synthetic case verifies logical RTL
 positioning, not complete Hebrew shaping conformance. No existing oracle or
 fixture bytes changed, and no remaining tagged assertion was weakened.
 
@@ -1366,3 +1340,59 @@ vet also passed during implementation.
 remain open. Arabic's registered pause schedule is now honored by the shared
 planner, but passing existing Arabic tests does not establish Arabic/Syriac
 conformance. No resolved or deferred finding was reopened.
+
+### SHAPE-022 — Mark-to-mark attachment crosses an intervening base
+
+**Status:** fixed; accepted 2026-11-01 within the predecessor-selection scope.
+SHAPE-007 and SHAPE-019 are not reopened; broader attachment compatibility
+remains separate.
+
+**Original reproduction:** Gentium `x\u0301x\u0301`, Latn/en/LTR,
+`mark=1,mark[1:3]=0`, whole-input buffers `5/1/6`. Equivalent events push
+`mark=0` at scalar 1 and pop at 3. The first initial group retains mark positioning;
+the second starts inside the disabled range. Previously both APIs produced the
+correct four GIDs and clusters, but the final accent had offsets `(-999,360)`
+instead of HarfBuzz's `(0,0)`. All advances and the first accent's `(31,0)` matched.
+
+**Cause and focused fix:** `gposLookupType6Fmt1` searched backward until it found
+a glyph in Mark2Coverage, passing over nonmatching bases and marks. It now
+examines the nearest eligible predecessor once. That predecessor must be a
+GDEF-classified mark and belong to Mark2Coverage; failure does not continue
+searching for an earlier covered mark. The target search clears the ordinary
+IgnoreBaseGlyphs/IgnoreLigatures/IgnoreMarks bits in a local context copy, so
+bases and ligatures remain barriers. Mark filtering, attachment-class filtering,
+and input masks remain active; the lookup's original flags and start checks
+are unchanged. A filtered-out mark can still be skipped, while an eligible
+but disabled or uncovered predecessor blocks attachment.
+
+This follows the predecessor-selection portion of
+[HarfBuzz's MarkMarkPosFormat1 implementation](https://github.com/harfbuzz/harfbuzz/blob/main/src/OT/Layout/GPOS/MarkMarkPosFormat1.hh).
+Anchor selection, arithmetic, finalization, and glyph/cluster metadata are
+unchanged. Broader ligature/component compatibility checks remain separate;
+this fix does not claim complete mark-to-mark conformance or Unicode fallback
+classification when GDEF is missing.
+
+**Regressions:** `TestSHAPE022MarkAttachmentCrossesBase` promotes all four
+original comparisons unchanged (both APIs, both flush modes); the tagged wrapper
+is removed. The eleven scope captures now yield 44 ordinary comparisons. The
+separate `mkmk=0` control is retained. `TestSHAPE022MarkToMarkPredecessor` covers
+adjacent/nearest marks, base and ligature barriers despite ignore flags,
+unclassified and covered nonmarks, uncovered intervening marks, mark filtering,
+disabled inputs, and missing predecessors, each directly and through extension
+lookups. Nonmatches preserve cursor/positions; successful matches verify the
+parsed TTX anchors and preserve advances, other positions and lookup flags.
+The existing synthetic anchor-placement test now uses an actual GDEF mark as its
+type-6 target, preserving every placement assertion and parsed anchor value.
+
+**Recorded implementation verification (2026-11-01):** the full ordinary suite,
+targeted layout/shaping/HarfBuzz race suite, build, and vet passed. Read-only
+recapture verified all eleven scope oracles;
+no captured output or font bytes changed. Discovery retains six expected failing
+top-level groups, removing only SHAPE-022, with no unexpected passing known-bug
+groups, build errors, panics, or timeouts. Streaming safety (SHAPE-015), feature
+precedence (SHAPE-021), Hebrew ordering, and broader attachment compatibility
+remain outside this change.
+
+```sh
+go test ./otlayout ./internal/hbcmp -run '^TestSHAPE022' -count=1
+```

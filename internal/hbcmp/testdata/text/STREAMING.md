@@ -180,7 +180,7 @@ output is rejected; other cases cannot silently acquire empty expectations.
 # Ordinary tests, including 224 matrix executions and ten empty-input checks:
 go test ./internal/hbcmp -count=1 -timeout=30s
 
-# Complete discovery suite: seven failing top-level groups, including SHAPE-015 and SHAPE-022.
+# Complete discovery suite: six failing top-level groups, including SHAPE-015.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=30s
 
 # Observe consumption/emission for the promoted whole-input scope regression:
@@ -192,7 +192,8 @@ python3 testdata/scripts/build_streaming_font.py  # recorded FontTools version r
 ```
 
 The ordinary full suite passes. One tagged matrix group covers SHAPE-015
-(stream context/capacity); SHAPE-022 is tracked separately in [SCOPES.md](SCOPES.md).
+(stream context/capacity). The separate [scope corpus](SCOPES.md) now has all
+44 comparisons passing after SHAPE-022.
 The obsolete SHAPE-016 wrapper is removed. SHAPE-018 forward-scan cells were promoted
 or retained under SHAPE-015 as described above. The remaining cells
 are statically assigned by `streamingFinding`; no outcome-driven skip or buggy

@@ -49,6 +49,7 @@ func TestMarkAnchorPlacement(t *testing.T) {
 			lookup := graph.Lookup(0)
 			node := lookup.Subtable(0)
 			lookup.Flag = 0
+			target := ot.GlyphIndex(18)
 			if kind == AttachMarkToMark {
 				// Reuse parsed anchor records (including their private offsets) in
 				// an isolated type-6 lookup; do not alter the font's backing bytes.
@@ -56,11 +57,14 @@ func TestMarkAnchorPlacement(t *testing.T) {
 				lookup.Type = ot.MaskGPosLookupType(ot.GPosLookupTypeMarkToMark)
 				node.LookupType = lookup.Type
 				node.GPos = &ot.GPosLookupPayload{MarkToMarkFmt1: &ot.GPosMarkToMarkFmt1Payload{
-					Mark2Coverage: p.BaseCoverage, MarkClassCount: p.MarkClassCount,
+					Mark2Coverage: node.Coverage, MarkClassCount: p.MarkClassCount,
 					Mark1Records: p.MarkRecords, Mark2Records: p.BaseRecords,
 				}}
+				// The synthetic type-6 target must be a GDEF mark. Reuse the
+				// parsed base anchor records, keeping the same offset expectations.
+				target = 19
 			}
-			st := NewBufferState(GlyphBuffer{18, 19}, NewPosBuffer(2))
+			st := NewBufferState(GlyphBuffer{target, 19}, NewPosBuffer(2))
 			st.Index = 1
 			st.Pos[0].XOffset, st.Pos[0].YOffset = 41, 13
 			st.Pos[1].XOffset, st.Pos[1].YOffset = 99, -88
@@ -90,7 +94,7 @@ func TestMarkAnchorPlacement(t *testing.T) {
 				t.Fatal("later placement was lost")
 			}
 			before := append(PosBuffer(nil), st.Pos...)
-			st.Index = 0 // start has no mark coverage: no mutation
+			st.Index = 0 // no eligible prior attachment target: no mutation
 			_, applied, _, err = applyLookupConcrete(lookup, graph, feat, st, 0, font.Layout.GDef, env)
 			if err != nil || applied || !reflect.DeepEqual(st.Pos, before) {
 				t.Fatalf("nonmatch changed positions: %v", err)

@@ -28,9 +28,10 @@ SHAPE-012/013 also promote three unchanged original records:
 cover two Hebrew ordering failures and the deferred no-GPOS parser limitation.
 
 The [scope corpus](SCOPES.md) adds eleven independent records in
-[scopes.json](scopes.json): forty ordinary comparisons and four tagged SHAPE-022
-comparisons, through both APIs and both flush modes. SHAPE-016 is resolved within
-each buffered carry; safe cuts and mark-to-mark compatibility remain separate.
+[scopes.json](scopes.json): 44 ordinary comparisons through both APIs and both
+flush modes after the SHAPE-022 promotion. SHAPE-016 is resolved within each
+buffered carry, and SHAPE-022 resolves mark-to-mark predecessor selection.
+Safe cuts and broader attachment compatibility remain separate.
 
 ## Files and execution
 

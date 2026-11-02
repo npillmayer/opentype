@@ -7,7 +7,9 @@ import (
 	"github.com/npillmayer/opentype/otshape"
 )
 
-func runFeatureScopeBaselines(t *testing.T, finding string) {
+// Groups keep the original SHAPE-016 cases and promoted SHAPE-022 regression
+// independently addressable. Every group now belongs to the ordinary suite.
+func runFeatureScopeBaselines(t *testing.T, group string) {
 	assignments := map[string]string{
 		"scope_liga_second_off": "", "scope_liga_first_off": "",
 		"scope_kern_second_off": "", "scope_kern_first_off": "",
@@ -16,7 +18,7 @@ func runFeatureScopeBaselines(t *testing.T, finding string) {
 		"scope_nested_ligatures": "", "scope_hebrew_group": "",
 	}
 	for _, c := range loadTextBaselineFile(t, "testdata/text/scopes.json", assignments, nil) {
-		if assignments[c.ID] != finding {
+		if assignments[c.ID] != group {
 			continue
 		}
 		for _, entry := range []string{"runes", "events"} {
@@ -31,3 +33,7 @@ func runFeatureScopeBaselines(t *testing.T, finding string) {
 }
 
 func TestSHAPE016FeatureScopes(t *testing.T) { runFeatureScopeBaselines(t, "") }
+
+func TestSHAPE022MarkAttachmentCrossesBase(t *testing.T) {
+	runFeatureScopeBaselines(t, "022")
+}

@@ -5,6 +5,33 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## SHAPE-022 resolution (2026-11-01)
+
+GPOS mark-to-mark attachment now considers only the nearest eligible predecessor,
+which must be a GDEF mark in Mark2Coverage. Ordinary ignore flags cannot hide an
+intervening base/ligature; mark filtering and feature masks still apply. Anchor
+arithmetic and finalization remain unchanged. Broader ligature/component
+compatibility and missing-GDEF Unicode classification are outside this fix.
+
+Four full HarfBuzz comparisons are promoted unchanged into
+`TestSHAPE022MarkAttachmentCrossesBase`: both public APIs and both flush modes.
+The eleven scope captures now yield 44 ordinary comparisons, including the
+separate `mkmk=0` control. `TestSHAPE022MarkToMarkPredecessor` covers positive and
+negative predecessor selection, filtering, masks, unclassified/covered nonmarks,
+state preservation and extensions. The existing anchor-placement unit fixture
+now supplies a GDEF mark as the synthetic type-6 target; its parsed-anchor and
+placement assertions are unchanged.
+
+Recorded implementation verification: the full ordinary suite, targeted
+layout/shaping/HarfBuzz race tests, build, and vet passed. Read-only recapture
+reproduced all eleven scope captures.
+Discovery retains six expected failing top-level groups, removing only SHAPE-022,
+with no unexpected passing known-bug groups or infrastructure failures.
+The accepted fix is archived in
+[Resolved findings](SHAPING_FINDINGS.md#shape-022--mark-to-mark-attachment-crosses-an-intervening-base)
+with its reproduction, scope and regression evidence. The historical SHAPE-016 counts below
+describe its original verification, before this promotion.
+
 ## SHAPE-016 resolution (2026-11-01)
 
 Feature events now share normalization, a combined plan/mask layout, and lookup
@@ -14,9 +41,10 @@ event comparisons move to SHAPE-015 with their full expectations retained. The
 original 340-cell streaming matrix now has 224 ordinary and 116 tagged cases.
 
 [SCOPES.md](../internal/hbcmp/testdata/text/SCOPES.md) describes eleven new
-independent HarfBuzz 15 captures: ten pass through both APIs and both flush modes
-(forty comparisons). One exposes SHAPE-022 mark-to-mark attachment across a base
-and remains tagged in four comparisons. The two existing normalization captures
+independent HarfBuzz 15 captures: ten initially passed through both APIs and both
+flush modes (forty comparisons). The eleventh exposed SHAPE-022; its four
+comparisons subsequently passed unchanged, bringing the total to 44 ordinary
+comparisons. The two existing normalization captures
 with indexed ranges now also have equivalent `ShapeEvents` recipes; the original
 fourteen-record normalization corpus has 28 ordinary comparisons. No old capture
 or assertion changed.
@@ -1019,7 +1047,7 @@ continue to pass, but expanding their coverage is not a current priority.
    on limit exhaustion, and exact output across boundaries in long inputs at
    supported buffer sizes. Tiny-buffer acceptance is not a future requirement.
    SHAPE-016 adds scoped events inside initial groups and equivalent indexed
-   ranges; SHAPE-022 retains the independent mark-to-mark failure. Further
+   ranges; SHAPE-022 now prevents mark-to-mark attachment across a base. Further
    coverage can add scopes inside substitution-merged clusters, additional
    feature values, longer combining sequences, and broader buffer sweeps.
 

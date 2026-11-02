@@ -49,11 +49,10 @@ findings, without production fixes or new external test dependencies.
 
 ## Test location and execution
 
-The remaining shared-API reproduction (SHAPE-004) lives in
-[`otshape/otcore/shared_api_knownbugs_test.go`](../otshape/otcore/shared_api_knownbugs_test.go),
-in external package `otcore_test`. They exercise exported `NewShaper`/`Shape`
-and engine hooks. This keeps the base `otshape` tests independent of concrete
-engine imports. The ordinary [`shared_api_test.go`](../otshape/otcore/shared_api_test.go) now
+The SHAPE-004 selection regression lives in
+[`otshape/otcore/engine_selection_test.go`](../otshape/otcore/engine_selection_test.go),
+in external package `otcore_test`. It exercises both exported shaping APIs.
+The ordinary [`shared_api_test.go`](../otshape/otcore/shared_api_test.go) now
 contains SHAPE-001/002/011 and the shared fixture/assertion helpers;
 [`alternate_values_test.go`](../otshape/otcore/alternate_values_test.go) contains
 the ordinary SHAPE-003/018 value/range/scope regressions. These tests reuse
@@ -74,14 +73,14 @@ Run from the repository root:
 # Ordinary regression suite: must pass.
 go test ./... -count=1
 
-# Discovery suite: twelve failing top-level tests across the two packages.
+# Discovery suite: expected failures remain under SHAPE-014 and SHAPE-015.
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1
 
 # Fixed mask regression, covering both public entry points.
 go test ./otshape/otcore -run '^TestSHAPE001' -count=1 -v
 
-# Inspect an unresolved shared-API finding.
-go test -tags shaping_knownbugs ./otshape/otcore -run '^TestKnownBugSHAPE004' -count=1 -v
+# Engine-selection regression, covering both public entry points.
+go test ./otshape/otcore -run '^TestSHAPE004' -count=1 -v
 ```
 
 Original shared-API batch verification baseline: production source at
@@ -98,7 +97,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | ID | Status | Finding |
 | --- | --- | --- |
 | [SHAPE-002](#shape-002--feature-ranges-use-chunk-local-coordinates) | fixed (agreed scope) | Ranges use original scalar anchors across compaction and normalization |
-| [SHAPE-004](#shape-004--zero-confidence-engines-are-selected) | reproduced | Engines reporting no match can still shape input |
 | [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | fixed (contract resolved) | Logical sink order agreed; plain Hebrew passes after explicit oracle adaptation |
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
 | [SHAPE-015](#shape-015--streaming-cuts-lose-shaping-context) | reproduced | Buffer cuts change ligatures, pair positioning, and normalization |
@@ -107,6 +105,7 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
 [SHAPE-002 — source ranges](#shape-002--feature-ranges-use-chunk-local-coordinates),
 [SHAPE-003 — alternate selection](#shape-003--feature-values-do-not-select-alternates),
+[SHAPE-004 — engine selection](#shape-004--zero-confidence-engines-are-selected),
 [SHAPE-005 — GDEF classification](#shape-005--gdef-classification-prevents-ignoremarks),
 [SHAPE-006 — contextual continuation](#shape-006--contextual-lookup-revisits-matched-input),
 [SHAPE-007 — final mark positioning](#shape-007--mark-attachments-do-not-resolve-to-origins),
@@ -174,30 +173,6 @@ top-level tests**. The full ordinary suite passes; all new failures are output
 assertions, with complete input consumption, nil shaping errors, and no panic
 or timeout. No production behavior changed. Each new finding below uses this
 verification baseline.
-
-## SHAPE-004 — Zero-confidence engines are selected
-
-**Status:** reproduced. **Test:** `TestKnownBugSHAPE004RejectNonmatchingEngines`.
-
-**Expected behavior and basis:** an engine returning `ShaperConfidenceNone`
-reports no match. If all supplied engines return it, `Shape` should return
-`ErrNoMatchingShaper` before consuming input or emitting output, consistent
-with that error's documented purpose and selection preceding execution.
-
-**Reproduction:** shape one fixture rune using a minimal test engine whose
-`Match` returns a configurable confidence. The positive control returns
-`ShaperConfidenceLow`; failure cases supply either one or two engines returning
-`ShaperConfidenceNone`. Default buffer options are sufficient.
-
-**Observed:** the positive control emits GID 20 at cluster zero and passes.
-Both no-match cases return nil, consume the input, and emit one glyph. A caller
-cannot rely on the error to detect unsupported engine selection.
-
-**Implementation evidence:** `selectShapingEngine` in
-[shape_api.go](../otshape/shape_api.go) rejects scores below zero, but accepts
-zero; `ShaperConfidenceNone` is zero in [engine_api.go](../otshape/engine_api.go).
-
-**Reproduce:** use the individual command above with `SHAPE004`.
 
 ## SHAPE-009 — RTL output order differs from HarfBuzz
 
@@ -475,6 +450,54 @@ No captured expectations were changed or weakened.
 
 ```sh
 go test ./otlayout ./otshape/... ./internal/hbcmp -run 'SHAPE003|ApplyFeatureAlternateValues|AOTSGSUBBaselines|OutputBoundsSelection' -count=1
+```
+
+### SHAPE-004 — Zero-confidence engines are selected
+
+**Status:** fixed; accepted 2026-11-02. **Regression:**
+`TestSHAPE004EngineSelection` in
+[engine_selection_test.go](../otshape/otcore/engine_selection_test.go).
+The original rejection expectations and positive control are promoted into the
+ordinary suite.
+
+**Expected behavior and basis:** an engine returning `ShaperConfidenceNone`
+reports no match. If all supplied engines return it, both `Shape` and
+`ShapeEvents` return
+`ErrNoMatchingShaper` before consuming input or emitting output, consistent
+with that error's documented purpose and selection preceding execution.
+
+**Reproduction:** shape one fixture rune using a minimal test engine whose
+`Match` returns a configurable confidence. The positive control returns
+`ShaperConfidenceLow`; failure cases supply either one or two engines returning
+`ShaperConfidenceNone`. Default buffer options are sufficient.
+
+**Original observation:** the positive control emitted GID 20 at cluster zero.
+Both no-match cases returned nil, consumed the input, and emitted one glyph.
+`selectShapingEngine` rejected negative scores but accepted zero (`None`).
+
+**Fix:** reject scores at or below `ShaperConfidenceNone`. Positive-confidence
+ranking and lexicographic tie-breaking are unchanged. An empty candidate list
+still returns `ErrNoShaper`; `NewShaper` filters nil candidates, so an all-nil
+list has the same result. Nonempty lists with no positive match return
+`ErrNoMatchingShaper` before creating an engine, reading input or writing output.
+
+**Coverage:** nine cases through both APIs retain the original no-match and
+positive-control expectations and add negative/nil/empty candidates, a mixed
+list, highest-confidence selection and name-based ties. Successful shaping
+still emits fixture GID 20 at cluster zero. Event carries may instantiate the
+selected engine again; tests verify every created instance belongs to the winner. The
+synthetic SHAPE-008 mark-advance policy test now uses an explicitly matching
+core-derived probe: its Hebrew/Arabic RTL cases previously relied on accepting
+the core engine's zero score. Glyph, advance and attachment expectations are
+unchanged; production core matching policy is unchanged.
+
+**Recorded implementation verification (2026-11-02):** `go test ./... -count=1`
+passed. Tagged discovery across `./otshape/... ./internal/hbcmp` retained only
+the two expected failing groups, SHAPE-014/015, with no unexpected known-bug
+passes, build failures, panics or timeouts. See [TESTING.md](TESTING.md).
+
+```sh
+go test ./otshape/otcore -run '^TestSHAPE004' -count=1 -v
 ```
 
 ### SHAPE-005 — GDEF classification prevents IgnoreMarks

@@ -13,6 +13,16 @@ import (
 	"golang.org/x/text/unicode/bidi"
 )
 
+// This synthetic test exercises shared script-dependent advance policy, not
+// concrete script-engine selection. Core deliberately rejects non-Latin RTL;
+// the probe explicitly accepts these contexts instead of relying on SHAPE-004.
+type markAdvancePolicyEngine struct{ otcore.Shaper }
+
+func (markAdvancePolicyEngine) Match(otshape.SelectionContext) otshape.ShaperConfidence {
+	return otshape.ShaperConfidenceLow
+}
+func (e markAdvancePolicyEngine) New() otshape.ShapingEngine { return e }
+
 func TestGDEFMarkAdvancesPublicAPIs(t *testing.T) {
 	for _, script := range []string{"Latn", "Hebr", "Arab"} {
 		for _, events := range []bool{false, true} {
@@ -28,7 +38,7 @@ func TestGDEFMarkAdvancesPublicAPIs(t *testing.T) {
 						direction = bidi.RightToLeft
 					}
 					params := otshape.Params{Font: font, Script: language.MustParseScript(script), Language: language.English, Direction: direction, Features: []otshape.FeatureRange{{Feature: ot.T("test"), On: true}}}
-					sh := otshape.NewShaper(otcore.New())
+					sh := otshape.NewShaper(markAdvancePolicyEngine{})
 					sink := &glyphCollector{}
 					opts := otshape.BufferOptions{HighWatermark: 5, LowWatermark: 1, MaxBuffer: 6}
 					var err error

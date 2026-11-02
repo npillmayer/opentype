@@ -209,7 +209,7 @@ func selectShapingEngine(candidates []ShapingEngine, ctx SelectionContext) (Shap
 			continue
 		}
 		score := sh.Match(ctx)
-		if score < 0 {
+		if score <= ShaperConfidenceNone {
 			continue
 		}
 		if best == nil || score > bestScore || (score == bestScore && sh.Name() < best.Name()) {

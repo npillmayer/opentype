@@ -180,7 +180,7 @@ output is rejected; other cases cannot silently acquire empty expectations.
 # Ordinary tests, including 224 matrix executions and ten empty-input checks:
 go test ./internal/hbcmp -count=1 -timeout=30s
 
-# Complete discovery suite: three failing top-level groups (SHAPE-004/014/015).
+# Complete discovery suite: two failing top-level groups (SHAPE-014/015).
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=30s
 
 # Observe consumption/emission for the promoted whole-input scope regression:

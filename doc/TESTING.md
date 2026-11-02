@@ -5,6 +5,22 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## SHAPE-004 resolution (2026-11-02)
+
+Engine selection now skips scores at or below `ShaperConfidenceNone`.
+`TestSHAPE004EngineSelection` promotes the original rejection cases and positive
+control, checking both APIs. Nine cases per API verify no effects on rejection,
+negative/nil/empty candidates, mixed candidates, positive ranking and name ties.
+The tagged shared-API wrapper is removed. The synthetic mark-advance policy
+probe now explicitly matches its script contexts instead of depending on the
+core engine's zero-confidence acceptance; all output expectations are unchanged.
+
+Recorded implementation verification: `go test ./... -count=1` passed. Tagged discovery across
+`./otshape/... ./internal/hbcmp` retains only SHAPE-014/015 failures, with no
+unexpected known-bug passes, build failures, panics or timeouts. The accepted
+fix is archived in
+[Resolved findings](SHAPING_FINDINGS.md#shape-004--zero-confidence-engines-are-selected).
+
 ## SHAPE-023 resolution (2026-11-02)
 
 Hebrew now sorts with modified combining classes and uses the same classes for
@@ -437,7 +453,7 @@ within the same Go module.
 | [`otquery/`](../otquery/) | Supplies cmap lookup, glyph metrics, and font/script queries. Tests cover mapping, metrics, and query errors; failures can appear as incorrect glyphs or advances downstream. |
 | [`otlayout/`](../otlayout/) | Executes GSUB/GPOS features and lookups on glyph/position buffers. Tests isolate substitution and positioning, nested lookups, edits, attachment remapping, errors, glyph bounds, and execution limits. |
 | [`otshape/`](../otshape/) | Owns the public API, engine selection, normalization, feature plans/masks, streaming, and output. Tests cover orchestration, hooks, ranges, events, buffer correspondence, partial progress, and flushing. The godoc examples in `example_test.go` print output that must match the HarfBuzz captures `latin_office_liga_on` and `latin_office_liga_off` from `internal/hbcmp/testdata/text/baselines.json`. |
-| [`otshape/otcore/`](../otshape/otcore/) | Generic engine. External-package tests exercise the public API with GSUB/GPOS fixtures, including single/pair adjustments and attachment metadata. `shared_api_knownbugs_test.go` adds opt-in reproductions for shared API findings. |
+| [`otshape/otcore/`](../otshape/otcore/) | Generic engine. External-package tests exercise the public API with GSUB/GPOS fixtures, including single/pair adjustments and attachment metadata. `engine_selection_test.go` checks SHAPE-004 rejection and positive selection through both APIs. |
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |

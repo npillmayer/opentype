@@ -69,11 +69,13 @@ Current selection behavior in [shape_api.go](../otshape/shape_api.go):
 3. Even a single engine is scored. Highest score wins; equal scores use the
    lexicographically smaller name, with the first candidate retained for equal
    names.
-4. Negative scores are skipped. **Known bug:** zero (`None`) is accepted, so an
-   explicitly nonmatching engine can still win. `ErrNoMatchingShaper` does not
-   currently protect the ordinary all-`None` case.
-5. The winner's `New` is called once per shaping request. If it returns nil,
-   the candidate itself is reused.
+4. Scores at or below `ShaperConfidenceNone` are skipped. If no candidate
+   matches, both APIs return `ErrNoMatchingShaper` before creating an engine,
+   consuming input or emitting output
+   ([SHAPE-004, resolved](SHAPING_FINDINGS.md#shape-004--zero-confidence-engines-are-selected)).
+5. The winner's `New` initializes the selected engine. Event carries may create
+   additional instances for their combined plans. If `New` returns nil, the
+   candidate itself is reused.
 
 Ordinary `Shape` reuses that engine and plan across streaming cycles.
 `ShapeEvents` additionally calls `New` for each combined carry plan, then runs

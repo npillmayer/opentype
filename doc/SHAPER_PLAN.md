@@ -73,9 +73,9 @@ new plan for each push; pop restores a stored frame.
 The current `compile(planRequest)` sequence is:
 
 1. Resolve script/language tags when absent and initialize internal policy/hooks.
-2. Create a planner seeded with base defaults and user toggles.
-3. Call optional `CollectFeatures`, then `OverrideFeatures`.
-4. Combine user ranges with engine mask requests and allocate masks.
+2. Create a planner seeded with base defaults.
+3. Call optional `CollectFeatures`, apply user settings, then call `OverrideFeatures`.
+4. Derive lookup-selection toggles and allocate masks from the resolved settings.
 5. Extract features independently from GSUB and GPOS.
 6. Compile each table with its recorded stage assignments and pause boundaries.
 7. Compute unresolved-feature fallback needs and a resolved-feature view.
@@ -106,7 +106,10 @@ The extracted feature slice reserves slot zero for the required feature.
 `compileTableProgram` activates required features, available defaults, and user
 toggles. Required features cannot be disabled and use an unconditional mask.
 They join stage zero unless their tag was explicitly registered in another stage.
-Engine/user setting precedence otherwise remains the separate SHAPE-021 issue.
+SHAPE-021 resolves settings in collect → user → override order. User ranges
+inherit explicit collected defaults outside their bounds. Engine overrides are
+tag-wide, superseding user ranges and scopes as well as globals. Shadowed
+settings are discarded before mask allocation; stage registration stays separate.
 
 Within each stage, lookup indexes are sorted and shared lookups execute once.
 Duplicates in different stages remain separate executions. Mask unions preserve
@@ -204,7 +207,7 @@ policy does not imply global strict mode or general Arabic shaping correctness.
 
 The old delivery steps for plan compilation, staged execution, edit propagation,
 hook wiring, and basic GPOS tests have implementations. Remaining work includes
-engine/user setting precedence (SHAPE-021), public policy wiring,
+public policy wiring,
 script-specific positioning, and context-safe streaming.
 
 Event-plan state also needs isolation: compilation calls `InitPlan` repeatedly

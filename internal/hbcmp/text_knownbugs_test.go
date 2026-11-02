@@ -7,18 +7,13 @@ import "testing"
 // Cluster level 0 and logical sink order are agreed contracts. The ordinary
 // runner now owns the passing plain-shalom regression (SHAPE-009 resolved).
 
-// Historical SHAPE-010 reproduction: composition, glyph count, clusters and
-// per-glyph positions now agree. The separate Hebrew mark-ordering follow-up
-// still blocks full parity at the initial shin cluster; retain the full oracle.
-func TestKnownBugSHAPE010HebrewComposition(t *testing.T) {
-	t.Run("hebrew_shalom_pointed", func(t *testing.T) { runTextBaselineID(t, "hebrew_shalom_pointed") })
-}
-
-// Historical SHAPE-007 reproduction: offsets now agree with HarfBuzz, but
-// internal mark order still differs (SHAPE-011 follow-up). Keep the complete
-// oracle and this test tagged until that remaining difference is resolved.
-func TestKnownBugSHAPE007HebrewMarkOffsets(t *testing.T) {
-	runTextBaselineID(t, "hebrew_shin_pointed")
+// SHAPE-023 owns the remaining internal Hebrew mark-order differences.
+// Keep both complete oracles; composition, clusters and per-glyph positioning
+// were fixed under SHAPE-007/010/011 and are not reopened here.
+func TestKnownBugSHAPE023HebrewMarkOrdering(t *testing.T) {
+	for _, id := range []string{"hebrew_shin_pointed", "hebrew_shalom_pointed"} {
+		t.Run(id, func(t *testing.T) { runTextBaselineID(t, id) })
+	}
 }
 
 // The normal parser deliberately requires GPOS. This baseline records that

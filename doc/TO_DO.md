@@ -153,9 +153,10 @@ Follow the overall ordering in [TESTING.md](TESTING.md).
 plans, engine initialization, group-start ranges, matched-input masks and their
 focused Latin/Hebrew regressions are implemented and accepted; see the
 [archived resolution](SHAPING_FINDINGS.md#shape-016--feature-scopes-sever-unrelated-lookup-context). Remaining
-work is safe buffer boundaries (SHAPE-015), engine precedence (SHAPE-021), and
-broader attachment compatibility. SHAPE-022 subsequently fixed the focused
-mark-to-mark predecessor-selection defect. Do not restart a broad coverage effort or
+work is safe buffer boundaries (SHAPE-015) and broader attachment compatibility. SHAPE-022 subsequently fixed the focused
+mark-to-mark predecessor-selection defect. SHAPE-021 precedence is fixed and
+accepted as of 2026-11-02; see its
+[archived contract](SHAPING_FINDINGS.md#shape-021--engine-and-user-feature-settings-combine-as-off-wins). Do not restart a broad coverage effort or
 reopen accepted feature fixes from this historical task list.
 
 The original feature-scope tasks were:

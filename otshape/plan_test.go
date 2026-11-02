@@ -589,12 +589,13 @@ func TestEngineFeatureMaskAllocationStable(t *testing.T) {
 	// Compile independent mask layouts in varying registration orders. User
 	// masks keep precedence; enabled engine-only features get stable tag order.
 	for attempt := 0; attempt < 32; attempt++ {
-		planner := newPlanFeaturePlanner(nil, SelectionContext{}, nil, user)
+		planner := newPlanFeaturePlanner(nil, SelectionContext{}, nil)
 		for i := range tags {
 			planner.EnableFeature(tags[(i+attempt)%len(tags)])
 		}
 		planner.DisableFeature(ot.T("kern"))
-		features := append(append([]FeatureRange(nil), user...), planner.maskFeatures()...)
+		planner.applyUserFeatures(user)
+		features := planner.maskFeatures()
 		layout, err := compileUserFeatureMasks(features)
 		if err != nil {
 			t.Fatal(err)

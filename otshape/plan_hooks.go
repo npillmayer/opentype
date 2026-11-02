@@ -20,10 +20,11 @@ type planFeaturePlanner struct {
 	hooks          *planHookSet
 	gsubDefaults   []ot.Tag
 	gposDefaults   []ot.Tag
-	togglesByTag   map[ot.Tag]userFeatureToggle
+	settings       map[ot.Tag][]FeatureRange
 	flagsByTable   map[planTable]map[ot.Tag]FeatureFlags
-	maskValues     map[ot.Tag]uint32
-	baseMaskValues map[ot.Tag]struct{}
+	maskTags       map[ot.Tag]bool
+	userTags       []ot.Tag
+	userMentioned  map[ot.Tag]bool
 	gsubPauseHooks []pauseHookID
 	stagesByTable  map[planTable]map[ot.Tag]int
 }
@@ -32,25 +33,18 @@ func newPlanFeaturePlanner(
 	font *ot.Font,
 	selection SelectionContext,
 	hooks *planHookSet,
-	userFeatures []FeatureRange,
 ) *planFeaturePlanner {
-	baseMaskValues := make(map[ot.Tag]struct{}, len(userFeatures))
-	for _, f := range userFeatures {
-		if f.Feature != 0 {
-			baseMaskValues[f.Feature] = struct{}{}
-		}
-	}
 	return &planFeaturePlanner{
-		font:           font,
-		selection:      selection,
-		hooks:          hooks,
-		gsubDefaults:   append([]ot.Tag(nil), defaultGSUBFeatures...),
-		gposDefaults:   append([]ot.Tag(nil), defaultGPOSFeatures...),
-		togglesByTag:   collectUserFeatureToggles(userFeatures),
-		flagsByTable:   map[planTable]map[ot.Tag]FeatureFlags{planGSUB: {}, planGPOS: {}},
-		maskValues:     make(map[ot.Tag]uint32),
-		stagesByTable:  map[planTable]map[ot.Tag]int{planGSUB: {}, planGPOS: {}},
-		baseMaskValues: baseMaskValues,
+		font:          font,
+		selection:     selection,
+		hooks:         hooks,
+		gsubDefaults:  append([]ot.Tag(nil), defaultGSUBFeatures...),
+		gposDefaults:  append([]ot.Tag(nil), defaultGPOSFeatures...),
+		settings:      make(map[ot.Tag][]FeatureRange),
+		flagsByTable:  map[planTable]map[ot.Tag]FeatureFlags{planGSUB: {}, planGPOS: {}},
+		maskTags:      make(map[ot.Tag]bool),
+		stagesByTable: map[planTable]map[ot.Tag]int{planGSUB: {}, planGPOS: {}},
+		userMentioned: make(map[ot.Tag]bool),
 	}
 }
 
@@ -75,15 +69,8 @@ func (p *planFeaturePlanner) AddFeature(tag ot.Tag, flags FeatureFlags, value ui
 	arg := 1
 	if value > 0 {
 		arg = int(value)
-		p.maskValues[tag] = value
 	}
-	p.togglesByTag[tag] = userFeatureToggle{
-		on:        true,
-		arg:       arg,
-		hasGlobal: true,
-		hasAnyOn:  true,
-		mentioned: true,
-	}
+	p.setEngineFeature(tag, true, arg, value > 0)
 }
 
 // recordStage is independent of setting precedence. Re-registering a feature
@@ -109,7 +96,7 @@ func (p *planFeaturePlanner) DisableFeature(tag ot.Tag) {
 		return
 	}
 	p.recordStage(tag)
-	p.togglesByTag[tag] = userFeatureToggle{on: false, arg: 0, hasGlobal: true, mentioned: true}
+	p.setEngineFeature(tag, false, 0, false)
 }
 
 func (p *planFeaturePlanner) AddGSUBPause(fn PauseHook) {
@@ -138,7 +125,7 @@ func (p *planFeaturePlanner) HasFeature(tag ot.Tag) bool {
 	if p == nil || tag == 0 {
 		return false
 	}
-	if t, ok := p.togglesByTag[tag]; ok && t.on {
+	if t := collectUserFeatureToggles(p.settings[tag])[tag]; t.on {
 		return true
 	}
 	return tagInSlice(p.gsubDefaults, tag) || tagInSlice(p.gposDefaults, tag)
@@ -158,11 +145,7 @@ func (p *planFeaturePlanner) toggles() map[ot.Tag]userFeatureToggle {
 	if p == nil {
 		return map[ot.Tag]userFeatureToggle{}
 	}
-	out := make(map[ot.Tag]userFeatureToggle, len(p.togglesByTag))
-	for tag, t := range p.togglesByTag {
-		out[tag] = t
-	}
-	return out
+	return collectUserFeatureToggles(p.featureSettings(false))
 }
 
 func (p *planFeaturePlanner) featureFlags(table planTable) map[ot.Tag]FeatureFlags {
@@ -177,29 +160,61 @@ func (p *planFeaturePlanner) featureFlags(table planTable) map[ot.Tag]FeatureFla
 	return out
 }
 
-func (p *planFeaturePlanner) maskFeatures() []FeatureRange {
-	if p == nil || len(p.maskValues) == 0 {
+// setEngineFeature is a tag-wide assignment. In OverrideFeatures it replaces
+// all user ranges as well as their global setting, without changing scheduling.
+func (p *planFeaturePlanner) setEngineFeature(tag ot.Tag, on bool, value int, needsMask bool) {
+	p.settings[tag] = []FeatureRange{{Feature: tag, On: on, Arg: value}}
+	// Disabled engine-only features need no mask. AddFeature(..., 0) retains
+	// its existing unmasked registration behavior unless the user mentions it.
+	p.maskTags[tag] = needsMask || p.userMentioned[tag]
+}
+
+// applyUserFeatures runs between CollectFeatures and OverrideFeatures. Ranges
+// inherit explicit collected defaults; global settings replace earlier intent.
+func (p *planFeaturePlanner) applyUserFeatures(features []FeatureRange) {
+	for _, f := range features {
+		if f.Feature == 0 {
+			continue
+		}
+		if !p.userMentioned[f.Feature] {
+			p.userMentioned[f.Feature] = true
+			p.userTags = append(p.userTags, f.Feature)
+		}
+		p.maskTags[f.Feature] = true
+		if f.Start == 0 && f.End == 0 {
+			p.settings[f.Feature] = nil
+		}
+		p.settings[f.Feature] = append(p.settings[f.Feature], f)
+	}
+}
+
+// featureSettings is the single source for lookup selection and glyph masks.
+// Keep user tags first, in request order, then engine-only tags in sorted order
+// so mask allocation remains independent of engine registration/map order.
+func (p *planFeaturePlanner) featureSettings(maskOnly bool) []FeatureRange {
+	if p == nil {
 		return nil
 	}
-	features := make([]FeatureRange, 0, len(p.maskValues))
-	for tag, v := range p.maskValues {
-		if _, exists := p.baseMaskValues[tag]; exists {
-			continue
+	tags := append([]ot.Tag(nil), p.userTags...)
+	var engineTags []ot.Tag
+	for tag := range p.settings {
+		if !p.userMentioned[tag] {
+			engineTags = append(engineTags, tag)
 		}
-		toggle, hasToggle := p.togglesByTag[tag]
-		if hasToggle && !toggle.on {
-			continue
-		}
-		features = append(features, FeatureRange{
-			Feature: tag,
-			On:      true,
-			Arg:     int(v),
-		})
 	}
-	// Mask bits are allocated in slice order. Keep engine-requested assignments
-	// stable across plans rather than exposing map iteration order in output masks.
-	sort.Slice(features, func(i, j int) bool { return features[i].Feature < features[j].Feature })
+	sort.Slice(engineTags, func(i, j int) bool { return engineTags[i] < engineTags[j] })
+	tags = append(tags, engineTags...)
+	var features []FeatureRange
+	for _, tag := range tags {
+		if !maskOnly || p.maskTags[tag] {
+			features = append(features, p.settings[tag]...)
+		}
+	}
 	return features
+}
+
+func (p *planFeaturePlanner) maskFeatures() []FeatureRange {
+	return p.featureSettings(true)
 }
 
 type resolvedFeatureView struct {

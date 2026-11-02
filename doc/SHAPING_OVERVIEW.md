@@ -136,7 +136,8 @@ Known limitations include:
 - Internal policy support is not fully wired to the public API; declared flags
   and hooks do not all have their intended behavior.
 - Event scopes share one combined plan per buffered run. Stateful engines must
-  return independent instances; engine/user precedence remains SHAPE-021.
+  return independent instances. SHAPE-021 now resolves engine defaults, user
+  settings, then whole-input engine overrides consistently for lookups and masks.
 
 [SHAPER_PLAN.md](SHAPER_PLAN.md) describes compilation, scheduling, flags,
 policies, and pauses as actually implemented. It supersedes the old proposals

@@ -12,7 +12,7 @@ import (
 func TestSHAPE020StageAssignment(t *testing.T) {
 	a, b, required := ot.T("aaaa"), ot.T("bbbb"), ot.T("reqd")
 	hooks := newPlanHookSet()
-	planner := newPlanFeaturePlanner(nil, SelectionContext{}, &hooks, nil)
+	planner := newPlanFeaturePlanner(nil, SelectionContext{}, &hooks)
 	planner.EnableFeature(a)
 	planner.AddGSUBPause(nil)
 	planner.AddGSUBPause(nil) // retain an empty stage
@@ -112,7 +112,7 @@ func TestSHAPE020DirectPauseExecution(t *testing.T) {
 	font := loadMiniOTFont(t, "gsub3_1_simple_f1.otf")
 	for _, stop := range []bool{false, true} {
 		hooks := newPlanHookSet()
-		planner := newPlanFeaturePlanner(font, SelectionContext{}, &hooks, nil)
+		planner := newPlanFeaturePlanner(font, SelectionContext{}, &hooks)
 		var seen []ot.GlyphIndex
 		cause := errors.New("pause stopped")
 		observe := func(ctx PauseContext) error {

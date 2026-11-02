@@ -53,4 +53,6 @@ The original `scope_pair` matrix capture remains in `streaming.json`: six event
 comparisons are promoted unchanged, and four tiny/forced cases retain the full
 expectation under SHAPE-015. The two existing normalization/range captures also
 now run as equivalent events. This batch does not claim safe streaming cuts,
-cursive correctness, engine precedence, or general script conformance.
+cursive correctness or general script conformance. Engine/user precedence was
+subsequently resolved under
+[SHAPE-021](../../../../doc/SHAPING_FINDINGS.md#shape-021--engine-and-user-feature-settings-combine-as-off-wins).

@@ -73,7 +73,11 @@ type BufferOptions struct {
 Call `(*Shaper).Shape(Params, RuneSource, GlyphSink, BufferOptions)`, or
 `(*Shaper).ShapeEvents(Params, InputEventSource, GlyphSink, BufferOptions)`.
 There is no current `ShapeOptions` type. Font, script, language, and direction
-are fixed for a request; events change feature scopes only.
+are fixed for a request; events change feature scopes only. Engine
+`CollectFeatures` defaults precede user settings; explicit `OverrideFeatures`
+assignments supersede all user ranges/scopes for that tag across the whole input
+(SHAPE-021). Scope pops restore enclosing user/default settings before this
+final override is applied.
 
 Enabled alternate values use one-based positive selections, zero for the first
 alternate, and negatives for random selection; oversized positives leave the
@@ -288,7 +292,7 @@ must return independent instances from `New`; nil retains the existing fallback
 to reuse. Request random seeds remain stable across combined-plan rebuilds.
 
 These changes resolve SHAPE-016's event barrier; SHAPE-015 still governs safe
-buffer cuts and SHAPE-021 still governs engine/user setting precedence.
+buffer cuts. SHAPE-021 now resolves engine/user setting precedence for both APIs.
 
 ## Guarantees, counterexamples, and tests
 
@@ -331,10 +335,8 @@ still requires:
    group-start policy now shared by ranges and feature events (SHAPE-011/016).
 3. Attachment/context retention across buffer cuts, and cursive finalization.
    Feature-event spans no longer require separate attachment-index rebasing.
-4. Engine/user feature precedence (SHAPE-021); stateful event engines now receive
-   the combined plan immediately before shaping its carry.
-5. Termination tests for empty shaped output and other length-changing cases.
-6. Independent expected outputs and boundary sweeps, not only comparison of two
+4. Termination tests for empty shaped output and other length-changing cases.
+5. Independent expected outputs and boundary sweeps, not only comparison of two
    configurations of the same implementation.
 
 Use [TESTING.md](TESTING.md) for commands and fixture conventions.

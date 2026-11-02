@@ -102,7 +102,7 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | fixed (contract resolved) | Logical sink order agreed; plain Hebrew passes after explicit oracle adaptation |
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
 | [SHAPE-015](#shape-015--streaming-cuts-lose-shaping-context) | reproduced | Buffer cuts change ligatures, pair positioning, and normalization |
-| [SHAPE-021](#shape-021--engine-and-user-feature-settings-combine-as-off-wins) | reproduced | Engine and user feature settings combine so that "off" wins, contrary to the agreed precedence |
+| [SHAPE-023](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order) | reproduced | Hebrew mark order differs despite matching glyphs, clusters and per-glyph positions |
 
 Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
@@ -121,6 +121,7 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-018 — forward lookup starts](#shape-018--forward-lookup-scans-bypass-feature-masks),
 [SHAPE-019 — ligature mark preservation](#shape-019--ligature-substitution-deletes-ignored-marks),
 [SHAPE-020 — stage lookup order](#shape-020--default-features-run-in-feature-order-instead-of-lookup-order),
+[SHAPE-021 — engine/user feature precedence](#shape-021--engine-and-user-feature-settings-combine-as-off-wins),
 and [SHAPE-022 — mark-to-mark predecessor selection](#shape-022--mark-to-mark-attachment-crosses-an-intervening-base).
 
 The original AOTS baseline batch added SHAPE-005/006 in the former
@@ -314,77 +315,44 @@ buffer contract; whole/lookahead/carry deletion comparisons are ordinary.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE015' -count=1 -timeout=30s -v
 ```
 
-## SHAPE-021 — Engine and user feature settings combine as "off wins"
+## SHAPE-023 — Hebrew combining marks use the wrong internal order
 
-**Status:** reproduced 2026-11-01. Originally an inspection note in the
-`otshape` code review, which predicted that engine settings replace user
-settings; the reproduction shows a different pattern. **Test:**
-`TestKnownBugSHAPE021FeaturePrecedence` in
-[feature_precedence_knownbugs_test.go](../internal/hbcmp/feature_precedence_knownbugs_test.go);
-ordinary controls in `TestFeaturePrecedence` in
-[feature_precedence_test.go](../internal/hbcmp/feature_precedence_test.go).
-They live in `internal/hbcmp` rather than with the other shared-API cases in
-`otshape/otcore`, because they reuse its HarfBuzz text captures and runner.
+**Status:** reproduced; numbered 2026-11-02 from the existing Hebrew mark-ordering
+follow-up. No shaping behavior or expected output changed. **Test:**
+`TestKnownBugSHAPE023HebrewMarkOrdering` in
+[text_knownbugs_test.go](../internal/hbcmp/text_knownbugs_test.go).
 
-**Contract decision (2026-11-01):** feature settings made in an engine's
-`CollectFeatures` are defaults that the user's feature settings override.
-`OverrideFeatures` runs after the user settings and may override them. This
-mirrors HarfBuzz's `collect_features` and `override_features` and the order of
-the two hooks.
+**Expected behavior and basis:** within each initial Hebrew cluster, logical
+shaping order should match the unchanged HarfBuzz level-0 oracle after the
+agreed reversal of HarfBuzz's final visual output. This is internal mark order,
+not paragraph bidi or a reason to change the logical sink contract (SHAPE-009).
 
-**Expected behavior and basis:** the contract above determines the effective
-`liga` setting; the expected output is the existing independent capture with
-that effective setting. `latin_office_liga_off` is HarfBuzz's output with `liga`
-disabled; `latin_office_liga_on` with it enabled, which is also HarfBuzz's
-default.
+**Reproductions:** Noto Sans Hebrew, Hebr/he/RTL, default features, whole-input
+buffering, using the complete existing records in `text/baselines.json`:
 
-**Reproduction:** Gentium Plus, `office`, Latn/en/LTR, whole-input buffers
-`7/1/8`, a test engine that wraps the core engine and calls `EnableFeature` or
-`DisableFeature` for `liga` in one hook:
+- `hebrew_shin_pointed`: U+05E9 U+05B8 U+05C1 (shin, qamats, shin dot).
+  All three glyphs have cluster 0 and correct per-glyph positions, but their
+  order is `[96,79,100]` instead of `[96,100,79]`.
+- `hebrew_shalom_pointed`: U+05E9 U+05B8 U+05C1 U+05DC U+05D5 U+05B9 U+05DD.
+  The same initial shin-cluster ordering difference remains. Its seven-glyph
+  count, vav/holam composition, clusters and per-glyph positions already match.
 
-| Engine hook | User setting | Contract result | Observed |
-| --- | --- | --- | --- |
-| `CollectFeatures` enables | none | on | on (pass) |
-| `CollectFeatures` enables | `liga=0` | off | off (pass) |
-| `CollectFeatures` disables | `liga=1` | on | **off**: 6 glyphs, no ligature |
-| `OverrideFeatures` disables | `liga=1` | off | off (pass) |
-| `OverrideFeatures` enables | `liga=0` | on | **off**: 6 glyphs, no ligature |
+**Attribution:** these are the former `TestKnownBugSHAPE007HebrewMarkOffsets`
+and `TestKnownBugSHAPE010HebrewComposition/hebrew_shalom_pointed` regressions,
+previously assigned to the unnumbered SHAPE-011 follow-up. They now form two
+subtests under SHAPE-023. The complete six-field assertions and captured records
+are unchanged. Combining the wrappers reduces the number of failing top-level
+test groups by one; it does not fix either reproduction.
 
-All calls return nil. Whoever disables the feature wins.
-
-**Implementation evidence:** two independent channels decide a feature, and
-both must allow it.
-
-- *Plan membership:* `planFeaturePlanner.AddFeature` and `DisableFeature` in
-  [plan_hooks.go](../otshape/plan_hooks.go) replace the user's toggle for the
-  tag; `compileTableProgram` in [plan_compile.go](../otshape/plan_compile.go)
-  includes a feature's lookups only if that toggle is on. An engine's
-  `DisableFeature` therefore removes the lookups regardless of the user, in
-  either hook.
-- *Glyph mask:* `compileUserFeatureMasks` builds the mask layout from the user
-  features plus `planFeaturePlanner.maskFeatures()`, which skips tags the user
-  mentioned. A user's global "off" gives the feature a default mask value of 0,
-  so its lookups never apply, even when an engine enabled it in
-  `OverrideFeatures`.
-
-A temporary in-package probe (not committed) confirmed the compiled plans: with
-an engine `DisableFeature` and the user's `liga=1`, the plan has no `liga`
-lookups while the global mask has the `liga` bit; with an engine
-`EnableFeature` and the user's `liga=0`, the lookups are present but the global
-mask lacks the bit.
-
-**Scope:** among the supplied engines, only `otarabic` calls these planner
-methods, so Latin and Hebrew shaping with the supplied engines is unaffected.
-Custom engines and Arabic are affected. Ranged user settings and feature values
-other than on/off were not examined. A fix must resolve both channels from one
-precedence order.
-
-**Verification:** at revision `0a12e65` plus the SHAPE-020 and SHAPE-021 test
-changes. The runner refactoring that lets a test supply engines and features
-leaves the existing text baselines unchanged.
+**Scope:** investigate the Hebrew engine's mark-ordering policy and its interaction
+with normalization. SHAPE-012/013 explicitly preserved the existing Hebrew order
+pending this separate work; simply enabling generic canonical sorting is not an
+agreed fix. Specify the correction before implementing it. SHAPE-007/010/011 and
+SHAPE-022 stay resolved within their accepted scopes. Streaming attachment/context
+loss remains SHAPE-015; broader attachment compatibility is separate.
 
 ```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE021' -count=1 -v
+go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE023' -count=1 -v
 ```
 
 ## Remaining discovery work
@@ -398,22 +366,6 @@ streaming/event/progress setup is complete; SHAPE-017 now covers successful
 all-deletion at EOF and explicit zero-output capacity errors. Whole-input range drift after normalization is
 covered by an ordinary SHAPE-002 regression. Add stable findings here as those
 cases are investigated; do not silently equate missing coverage with a bug.
-
-### Hebrew internal mark ordering follow-up
-
-This remains open independently of the resolved SHAPE-011 grouping fix.
-`TestKnownBugSHAPE007HebrewMarkOffsets` retains the complete pointed-shin oracle:
-Noto Sans Hebrew, U+05E9 U+05B8 U+05C1, RTL with default features. All three glyphs
-now have cluster 0 and correct per-glyph offsets, but glyph order remains
-`[96,79,100]` instead of `[96,100,79]`. The historical SHAPE-011 test attribution
-identifies this remaining follow-up, not a failure of the accepted grouping fix.
-Choose its implementation scope separately; retain the full tagged assertion.
-Tiny-buffer attachment-context failures are tracked under SHAPE-015.
-
-After SHAPE-010, `TestKnownBugSHAPE010HebrewComposition/hebrew_shalom_pointed`
-retains the same internal shin-mark ordering difference. Its seven-glyph count,
-vav/holam composition, clusters and per-glyph positions now match; its complete
-expectation remains unchanged. This does not reopen SHAPE-007 or SHAPE-011.
 
 ## Resolved findings
 
@@ -710,8 +662,8 @@ correction and pass afterwards. Focused attachment tests and the full ordinary
 suite passed after that correction. Discovery retained twelve failing top-level
 tests (eleven shaping groups and the deferred parser case).
 
-**Remaining scope:** the full historical `TestKnownBugSHAPE007HebrewMarkOffsets`
-remains tagged for the [Hebrew mark-ordering follow-up](#hebrew-internal-mark-ordering-follow-up).
+**Remaining scope:** the historical pointed-shin regression now remains tagged
+in `TestKnownBugSHAPE023HebrewMarkOrdering` for the [SHAPE-023 Hebrew mark ordering](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
 Noto Sans Hebrew mark offsets are exactly 227 and 539. SHAPE-011 subsequently
 fixed grouping: output is now `[96/0,79/0,100/0]` instead of
 `[96/0,100/0,79/0]`. Its four complete combining-mark text cases now pass unchanged
@@ -785,9 +737,9 @@ go test ./otshape ./otshape/otcore -run '^TestGDEFMarkAdvance' -count=1
 ### SHAPE-010 — Default mark positioning is missed during normalization
 
 **Status:** fixed; accepted 2026-11-01. The three standalone vav/holam
-regressions now run in the ordinary suite. The historical
-`TestKnownBugSHAPE010HebrewComposition` retains only `hebrew_shalom_pointed`
-for the separate [Hebrew mark-ordering follow-up](#hebrew-internal-mark-ordering-follow-up).
+regressions now run in the ordinary suite. The historical pointed-shalom
+regression now runs in `TestKnownBugSHAPE023HebrewMarkOrdering`
+for the separate [SHAPE-023 Hebrew mark ordering](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
 
 **Cause:** normalization inferred GPOS mark support from allocated user-feature
 masks. It missed unmasked default features and treated disabled or absent
@@ -809,7 +761,7 @@ suppresses Hebrew presentation-form fallback throughout that plan, while
 positioning still obeys the range masks. Independent HarfBuzz 15 captures
 confirm both mixed `mark`/`mkmk` settings and ranged on/off behavior. It is not
 a per-glyph coverage guarantee and does not predict later `SetupMasks` hooks.
-Existing engine/user precedence remains SHAPE-021. SHAPE-016 subsequently gives
+Engine/user precedence was subsequently resolved under SHAPE-021. SHAPE-016 subsequently gives
 event scopes one combined normalization plan per carry. No public interface
 signature changed in SHAPE-010.
 
@@ -825,7 +777,7 @@ contributor masks, and disabled GPOS.
 Pointed shalom now has all seven expected glyphs with matching clusters and
 per-glyph positions. Only the two marks on its initial shin remain reversed;
 the full oracle stays tagged for the
-[Hebrew mark-ordering follow-up](#hebrew-internal-mark-ordering-follow-up).
+[SHAPE-023 Hebrew mark ordering](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
 SHAPE-007/011 remain resolved within their accepted scopes. Canonical ordering
 and cmap-aware representation were subsequently resolved under SHAPE-012/013,
 with Hebrew ordering explicitly excluded. Absence of the entire GPOS
@@ -899,7 +851,7 @@ Go overlays triggered their corresponding regressions. No oracle data or
 assertion fields were changed.
 
 **Remaining scope:** the complete historical pointed-shin assertion stays tagged
-for the [Hebrew mark-ordering follow-up](#hebrew-internal-mark-ordering-follow-up).
+for the [SHAPE-023 Hebrew mark ordering](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
 Effective Hebrew mark support was subsequently fixed under SHAPE-010, and
 canonical ordering/font-aware representation under SHAPE-012/013 within their
 agreed scope. Hebrew ordering and streaming/limits (SHAPE-015) remain open;
@@ -1061,8 +1013,8 @@ inheritance through nested edits and clones, shared engine hooks, original
 coordinates after compaction, stable random choices across combined carry rebuilds, and combined-plan validation
 failure.
 
-**Remaining limitations:** SHAPE-015 safe flushing/capacity and SHAPE-021 engine
-precedence remain separate. The new mark-range capture exposed the independent
+**Remaining limitations:** SHAPE-015 safe flushing/capacity remains open.
+SHAPE-021 subsequently resolved engine/user precedence. The new mark-range capture exposed the independent
 SHAPE-022 predecessor-selection defect, subsequently fixed with its complete
 expectation promoted unchanged. Broader attachment compatibility, Hebrew
 internal ordering and other script-specific work stay deferred.
@@ -1336,10 +1288,73 @@ after the fix removed only `TestKnownBugSHAPE020LookupOrder`: eleven failing
 top-level tests remain, with no other changed failing tests/subtests. Build and
 vet also passed during implementation.
 
-**Remaining scope:** SHAPE-021 setting precedence and streaming/context findings
-remain open. Arabic's registered pause schedule is now honored by the shared
+**Remaining scope:** SHAPE-021 subsequently resolved setting precedence;
+streaming/context limitations remain under SHAPE-015. Arabic's registered pause schedule is now honored by the shared
 planner, but passing existing Arabic tests does not establish Arabic/Syriac
 conformance. No resolved or deferred finding was reopened.
+
+### SHAPE-021 — Engine and user feature settings combine as "off wins"
+
+**Status:** fixed; accepted 2026-11-02. The two formerly tagged failures now run
+in `TestFeaturePrecedence` in
+[feature_precedence_test.go](../internal/hbcmp/feature_precedence_test.go), with
+unchanged complete HarfBuzz expectations. Range/scope and value regressions
+also run in the ordinary suite.
+
+**Cause:** lookup selection and glyph masks resolved settings independently.
+An engine disabling a feature removed its lookups even when the user enabled
+it; a user disabling a feature left its mask off even when `OverrideFeatures`
+enabled it. Thus either source could veto the other, contrary to hook order.
+The original Gentium `office` reproductions returned six glyphs instead of the
+ligature output for collect-off/user-on and user-off/override-on. Existing
+independent `latin_office_liga_on` and `latin_office_liga_off` captures provide
+the complete expected output for each effective setting.
+
+**Agreed contract (2026-11-01/02):** `CollectFeatures` supplies engine defaults,
+user settings override them, and `OverrideFeatures` runs last. An explicit
+`OverrideFeatures` assignment applies to the whole input, superseding user
+globals, ranges and event scopes for that tag. Collected defaults remain
+effective outside user ranges; popped event scopes restore enclosing settings
+before the final engine override is applied.
+
+**Fix:** plan compilation now applies `CollectFeatures`, user settings, then
+`OverrideFeatures`. One resolved per-tag setting sequence supplies lookup
+selection, mask values/ranges and related fallback decisions. A later global
+assignment discards earlier settings for that tag, including shadowed ranges
+and alternate values. Engine stage/flag/pause registration stays separate;
+earliest-stage retention and deterministic mask allocation are preserved.
+`ShapeEvents`' existing range conversion passes through the same resolver;
+no separate event precedence path is needed.
+
+**Coverage:** `TestFeaturePrecedence` runs the original five cases plus four
+range/override cases through both APIs. `TestFeaturePrecedenceNestedScopes`
+reuses the unchanged nested-scope capture with an engine-provided default,
+checking inheritance outside ranges and after pops.
+`TestFeaturePrecedenceAlternateValues` verifies user-over-collect and
+override-over-user values against the existing alternate capture.
+`TestFeaturePrecedencePlanValues` checks original scalar anchors, zero/default,
+negative/random and large positive values, removal of shadowed values, lookup
+inclusion and earliest-stage retention. No HarfBuzz captures were changed.
+
+**Scope and limits:** custom engines and the shared planner are covered; among
+the supplied engines only `otarabic` uses these planning methods. This is no new
+Arabic conformance claim. Required features remain unconditional. With no
+explicit collected default, existing range-only mask defaults remain unchanged.
+`HasFeature` remains an intent/default query rather than a font-support query.
+Runtime `SetupMasks` still runs after initial mask assignment. Buffer/context
+limitations remain separate.
+
+**Recorded implementation verification (2026-11-02):** `go test ./... -count=1`
+and `go vet ./...` passed. Tagged discovery across `./otshape/... ./internal/hbcmp`
+retained four expected failing groups (SHAPE-004/014/015/023), with no unexpected
+known-bug passes, build errors, panics or timeouts. The SHAPE-021 promotion removes
+one group; the preceding SHAPE-023 renaming only consolidated historical wrappers.
+No fixture or independent expectation was regenerated. See [TESTING.md](TESTING.md).
+
+```sh
+go test ./internal/hbcmp -run '^TestFeaturePrecedence' -count=1 -v
+go test ./otshape -run 'TestFeaturePrecedencePlanValues|TestEngineFeatureMaskAllocationStable|TestSHAPE020' -count=1
+```
 
 ### SHAPE-022 — Mark-to-mark attachment crosses an intervening base
 
@@ -1389,9 +1404,9 @@ targeted layout/shaping/HarfBuzz race suite, build, and vet passed. Read-only
 recapture verified all eleven scope oracles;
 no captured output or font bytes changed. Discovery retains six expected failing
 top-level groups, removing only SHAPE-022, with no unexpected passing known-bug
-groups, build errors, panics, or timeouts. Streaming safety (SHAPE-015), feature
-precedence (SHAPE-021), Hebrew ordering, and broader attachment compatibility
-remain outside this change.
+groups, build errors, panics, or timeouts. SHAPE-021 subsequently resolved feature
+precedence. Streaming safety (SHAPE-015), Hebrew ordering (SHAPE-023), and broader
+attachment compatibility remain outside this change.
 
 ```sh
 go test ./otlayout ./internal/hbcmp -run '^TestSHAPE022' -count=1

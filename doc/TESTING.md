@@ -5,6 +5,46 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## SHAPE-021 resolution (2026-11-02)
+
+Plan-time settings now resolve in `CollectFeatures` → user → `OverrideFeatures`
+order. Lookup selection and masks share the resolved settings. Explicit engine
+overrides replace user globals/ranges/scopes for the entire input; collected
+defaults remain effective outside user ranges. Stage registration, required
+features and the runtime `SetupMasks` hook retain their contracts.
+
+Both formerly tagged failures are promoted into `TestFeaturePrecedence` with
+unchanged complete HarfBuzz expectations. The five original cases and four
+range/override cases run through both public APIs. Additional tests cover nested
+scope restoration, alternate-value precedence, signed/default/large values,
+shadowed-value removal, deterministic masks and earliest-stage retention.
+No fixtures or independent expectations were regenerated.
+
+Recorded implementation verification: `go test ./... -count=1` and
+`go vet ./...` passed. Tagged discovery across
+`./otshape/... ./internal/hbcmp` fails only in SHAPE-004/014/015/023, with no
+unexpected known-bug passes, build errors, panics or timeouts. The count drops
+from five to four because SHAPE-021 is promoted; the earlier SHAPE-023 count
+change below was attribution only. The accepted fix is archived in
+[Resolved findings](SHAPING_FINDINGS.md#shape-021--engine-and-user-feature-settings-combine-as-off-wins).
+
+## SHAPE-023 attribution (2026-11-02)
+
+The existing Hebrew internal mark-ordering follow-up now has its own
+[SHAPE-023 entry](SHAPING_FINDINGS.md#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
+`TestKnownBugSHAPE023HebrewMarkOrdering` contains the unchanged pointed-shin and
+pointed-shalom regressions formerly named under SHAPE-007 and SHAPE-010; both
+baseline assignments now identify SHAPE-023. No production code, fixture or
+assertion changed. Composition, clusters and per-glyph positions remain fixed;
+internal mark order still differs. Merging two historical wrappers into one
+reduces the expected failing top-level group count from six to five without
+resolving either case. Historical verification counts below remain dated snapshots.
+
+Verification: `go test ./internal/hbcmp -count=1` passes. Tagged discovery across
+`./otshape/... ./internal/hbcmp` fails only in the five expected top-level groups
+(SHAPE-004/014/015/021/023), including both SHAPE-023 subtests, with no unexpected
+known-bug passes or infrastructure failures.
+
 ## SHAPE-022 resolution (2026-11-01)
 
 GPOS mark-to-mark attachment now considers only the nearest eligible predecessor,
@@ -56,7 +96,8 @@ engine state, shared hooks and masks, implicit defaults after pop/compaction,
 stable random choices across combined carry rebuilds, and validation failures
 before output. Existing scope/error, random-value and
 shared-alternate conflict tests remain ordinary. This adds no safe-cut guarantee
-and does not fix engine precedence, cursive finalization or Hebrew ordering.
+and does not establish cursive finalization or Hebrew ordering. SHAPE-021
+subsequently resolved engine/user precedence.
 
 Recorded implementation verification: `go test ./... -count=1`, targeted race
 tests for `otlayout`, `otshape/...` and `internal/hbcmp`, `go build ./...`, and
@@ -216,7 +257,8 @@ The tagged discovery command below still fails as expected: 11 top-level tests,
 down from 12 before the fix. The only removed failure is
 `TestKnownBugSHAPE020LookupOrder`; every other failing test/subtest is unchanged.
 No new failures, unexpected passes, fixture failures, panics, or timeouts occurred.
-SHAPE-021 precedence remains separate; no broad script-conformance claim is made.
+SHAPE-021 subsequently resolved setting precedence; no broad script-conformance
+claim is made.
 
 ```sh
 go test -tags shaping_knownbugs ./otshape/... ./internal/hbcmp -count=1 -timeout=30s
@@ -237,7 +279,7 @@ random selection and edit provenance. Four complete text captures and 32 matrix
 cells are promoted unchanged. The corpus has 15 passing / 9 tagged text cases;
 the streaming matrix has 182 passing / 138 tagged cells. Eight tiny-buffer mark
 cells remain under SHAPE-015, and the historical pointed-shin reproduction still
-needs the separate [Hebrew mark-ordering follow-up](SHAPING_FINDINGS.md#hebrew-internal-mark-ordering-follow-up).
+needs the separate [SHAPE-023 Hebrew mark-ordering fix](SHAPING_FINDINGS.md#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
 The [reviewed SHAPE-011 resolution](SHAPING_FINDINGS.md#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0)
 is archived with its stable ID, range decision, and regression links.
 The full ordinary and race suites pass; discovery has ten remaining top-level
@@ -374,7 +416,7 @@ within the same Go module.
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
-| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. All selected AOTS cases pass; six real-text cases remain behind `shaping_knownbugs`. `feature_precedence_test.go` reuses two Gentium captures with a probe engine to check engine/user feature precedence; two of its five cases are tagged (SHAPE-021). The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. `ligature_marks_test.go` compares ten component cases through both APIs. No runner invokes HarfBuzz during tests. |
+| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. All selected AOTS cases pass; the pointed Hebrew cases remain behind `shaping_knownbugs` (SHAPE-023). `feature_precedence_test.go` reuses independent text, scope and alternate captures with a probe engine to check engine/user feature precedence through both APIs; all SHAPE-021 cases are ordinary. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. `ligature_marks_test.go` compares ten component cases through both APIs. No runner invokes HarfBuzz during tests. |
 | [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json`, 35 Latin/Hebrew cases in `text/baselines.json`, fourteen normalization cases in `text/normalization.json`, eleven scope cases in `text/scopes.json`, ten component cases in `text/ligatures.json`, and thirteen streaming/scope/progress records in `text/streaming.json`. The text reports and `testdata/fonts/LIGATURE_MARKS.md` record semantics, commands, provenance and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. All fourteen selected records pass (five GSUB, nine GPOS, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
@@ -826,9 +868,9 @@ conversion's rendering convention and exact cases.
 
 Thirty-two text cases pass, including the three promoted SHAPE-012/013
 regressions. Three remain tagged for Hebrew mark order or the explicit no-GPOS
-parser restriction. The combined discovery suite has seven failing top-level
-groups. The historical `TestKnownBugSHAPE007HebrewMarkOffsets` retains its full
-assertion: clusters and positions match, but internal Hebrew mark order differs.
+parser restriction. The two Hebrew cases now run as subtests of
+`TestKnownBugSHAPE023HebrewMarkOrdering`, preserving their full assertions:
+clusters and positions match, but internal Hebrew mark order differs.
 The additional normalization corpus and coverage are described above.
 
 `otshape/clusters_test.go` covers leading marks, adjacent groups, original scalar

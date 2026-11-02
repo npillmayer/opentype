@@ -5,7 +5,7 @@ Read-only evaluation; no code was changed. Claims were checked against
 symbol usage and the existing documentation. Items marked "unverified" are
 code-reading observations without a reproduction.*
 
-## Status (updated 2026-11-01)
+## Status (updated 2026-11-02)
 
 The sections after this one are the unchanged original snapshot. File names
 and line counts in them describe the code as it was at `9760035`.
@@ -15,7 +15,7 @@ and line counts in them describe the code as it was at `9760035`.
 | 1. Cheap cleanup | **Partly done** — legacy `buffer.go`, `ShapeEventsRequest`, `realignSideArrays`, and the `ZeroMarks`/`FallbackMarkPos` policies removed; remaining items listed below |
 | 2. Split files | **Done** — reorganization by responsibility, including the `lookups.go`, `shape_runtime.go`, `shaper.go`, and `doc.go` issues from section 1 |
 | 3. Expand the package doc | **Done** — `doc.go` rewritten (concepts, guarantees vs. limitations, plain references to `doc/*.md`); runnable examples for `Shaper.Shape` and `Shaper.ShapeEvents` checked against HarfBuzz captures; engine package docs (`otcore`, `othebrew`, `otarabic`) expanded with matching, behavior, and known gaps. |
-| 4. Investigate correctness observations | **In progress** — SHAPE-020 fixed and reviewed; SHAPE-021 remains open. The shared scheduler now honors Arabic pause boundaries; Arabic conformance remains unverified |
+| 4. Investigate correctness observations | **In progress** — SHAPE-020 fixed and reviewed; SHAPE-021 fixed and accepted. The shared scheduler now honors Arabic pause boundaries; Arabic conformance remains unverified |
 | 5. API decisions | Open |
 
 ### Step 2: new file layout
@@ -87,14 +87,14 @@ test-only `writeRunBufferToSink*`, `writeRunBufferPrefixToSink`,
   Explicit pauses define stages, whose lookups run once in LookupList order.
   The original independent regression is now ordinary; GSUB/GPOS controls and
   shared-alternate coverage retain complete expectations.
-- Observation 2 (engine features overriding user settings) is reproduced and
-  recorded as **SHAPE-021**, after the precedence contract was agreed: user
-  settings override `CollectFeatures`, and `OverrideFeatures` overrides user
-  settings. The original observation was only partly right: a user's "off"
-  does win against `CollectFeatures`, because the user's setting alone
-  decides the glyph mask. The actual defect is that "off" always wins: an
-  engine's `DisableFeature` beats a user's "on", and `OverrideFeatures`
-  cannot enable a feature the user disabled.
+- Observation 2 (engine features overriding user settings) was reproduced as
+  **SHAPE-021**: two independent paths made "off" win regardless of source.
+  Fixed and accepted 2026-11-02: `CollectFeatures` defaults, user
+  settings, then tag-wide `OverrideFeatures` assignments now feed one resolved
+  setting set for lookup selection and masks. The original complete-oracle
+  regressions are promoted; range/scope and value precedence have focused checks.
+  The contract and recorded implementation verification are retained in the
+  [archived resolution](SHAPING_FINDINGS.md#shape-021--engine-and-user-feature-settings-combine-as-off-wins).
 
 #### Additional observation (historical; shared scheduling corrected)
 

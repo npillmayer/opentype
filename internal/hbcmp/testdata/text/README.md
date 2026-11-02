@@ -1,5 +1,11 @@
 # Real Latin and Hebrew text baselines
 
+**2026-11-02 attribution update:** the unchanged pointed-shin and pointed-shalom
+captures now belong to SHAPE-023 and run as subtests of
+`TestKnownBugSHAPE023HebrewMarkOrdering`. Their remaining failure is internal
+Hebrew mark order; composition, grouping and per-glyph positions already match.
+Historical diagnostics below retain the original discovery evidence.
+
 Captured on **2026-10-26** with installed `hb-shape (HarfBuzz) 15.0.0`.
 Verified against repository source revision
 `3acce4440f5a215e9752cd2f7c25430b3279994a` plus the current test changes.
@@ -132,9 +138,9 @@ additions, and [Lookup-order cases](#lookup-order-cases) the seven SHAPE-020 cas
 | `latin_cafe_nfd` | `cafe` + U+0301, Latn/fr/LTR | defaults | Pass: same GIDs/clusters/positions as NFC |
 | `hebrew_shin` | U+05E9, Hebr/he/RTL | defaults | Pass: GID 96, cluster 0, advance 730 |
 | `hebrew_shalom` | U+05E9 U+05DC U+05D5 U+05DD, Hebr/he/RTL | defaults | Pass in logical order; SHAPE-009 resolved |
-| `hebrew_shin_pointed` | U+05E9 U+05B8 U+05C1, Hebr/he/RTL | defaults | SHAPE-007/011: offsets, internal mark order, clusters |
+| `hebrew_shin_pointed` | U+05E9 U+05B8 U+05C1, Hebr/he/RTL | defaults | SHAPE-023: internal mark order |
 | `hebrew_vav_holam` | U+05D5 U+05B9, Hebr/he/RTL | defaults | SHAPE-010: unexpected presentation-form fallback |
-| `hebrew_shalom_pointed` | U+05E9 U+05B8 U+05C1 U+05DC U+05D5 U+05B9 U+05DD, Hebr/he/RTL | defaults | SHAPE-007/010/011 combined |
+| `hebrew_shalom_pointed` | U+05E9 U+05B8 U+05C1 U+05DC U+05D5 U+05B9 U+05DD, Hebr/he/RTL | defaults | SHAPE-023: internal mark order |
 
 The diagnostic sequences below retain the original **raw visual-order HB**
 expectations for reference; the current runner converts them to logical order.

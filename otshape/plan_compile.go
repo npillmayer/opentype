@@ -562,14 +562,16 @@ func compile(req planRequest) (*plan, error) {
 			LangTag:   langTag,
 		}
 	}
-	planner := newPlanFeaturePlanner(req.Font, selection, &hooks, req.UserFeatures)
+	planner := newPlanFeaturePlanner(req.Font, selection, &hooks)
 	if engineHooks, ok := req.Engine.(ShapingEnginePlanHooks); ok {
 		engineHooks.CollectFeatures(planner, selection)
+	}
+	planner.applyUserFeatures(req.UserFeatures)
+	if engineHooks, ok := req.Engine.(ShapingEnginePlanHooks); ok {
 		engineHooks.OverrideFeatures(planner)
 	}
 
-	maskFeatures := append([]FeatureRange(nil), req.UserFeatures...)
-	maskFeatures = append(maskFeatures, planner.maskFeatures()...)
+	maskFeatures := planner.maskFeatures()
 	masks, err := compileUserFeatureMasks(maskFeatures)
 	if err != nil {
 		return nil, err

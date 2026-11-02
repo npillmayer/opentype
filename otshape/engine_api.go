@@ -166,7 +166,9 @@ type ShapingEnginePolicy interface {
 	ApplyGPOS() bool
 }
 
-// ShapingEnginePlanHooks exposes plan-time hooks.
+// ShapingEnginePlanHooks exposes plan-time hooks. CollectFeatures supplies
+// defaults, then user globals/ranges are applied, then OverrideFeatures may
+// replace settings for a tag across the whole input, including event scopes.
 type ShapingEnginePlanHooks interface {
 	CollectFeatures(plan FeaturePlanner, ctx SelectionContext)
 	OverrideFeatures(plan FeaturePlanner)

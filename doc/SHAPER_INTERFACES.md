@@ -142,19 +142,22 @@ and normalization run per buffered carry (SHAPE-016).
 
 In [plan_compile.go](../otshape/plan_compile.go):
 
-1. Seed base feature defaults and user toggles.
-2. `CollectFeatures`, then `OverrideFeatures`.
+1. Seed base feature defaults.
+2. `CollectFeatures`, then user settings, then `OverrideFeatures`.
 3. Allocate masks and resolve table features/stages.
 4. Include registered pause boundaries and compute fallback/resolved-feature metadata.
 5. `PostResolveFeatures` may anchor GSUB pauses.
 6. `InitPlan`, followed by `ValidatePlan` when both interfaces are implemented.
 7. Validate the internal plan.
 
-**Agreed feature precedence (2026-11-01; not yet implemented):** settings made
-in `CollectFeatures` are engine defaults that the user's feature settings
-override; `OverrideFeatures` runs after the user settings and may override
-them. Currently the planner toggles and the user-derived glyph masks combine so
-that "off" wins regardless of its source; see
+**Feature precedence (SHAPE-021, fixed and accepted 2026-11-02):** settings made in
+`CollectFeatures` are engine defaults. User globals replace those settings;
+user ranges override them within their bounds. Explicit `OverrideFeatures`
+assignments replace all user globals/ranges/scopes for the tag across the whole
+input. Lookup selection and glyph masks derive from the same resolved settings.
+Scope pops restore enclosing settings before applying the final engine override.
+Required features remain unconditional; existing range-only defaults are retained
+when the engine supplied no explicit setting. See
 [SHAPE-021](SHAPING_FINDINGS.md#shape-021--engine-and-user-feature-settings-combine-as-off-wins).
 
 `PauseHook` is `func(PauseContext) error`; an error stops execution.

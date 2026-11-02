@@ -20,8 +20,8 @@ Each request assumes fixed font/script/language/direction. Automatic itemization
 font fallback, paragraph bidi layout, and vertical-metrics shaping are absent.
 The sink contract is logical shaping order; visual ordering belongs to the
 caller. HarfBuzz level-0 base/mark grouping is implemented for Latin/Hebrew
-(SHAPE-011); Hebrew internal mark ordering and other script/emoji sequence
-rules remain separate. Variation fields in internal plans do not implement variable
+(SHAPE-011); Hebrew internal mark ordering is implemented under SHAPE-023.
+Other script/emoji sequence rules remain separate. Variation fields in internal plans do not implement variable
 font shaping. Layout execution uses GSUB/GPOS; there is no legacy kern fallback.
 
 ## Source navigation
@@ -93,9 +93,12 @@ plan-wide, while positioning still follows its masks. This does not guarantee
 coverage for each glyph. Event scopes now share that plan-wide signal for the
 whole buffered carry (SHAPE-016).
 
-SHAPE-012/013 cover the shared normalization and font-coverage fixes. Hebrew
-explicitly bypasses the new canonical ordering pass to preserve existing behavior
-until its script-specific ordering follow-up; font-coverage checks still apply.
+SHAPE-012/013 cover the shared normalization and font-coverage fixes. SHAPE-023
+adds Hebrew modified combining classes for stable sorting and composition
+blocking. The Hebrew normalization reorder hook applies the special meteg
+adjustment before recomposition, once per nonzero-class span; it replaces the
+engine's late reorder hook. Other engines retain their existing hook timing.
+Class-zero barriers, equal-class stability and font-coverage checks still apply.
 Full script-specific HarfBuzz normalization conformance and safe streaming
 normalization boundaries are not established. Feature-event boundaries now share
 normalization and initial grouping within the buffered run (SHAPE-016).

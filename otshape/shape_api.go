@@ -155,8 +155,12 @@ func shapeMappedRun(run *runBuffer, engine ShapingEngine, pl *plan) error {
 	if hook, ok := engine.(ShapingEnginePreprocessHook); ok {
 		hook.PreprocessRun(rc)
 	}
-	if hook, ok := engine.(ShapingEngineReorderHook); ok {
-		hook.ReorderMarks(rc, 0, rc.Len())
+	// Engines with a normalization hook already reordered before composition.
+	// Keep the legacy post-normalization timing for all other engines.
+	if _, early := engine.(ShapingEngineNormalizationReorderHook); !early {
+		if hook, ok := engine.(ShapingEngineReorderHook); ok {
+			hook.ReorderMarks(rc, 0, rc.Len())
+		}
 	}
 	if hook, ok := engine.(ShapingEnginePreGSUBHook); ok {
 		hook.PrepareGSUB(rc)

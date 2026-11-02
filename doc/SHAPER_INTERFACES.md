@@ -95,7 +95,8 @@ on an engine.
 | `ShapingEnginePostResolveHook` | `PostResolveFeatures(ResolvedFeaturePlanner, ResolvedFeatureView, SelectionContext)`. |
 | `ShapingEnginePreprocessHook` | `PreprocessRun(RunContext)`; currently runs after normalization/mapping, despite its pre-normalization source comment. |
 | `ShapingEngineComposeHook` | `Compose(NormalizeContext, rune, rune) (rune, bool)`, during pair composition. |
-| `ShapingEngineReorderHook` | `ReorderMarks(RunContext, int, int)`, currently invoked once over the mapped run. |
+| `ShapingEngineNormalizationReorderHook` | `ReorderNormalizationMarks([]rune, []uint32)`, once per sorted nonzero-class span before composition; supersedes the late reorder hook. Only permutes aligned runes and original scalar sources. |
+| `ShapingEngineReorderHook` | `ReorderMarks(RunContext, int, int)`, invoked once over the mapped run unless the engine implements the normalization reorder hook. |
 | `ShapingEnginePreGSUBHook` | `PrepareGSUB(RunContext)`, after reorder. |
 | `ShapingEngineMaskHook` | `SetupMasks(RunContext)`, after initial mask setup; execution preserves its changes, with mask inheritance through substitutions. |
 | `ShapingEnginePostprocessHook` | `PostprocessRun(RunContext)`, after lookup/position-policy execution. |
@@ -104,10 +105,11 @@ There is no custom decomposition hook, `MarksBehavior`, `GposTag`, or
 script-specific streaming-boundary hook. Normalization modes are `Auto`,
 `None`, `Composed`, and `Decomposed` (with the `Normalization` prefix).
 Composed/decomposed modes are font-aware representation preferences. `None`
-bypasses normalization and composition hooks. `ComposeUnicode` and accepted
+bypasses normalization, early reordering and composition hooks. `ComposeUnicode` and accepted
 `Compose` results require a nonzero cmap mapping; unavailable compositions leave
 the supported components intact. Canonical ordering precedes starter-based
-composition, with Hebrew ordering explicitly deferred. See
+composition. Hebrew uses modified combining classes for sorting and blocking,
+and its special meteg adjustment runs between sorting and recomposition. See
 [normalization](SHAPING_OVERVIEW.md#normalization).
 
 The public path reads `ApplyGPOS`, but a false value produces an all-zero
@@ -174,12 +176,13 @@ GSUB pauses do not advance GPOS stages. See [SHAPER_PLAN.md](SHAPER_PLAN.md).
 
 For each current raw carry buffer, including all its feature-event scopes:
 
-1. Form initial base/mark clusters, then normalize runes; consult `Compose`
-   when enabled by normalization mode. Retain normalized source anchors
+1. Form initial base/mark clusters, then decompose, stably sort, call
+   `ReorderNormalizationMarks` for each nonzero-class span when implemented, and
+   recompose (consulting `Compose`). Retain normalized source anchors
    separately from output clusters.
 2. Map runes through cmap into a `runBuffer`.
 3. `PreprocessRun`.
-4. `ReorderMarks(run, 0, run.Len())`.
+4. `ReorderMarks(run, 0, run.Len())`, only for engines without the early hook.
 5. `PrepareGSUB`.
 6. Initialize feature masks and apply indexed ranges using cluster starts.
    A start inside an initial base/mark group excludes it; an end inside includes it.

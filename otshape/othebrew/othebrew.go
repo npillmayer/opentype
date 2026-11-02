@@ -1,10 +1,10 @@
 package othebrew
 
 import (
+	"github.com/npillmayer/opentype/internal/hebreworder"
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otshape"
 	"golang.org/x/text/language"
-	"golang.org/x/text/unicode/norm"
 )
 
 var hebrewScript = language.MustParseScript("Hebr")
@@ -42,11 +42,11 @@ var dageshForms = [0x05EA - 0x05D0 + 1]rune{
 }
 
 const (
-	mccSheva  = 10
-	mccHiriq  = 14
-	mccPatah  = 17
-	mccQamats = 18
-	mccMeteg  = 22
+	mccSheva  = 22
+	mccHiriq  = 23
+	mccPatah  = 20
+	mccQamats = 21
+	mccMeteg  = 25
 
 	combiningClassBelow = 220
 )
@@ -61,6 +61,7 @@ var _ otshape.ShapingEngine = Shaper{}
 var _ otshape.ShapingEnginePolicy = Shaper{}
 var _ otshape.ShapingEngineComposeHook = Shaper{}
 var _ otshape.ShapingEngineReorderHook = Shaper{}
+var _ otshape.ShapingEngineNormalizationReorderHook = Shaper{}
 
 // New returns a new Hebrew shaping engine instance.
 func New() otshape.ShapingEngine {
@@ -105,7 +106,18 @@ func (Shaper) Compose(c otshape.NormalizeContext, a, b rune) (rune, bool) {
 	return hebrewCompose(c, a, b)
 }
 
-// ReorderMarks reorders Hebrew marks in run[start:end] when required.
+// ReorderNormalizationMarks adjusts an already sorted mark sequence before
+// recomposition. Source indexes move with runes; the pipeline separately retains
+// the initial level-0 group, including all marks even across feature events.
+func (Shaper) ReorderNormalizationMarks(runes []rune, sources []uint32) {
+	hebrewReorder(0, len(runes), func(i int) rune { return runes[i] }, func(i, j int) {
+		runes[i], runes[j] = runes[j], runes[i]
+		sources[i], sources[j] = sources[j], sources[i]
+	})
+}
+
+// ReorderMarks retains the standalone adjustment for callers using RunContext.
+// The shaping pipeline uses ReorderNormalizationMarks instead, before composition.
 func (Shaper) ReorderMarks(run otshape.RunContext, start, end int) {
 	hebrewReorderMarks(run, start, end)
 }
@@ -191,33 +203,23 @@ func hebrewReorderMarks(run otshape.RunContext, start, end int) {
 	if end-start < 3 {
 		return
 	}
-	for i := start + 2; i < end; i++ {
-		c0 := hebrewModifiedCombiningClass(run.Codepoint(i - 2))
-		c1 := hebrewModifiedCombiningClass(run.Codepoint(i - 1))
-		c2 := hebrewModifiedCombiningClass(run.Codepoint(i))
+	hebrewReorder(start, end, run.Codepoint, func(i, j int) {
+		run.MergeClusters(i, j+1)
+		run.Swap(i, j)
+	})
+}
 
+// HarfBuzz 15 reorder_marks_hebrew: one adjustment per mark sequence.
+func hebrewReorder(start, end int, codepoint func(int) rune, swap func(int, int)) {
+	for i := start + 2; i < end; i++ {
+		c0 := hebreworder.Class(codepoint(i - 2))
+		c1 := hebreworder.Class(codepoint(i - 1))
+		c2 := hebreworder.Class(codepoint(i))
 		if (c0 == mccPatah || c0 == mccQamats) &&
 			(c1 == mccSheva || c1 == mccHiriq) &&
 			(c2 == mccMeteg || c2 == combiningClassBelow) {
-			run.MergeClusters(i-1, i+1)
-			run.Swap(i-1, i)
+			swap(i-1, i)
 			break
 		}
 	}
-}
-
-func hebrewModifiedCombiningClass(cp rune) uint8 {
-	switch cp {
-	case 0x05B0: // SHEVA
-		return mccSheva
-	case 0x05B4: // HIRIQ
-		return mccHiriq
-	case 0x05B7: // PATAH
-		return mccPatah
-	case 0x05B8: // QAMATS
-		return mccQamats
-	case 0x05BD: // METEG
-		return mccMeteg
-	}
-	return norm.NFD.PropertiesString(string(cp)).CCC()
 }

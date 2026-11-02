@@ -203,6 +203,17 @@ type ShapingEngineComposeHook interface {
 	Compose(ctx NormalizeContext, a, b rune) (rune, bool)
 }
 
+// ShapingEngineNormalizationReorderHook adjusts one nonzero-combining-class
+// sequence after stable ordering and before composition. The slices have equal
+// length; hooks may only permute entries, moving source indexes with their runes.
+// Sources are original scalar indexes, not merged cluster IDs. Do not retain
+// the slices. Class-zero characters (including CGJ) delimit calls.
+// This hook replaces ShapingEngineReorderHook when an engine implements both;
+// it does not run under NormalizationNone.
+type ShapingEngineNormalizationReorderHook interface {
+	ReorderNormalizationMarks(runes []rune, sources []uint32)
+}
+
 // ShapingEngineReorderHook exposes mark-reordering before GSUB.
 type ShapingEngineReorderHook interface {
 	ReorderMarks(run RunContext, start, end int)

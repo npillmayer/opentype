@@ -1,10 +1,11 @@
 # Real Latin and Hebrew text baselines
 
-**2026-11-02 attribution update:** the unchanged pointed-shin and pointed-shalom
-captures now belong to SHAPE-023 and run as subtests of
-`TestKnownBugSHAPE023HebrewMarkOrdering`. Their remaining failure is internal
-Hebrew mark order; composition, grouping and per-glyph positions already match.
-Historical diagnostics below retain the original discovery evidence.
+**2026-11-02 SHAPE-023 resolution:** the unchanged pointed-shin and
+pointed-shalom captures now pass and run in the ordinary suite. The focused
+`TestSHAPE023HebrewOrdering` also checks both APIs against those two records,
+the reordered-shin control, and nine new independent captures in the separate
+[Hebrew ordering corpus](HEBREW_ORDER.md). Historical diagnostics below retain
+the original discovery evidence.
 
 Captured on **2026-10-26** with installed `hb-shape (HarfBuzz) 15.0.0`.
 Verified against repository source revision
@@ -30,8 +31,9 @@ The separate [normalization corpus](NORMALIZATION.md) adds fourteen independent
 records in [normalization.json](normalization.json), with 28 whole-input
 comparisons after SHAPE-016 added event recipes for both indexed-range cases.
 SHAPE-012/013 also promote three unchanged original records:
-`baselines.json` now has 32 ordinary and three tagged cases. The remaining cases
-cover two Hebrew ordering failures and the deferred no-GPOS parser limitation.
+`baselines.json` now has 34 ordinary cases after SHAPE-023 promoted the two
+Hebrew ordering failures. Its only remaining tagged case is the deferred
+no-GPOS parser limitation.
 
 The [scope corpus](SCOPES.md) adds eleven independent records in
 [scopes.json](scopes.json): 44 ordinary comparisons through both APIs and both
@@ -138,9 +140,9 @@ additions, and [Lookup-order cases](#lookup-order-cases) the seven SHAPE-020 cas
 | `latin_cafe_nfd` | `cafe` + U+0301, Latn/fr/LTR | defaults | Pass: same GIDs/clusters/positions as NFC |
 | `hebrew_shin` | U+05E9, Hebr/he/RTL | defaults | Pass: GID 96, cluster 0, advance 730 |
 | `hebrew_shalom` | U+05E9 U+05DC U+05D5 U+05DD, Hebr/he/RTL | defaults | Pass in logical order; SHAPE-009 resolved |
-| `hebrew_shin_pointed` | U+05E9 U+05B8 U+05C1, Hebr/he/RTL | defaults | SHAPE-023: internal mark order |
+| `hebrew_shin_pointed` | U+05E9 U+05B8 U+05C1, Hebr/he/RTL | defaults | Pass: SHAPE-023 ordering fix |
 | `hebrew_vav_holam` | U+05D5 U+05B9, Hebr/he/RTL | defaults | SHAPE-010: unexpected presentation-form fallback |
-| `hebrew_shalom_pointed` | U+05E9 U+05B8 U+05C1 U+05DC U+05D5 U+05B9 U+05DD, Hebr/he/RTL | defaults | SHAPE-023: internal mark order |
+| `hebrew_shalom_pointed` | U+05E9 U+05B8 U+05C1 U+05DC U+05D5 U+05B9 U+05DD, Hebr/he/RTL | defaults | Pass: SHAPE-023 ordering fix |
 
 The diagnostic sequences below retain the original **raw visual-order HB**
 expectations for reference; the current runner converts them to logical order.

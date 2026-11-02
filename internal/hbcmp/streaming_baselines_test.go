@@ -72,6 +72,8 @@ func scopeRecipe(id string) []scopeChange {
 		return []scopeChange{scopePush(1, "kern", false), {at: 2}}
 	case "scope_kern_first_off":
 		return []scopeChange{scopePush(0, "kern", false), {at: 1}}
+	case "hebrew_order_range_inside":
+		return []scopeChange{{at: 1, settings: []otshape.FeatureSetting{{Tag: ot.T("mark"), Enabled: false}, {Tag: ot.T("mkmk"), Enabled: false}}}, {at: 3}}
 	case "scope_composition", "scope_hebrew_group":
 		return []scopeChange{scopePush(1, "liga", false), {at: 2}}
 	case "scope_mark_inside", "scope_mark_inside_no_mkmk":

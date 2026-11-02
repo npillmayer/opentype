@@ -5,6 +5,30 @@ compact reference entries in
 [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md#resolved-findings). Dated assessments
 and batch counts describe their original discovery snapshots.
 
+## SHAPE-023 resolution (2026-11-02)
+
+Hebrew now sorts with modified combining classes and uses the same classes for
+composition blocking. Its meteg adjustment runs per mark sequence before
+composition, with no later replay. Original scalar sources and initial level-0
+groups retain their separate roles. The new optional normalization reorder hook
+is documented in [SHAPER_INTERFACES.md](SHAPER_INTERFACES.md).
+
+Both original pointed-Hebrew failures are promoted unchanged. The focused
+`TestSHAPE023HebrewOrdering` compares twelve cases through both APIs (24 full
+six-field comparisons): the two original cases, the existing reordered-shin
+control and nine new independent captures. See
+[Hebrew ordering corpus](../internal/hbcmp/testdata/text/HEBREW_ORDER.md).
+Lower tests cover source correspondence, leading marks, stable equal classes,
+starters and CGJ barriers, and early-hook timing including `NormalizationNone`.
+
+Recorded implementation verification: `go test ./... -count=1` and
+`go vet ./...` passed. Tagged discovery
+across `./otshape/... ./internal/hbcmp` fails only in SHAPE-004/014/015, with no
+unexpected known-bug passes or infrastructure failures. Earlier counts and
+Hebrew exclusions below describe their dated snapshots. Safe streaming cuts
+remain separate; no existing capture was changed. The accepted fix is archived
+in [Resolved findings](SHAPING_FINDINGS.md#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
+
 ## SHAPE-021 resolution (2026-11-02)
 
 Plan-time settings now resolve in `CollectFeatures` → user → `OverrideFeatures`
@@ -28,7 +52,7 @@ from five to four because SHAPE-021 is promoted; the earlier SHAPE-023 count
 change below was attribution only. The accepted fix is archived in
 [Resolved findings](SHAPING_FINDINGS.md#shape-021--engine-and-user-feature-settings-combine-as-off-wins).
 
-## SHAPE-023 attribution (2026-11-02)
+## Historical SHAPE-023 attribution (2026-11-02)
 
 The existing Hebrew internal mark-ordering follow-up now has its own
 [SHAPE-023 entry](SHAPING_FINDINGS.md#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
@@ -188,8 +212,8 @@ in that batch. SHAPE-016 subsequently removed event-plan normalization barriers
 within each buffered carry and added focused range/event equivalence coverage.
 
 Pointed shalom now has the correct seven glyphs, clusters and per-glyph positions;
-its full comparison stays tagged for the separate Hebrew internal mark-ordering
-follow-up. SHAPE-007/011 are not reopened.
+its full comparison subsequently passed unchanged after SHAPE-023 resolved
+internal mark order. SHAPE-007/011 are not reopened.
 
 Recorded implementation verification: the full ordinary suite passed;
 tagged discovery retained ten failing top-level tests, removing exactly the three
@@ -278,8 +302,9 @@ ranges select these initial groups by start; source anchors remain separate for
 random selection and edit provenance. Four complete text captures and 32 matrix
 cells are promoted unchanged. The corpus has 15 passing / 9 tagged text cases;
 the streaming matrix has 182 passing / 138 tagged cells. Eight tiny-buffer mark
-cells remain under SHAPE-015, and the historical pointed-shin reproduction still
-needs the separate [SHAPE-023 Hebrew mark-ordering fix](SHAPING_FINDINGS.md#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
+cells remain under SHAPE-015, and the historical pointed-shin reproduction
+needed SHAPE-023 at that stage. Its complete oracle now passes unchanged after
+[the ordering fix](SHAPING_FINDINGS.md#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
 The [reviewed SHAPE-011 resolution](SHAPING_FINDINGS.md#shape-011--combining-mark-clusters-differ-from-harfbuzz-level-0)
 is archived with its stable ID, range decision, and regression links.
 The full ordinary and race suites pass; discovery has ten remaining top-level
@@ -416,7 +441,7 @@ within the same Go module.
 | [`otshape/otarabic/`](../otshape/otarabic/) | Arabic/Syriac staging, joining forms, masks, mark reordering, fallback repair, and postprocessing. Unit tests exercise these components; its streaming test uses non-joining digits. |
 | [`otshape/othebrew/`](../otshape/othebrew/) | Hebrew composition and mark-reordering hooks. Tests cover selected script behaviors and streaming parity. |
 | [`internal/ttxtest/`](../internal/ttxtest/) | Parses stored GSUB/GPOS TTX XML into expected models. Comparisons against parsed fonts live primarily in `ot/`; this helper is not a shaping oracle. |
-| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. All selected AOTS cases pass; the pointed Hebrew cases remain behind `shaping_knownbugs` (SHAPE-023). `feature_precedence_test.go` reuses independent text, scope and alternate captures with a probe engine to check engine/user feature precedence through both APIs; all SHAPE-021 cases are ordinary. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. `ligature_marks_test.go` compares ten component cases through both APIs. No runner invokes HarfBuzz during tests. |
+| [`internal/hbcmp/`](../internal/hbcmp/) | Shapes Unicode through the public API. JSON comparisons check glyph IDs, clusters, advances, and offsets; the AOTS adapter checks glyph IDs or glyph IDs plus origins according to the stored format. All selected AOTS cases pass; the pointed Hebrew cases are promoted unchanged (SHAPE-023), with nine new ordering/composition captures checked through both APIs. `feature_precedence_test.go` reuses independent text, scope and alternate captures with a probe engine to check engine/user feature precedence through both APIs; all SHAPE-021 cases are ordinary. The streaming matrix adds buffer profiles, actual feature events, and progress instrumentation. `ligature_marks_test.go` compares ten component cases through both APIs. No runner invokes HarfBuzz during tests. |
 | [`internal/hbcmp/testdata/`](../internal/hbcmp/testdata/) | End-to-end expectations: the original `Gentium_AB.json`, 35 Latin/Hebrew cases in `text/baselines.json`, fourteen normalization cases in `text/normalization.json`, eleven scope cases in `text/scopes.json`, ten component cases in `text/ligatures.json`, and thirteen streaming/scope/progress records in `text/streaming.json`. The text reports and `testdata/fonts/LIGATURE_MARKS.md` record semantics, commands, provenance and results. |
 | [`testdata/harfbuzz/aots/`](../testdata/harfbuzz/aots/) | Pinned upstream AOTS shaping records, font hashes, and provenance. All fourteen selected records pass (five GSUB, nine GPOS, plus a GSUB streaming execution). `ADAPTER.md`, `GPOS.md`, and `PAIR.md` record semantics and results. |
 | [`testdata/fonttools/`](../testdata/fonttools/) | Twelve original mini-fonts with paired `*.ttx.GSUB` / `*.ttx.GPOS` dumps, plus two subsequently recovered pair fonts without TTX dumps. Used for parsing, lookup, and public shaping tests. |
@@ -511,9 +536,9 @@ review probes outside that first regression batch.
   `rawFlushForGlyphPrefix` in [shape_streaming.go](../otshape/shape_streaming.go).
 - **Normalization has bounded scope.** SHAPE-012/013 add font-supported
   decomposition, stable canonical ordering and starter-based recomposition with
-  cmap checks. Hebrew bypasses canonical sorting pending its separate ordering
-  fix. This is not full script-specific HarfBuzz normalization conformance, and
-  event/streaming boundaries can still split normalization sequences. See
+  cmap checks. Hebrew uses modified combining classes under SHAPE-023. This is
+  not full script-specific HarfBuzz normalization conformance; safe normalization
+  across streaming cuts remains separate. Event scopes share normalization. See
   [normalize.go](../otshape/normalize.go).
 - **Script support is selective.** Arabic joining uses a hand-maintained
   classification and selected fallback operations. Hebrew implements selected
@@ -866,12 +891,11 @@ and HarfBuzz level-0 grouping are the agreed contracts. See the
 [normalization report](../internal/hbcmp/testdata/text/NORMALIZATION.md) for the
 conversion's rendering convention and exact cases.
 
-Thirty-two text cases pass, including the three promoted SHAPE-012/013
-regressions. Three remain tagged for Hebrew mark order or the explicit no-GPOS
-parser restriction. The two Hebrew cases now run as subtests of
-`TestKnownBugSHAPE023HebrewMarkOrdering`, preserving their full assertions:
-clusters and positions match, but internal Hebrew mark order differs.
-The additional normalization corpus and coverage are described above.
+Thirty-four text cases pass, including both original pointed-Hebrew regressions
+promoted unchanged under SHAPE-023. Only the explicit no-GPOS parser restriction
+remains tagged in this corpus. The separate Hebrew ordering corpus adds nine
+captures; the focused test runs those plus three original/control cases through
+both APIs. The additional normalization corpus and coverage are described above.
 
 `otshape/clusters_test.go` covers leading marks, adjacent groups, original scalar
 anchors through composition/decomposition, range starts/ends inside groups,
@@ -1067,13 +1091,13 @@ continue to pass, but expanding their coverage is not a current priority.
    complete passing baselines run in the ordinary suite. SHAPE-011 implements
    Latin/Hebrew base/mark grouping and initial-group range bounds.
    SHAPE-012/013 now cover canonical ordering and font-supported representation
-   choices; remaining Hebrew mark order needs its separate fix. Absence of
+   choices; SHAPE-023 adds Hebrew mark ordering and composition blocking. Absence of
    GPOS itself remains outside normal parser scope (SHAPE-014, deferred).
 4. **Remaining mark positioning.** SHAPE-007/008 now resolve design-unit
    mark-to-base/ligature/mark positioning and final mark advances for horizontal
    Latin/Hebrew. SHAPE-019 also resolves ignored-mark preservation and ligature
-   component association. Preserve those regressions while addressing the
-   remaining Hebrew mark-ordering blockers in complete text baselines. Cursive and hint/device/variation work
+   component association; SHAPE-023 resolves the recorded Hebrew mark-ordering
+   blockers in complete text baselines. Cursive and hint/device/variation work
    remain outside this scope.
 5. **Streaming and feature-scope boundaries.** The initial
    [matrix and event/progress driver](../internal/hbcmp/testdata/text/STREAMING.md)

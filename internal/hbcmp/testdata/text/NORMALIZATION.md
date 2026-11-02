@@ -5,6 +5,13 @@ Verified on 2026-10-26 against source revision
 Production behavior is unchanged; public API comments now record the agreed
 logical-order and HarfBuzz level-0 cluster contracts.
 
+**SHAPE-023 resolution (2026-11-02):** Hebrew now uses
+modified combining classes for ordering and composition blocking, with its
+special meteg adjustment before recomposition. Both original ordering failures
+are promoted unchanged. Nine additional independent captures live in the
+separate [Hebrew ordering corpus](HEBREW_ORDER.md). Earlier Hebrew exclusions
+and tagged counts below are historical snapshots, not the current status.
+
 **SHAPE-012/013 resolution (2026-11-01):** the reordered
 Latin marks and both missing-composite cases now pass all original fields and
 run in the ordinary suite. The original 35-record corpus is unchanged: 32 cases
@@ -34,10 +41,11 @@ add `--write` only to replace them deliberately. Captures pin HarfBuzz 15.0.0,
 its binary hash, OpenType shaper/font functions, Unicode scalar clusters at
 level zero, and font-unit positions. Go tests use checked-in data only.
 
-Hebrew bypasses the new generic canonical sorting pass by explicit user decision:
-its script-specific order remains separate, while font-coverage checks apply.
-The existing passing Hebrew cases remain ordinary and the two ordering failures
-retain their complete tagged expectations. Streaming/context limits are unchanged.
+At the SHAPE-012/013 stage, Hebrew bypassed generic canonical sorting by explicit
+user decision while sharing font-coverage checks. SHAPE-023 subsequently replaced
+that exclusion with modified Hebrew classes and an early reorder hook. Both
+original ordering failures now pass their complete unchanged expectations.
+Streaming/context limits are unchanged.
 The accepted fixes, contracts, and recorded implementation verification are
 archived under [SHAPE-012](../../../../doc/SHAPING_FINDINGS.md#shape-012--canonical-equivalent-mark-orders-shape-differently)
 and [SHAPE-013](../../../../doc/SHAPING_FINDINGS.md#shape-013--normalization-ignores-font-coverage).
@@ -66,7 +74,8 @@ coverage; safe streaming boundaries remain separate.
 
 Pointed shalom now produces all seven expected glyphs with matching clusters
 and per-glyph positions, but the two initial shin marks remain reversed. Its
-full original oracle remains tagged for the existing Hebrew ordering follow-up.
+full original oracle subsequently passed unchanged after SHAPE-023 resolved
+the remaining order difference.
 The accepted fix and contract are archived in
 [SHAPING_FINDINGS.md](../../../../doc/SHAPING_FINDINGS.md#shape-010--default-mark-positioning-is-missed-during-normalization).
 The dated discovery diagnostics below remain historical.
@@ -186,7 +195,8 @@ python3 testdata/scripts/capture_harfbuzz_text.py
 ```
 
 Font-aware representation and canonical ordering are now resolved under
-SHAPE-012/013 within the agreed scope; Hebrew mark ordering remains separate.
+SHAPE-012/013 within the agreed scope. SHAPE-023 subsequently resolved the
+recorded Hebrew ordering failures with modified classes and early reordering.
 Effective mark support is resolved under SHAPE-010. Source-coordinate masks
 and Latin/Hebrew base/mark grouping have ordinary regressions. Promote complete
 passing records when all their blockers are fixed. Initial-group indexed range bounds have focused coverage under

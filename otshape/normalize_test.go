@@ -93,7 +93,7 @@ func TestNormalizationRejectsUnavailableHookOutput(t *testing.T) {
 	}
 }
 
-func TestNormalizationPreservesDeferredHebrewOrder(t *testing.T) {
+func TestNormalizationPreservesOrderedHebrewMarks(t *testing.T) {
 	input := []rune("\u05e9\u05c1\u05b8")
 	r, sources := normalizeRuneStream(input, []uint32{10, 11, 12}, nil,
 		SelectionContext{ScriptTag: ot.T("hebr")}, clusterPolicyEngine{NormalizationComposed}, nil)
@@ -109,5 +109,78 @@ func TestCanonicalOrderingDoesNotInsertStreamSafeCharacters(t *testing.T) {
 	want := "x" + strings.Repeat("\u0323", 40) + strings.Repeat("\u0301", 40)
 	if string(r) != want {
 		t.Fatalf("got %U, want %U", r, []rune(want))
+	}
+}
+
+func TestHebrewNormalizationSourcesAndBarriers(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, want string
+		sources           []uint32
+	}{
+		{"shin_dot_first", "\u05e9\u05b8\u05c1", "\u05e9\u05c1\u05b8", []uint32{10, 12, 11}},
+		{"sin_dot_first", "\u05e9\u05b8\u05c2", "\u05e9\u05c2\u05b8", []uint32{10, 12, 11}},
+		{"equal_class_stable", "\u05d0\u05c7\u05b8", "\u05d0\u05c7\u05b8", []uint32{10, 11, 12}},
+		{"leading_marks", "\u05b8\u05c1", "\u05c1\u05b8", []uint32{11, 10}},
+		{"cgj_barrier", "\u05e9\u05b8\u034f\u05c1", "\u05e9\u05b8\u034f\u05c1", []uint32{10, 11, 12, 13}},
+		{"starter_barrier", "\u05e9\u05b8\u05d0\u05c1", "\u05e9\u05b8\u05d0\u05c1", []uint32{10, 11, 12, 13}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := []rune(tc.input)
+			sources := make([]uint32, len(input))
+			for i := range sources {
+				sources[i] = uint32(10 + i)
+			}
+			ws := newShapeWorkspace(16)
+			r, groups, gotSources := ws.normalize(input, sources, nil, SelectionContext{ScriptTag: ot.T("hebr")}, clusterPolicyEngine{NormalizationComposed}, nil)
+			if string(r) != tc.want || !slices.Equal(gotSources, tc.sources) {
+				t.Fatalf("got %U sources=%v, want %U sources=%v", r, gotSources, []rune(tc.want), tc.sources)
+			}
+			for i, group := range groups {
+				want := uint32(10)
+				if tc.name == "starter_barrier" && i >= 2 {
+					want = 12
+				}
+				if group != want {
+					t.Fatalf("groups=%v at %d, want %d", groups, i, want)
+				}
+			}
+		})
+	}
+}
+
+type normalizationReorderProbe struct {
+	clusterPolicyEngine
+	spans     []string
+	lateCalls int
+}
+
+func (e *normalizationReorderProbe) ReorderNormalizationMarks(runes []rune, _ []uint32) {
+	e.spans = append(e.spans, string(runes))
+}
+func (e *normalizationReorderProbe) ReorderMarks(RunContext, int, int) { e.lateCalls++ }
+
+func TestNormalizationReorderHookTiming(t *testing.T) {
+	font := loadMiniOTFont(t, "gsub3_1_simple_f1.otf")
+	for _, mode := range []NormalizationMode{NormalizationComposed, NormalizationNone} {
+		e := &normalizationReorderProbe{clusterPolicyEngine: clusterPolicyEngine{mode}}
+		pl, err := compile(planRequest{Font: font, Engine: e})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, c := normalizeRuneStream([]rune("x\u0301\u0323X\u0300\u0301"), nil, font, SelectionContext{}, e, pl)
+		want := []string{"\u0323\u0301", "\u0300\u0301"}
+		if mode == NormalizationNone {
+			want = nil
+		}
+		if !slices.Equal(e.spans, want) {
+			t.Fatalf("mode=%v spans=%q, want %q", mode, e.spans, want)
+		}
+		run := mapRunesToRunBufferInto(newRunBuffer(len(r)), r, c, nil, font)
+		if err := shapeMappedRun(run, e, pl); err != nil {
+			t.Fatal(err)
+		}
+		if e.lateCalls != 0 {
+			t.Fatal("normalization reorder repeated after mapping")
+		}
 	}
 }

@@ -102,7 +102,6 @@ demonstrating the recorded behavior, not fixture-loading or build failures.
 | [SHAPE-009](#shape-009--rtl-output-order-differs-from-harfbuzz) | fixed (contract resolved) | Logical sink order agreed; plain Hebrew passes after explicit oracle adaptation |
 | [SHAPE-014](#shape-014--fonts-without-gpos-stop-at-the-parser) | deferred | Existing parser scope excludes fonts without GPOS |
 | [SHAPE-015](#shape-015--streaming-cuts-lose-shaping-context) | reproduced | Buffer cuts change ligatures, pair positioning, and normalization |
-| [SHAPE-023](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order) | reproduced | Hebrew mark order differs despite matching glyphs, clusters and per-glyph positions |
 
 Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-001 — mask preservation](#shape-001--setupmasks-changes-are-overwritten),
@@ -122,7 +121,8 @@ Archived fixes in [Resolved findings](#resolved-findings):
 [SHAPE-019 — ligature mark preservation](#shape-019--ligature-substitution-deletes-ignored-marks),
 [SHAPE-020 — stage lookup order](#shape-020--default-features-run-in-feature-order-instead-of-lookup-order),
 [SHAPE-021 — engine/user feature precedence](#shape-021--engine-and-user-feature-settings-combine-as-off-wins),
-and [SHAPE-022 — mark-to-mark predecessor selection](#shape-022--mark-to-mark-attachment-crosses-an-intervening-base).
+[SHAPE-022 — mark-to-mark predecessor selection](#shape-022--mark-to-mark-attachment-crosses-an-intervening-base),
+and [SHAPE-023 — Hebrew mark ordering](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
 
 The original AOTS baseline batch added SHAPE-005/006 in the former
 `internal/hbcmp/aots_knownbugs_test.go` (removed after the SHAPE-019 promotion).
@@ -315,46 +315,6 @@ buffer contract; whole/lookahead/carry deletion comparisons are ordinary.
 go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE015' -count=1 -timeout=30s -v
 ```
 
-## SHAPE-023 — Hebrew combining marks use the wrong internal order
-
-**Status:** reproduced; numbered 2026-11-02 from the existing Hebrew mark-ordering
-follow-up. No shaping behavior or expected output changed. **Test:**
-`TestKnownBugSHAPE023HebrewMarkOrdering` in
-[text_knownbugs_test.go](../internal/hbcmp/text_knownbugs_test.go).
-
-**Expected behavior and basis:** within each initial Hebrew cluster, logical
-shaping order should match the unchanged HarfBuzz level-0 oracle after the
-agreed reversal of HarfBuzz's final visual output. This is internal mark order,
-not paragraph bidi or a reason to change the logical sink contract (SHAPE-009).
-
-**Reproductions:** Noto Sans Hebrew, Hebr/he/RTL, default features, whole-input
-buffering, using the complete existing records in `text/baselines.json`:
-
-- `hebrew_shin_pointed`: U+05E9 U+05B8 U+05C1 (shin, qamats, shin dot).
-  All three glyphs have cluster 0 and correct per-glyph positions, but their
-  order is `[96,79,100]` instead of `[96,100,79]`.
-- `hebrew_shalom_pointed`: U+05E9 U+05B8 U+05C1 U+05DC U+05D5 U+05B9 U+05DD.
-  The same initial shin-cluster ordering difference remains. Its seven-glyph
-  count, vav/holam composition, clusters and per-glyph positions already match.
-
-**Attribution:** these are the former `TestKnownBugSHAPE007HebrewMarkOffsets`
-and `TestKnownBugSHAPE010HebrewComposition/hebrew_shalom_pointed` regressions,
-previously assigned to the unnumbered SHAPE-011 follow-up. They now form two
-subtests under SHAPE-023. The complete six-field assertions and captured records
-are unchanged. Combining the wrappers reduces the number of failing top-level
-test groups by one; it does not fix either reproduction.
-
-**Scope:** investigate the Hebrew engine's mark-ordering policy and its interaction
-with normalization. SHAPE-012/013 explicitly preserved the existing Hebrew order
-pending this separate work; simply enabling generic canonical sorting is not an
-agreed fix. Specify the correction before implementing it. SHAPE-007/010/011 and
-SHAPE-022 stay resolved within their accepted scopes. Streaming attachment/context
-loss remains SHAPE-015; broader attachment compatibility is separate.
-
-```sh
-go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE023' -count=1 -v
-```
-
 ## Remaining discovery work
 
 The shared-API and initial AOTS batches are not a complete defect inventory.
@@ -441,7 +401,7 @@ use their starting scalar for both bounds: starts inside exclude the group;
 ends inside include it. Source anchors remain separate from output grouping.
 This supersedes the provisional preference above for those groups only;
 SHAPE-016 subsequently applied the same rule across feature events within a
-carry. Hebrew reordering remains separate.
+carry. SHAPE-023 subsequently resolved the recorded Hebrew ordering failures.
 
 **Verification at SHAPE-002 completion (2026-10-27):** focused
 shaping/lookup/HarfBuzz tests and `go test ./... -count=1` passed. The tagged
@@ -662,14 +622,15 @@ correction and pass afterwards. Focused attachment tests and the full ordinary
 suite passed after that correction. Discovery retained twelve failing top-level
 tests (eleven shaping groups and the deferred parser case).
 
-**Remaining scope:** the historical pointed-shin regression now remains tagged
-in `TestKnownBugSHAPE023HebrewMarkOrdering` for the [SHAPE-023 Hebrew mark ordering](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
-Noto Sans Hebrew mark offsets are exactly 227 and 539. SHAPE-011 subsequently
-fixed grouping: output is now `[96/0,79/0,100/0]` instead of
-`[96/0,100/0,79/0]`. Its four complete combining-mark text cases now pass unchanged
+**Remaining scope:** the historical pointed-shin regression was subsequently
+promoted unchanged by [SHAPE-023](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
+Noto Sans Hebrew mark offsets are exactly 227 and 539. SHAPE-011 fixed grouping;
+SHAPE-023 corrects the remaining order to `[96/0,100/0,79/0]`.
+Its four complete combining-mark text cases now pass unchanged
 in the ordinary suite. Effective mark support was subsequently fixed under
 SHAPE-010; SHAPE-012/013 subsequently resolved canonical ordering and font-aware
-representation within their agreed scope. Hebrew ordering remains separate.
+representation within their agreed scope. SHAPE-023 subsequently resolved
+the recorded Hebrew ordering failures.
 SHAPE-019 subsequently
 resolved ignored-mark preservation and component association, including nested
 ligatures; unassociated marks retain the last-component fallback. Cursive
@@ -738,8 +699,9 @@ go test ./otshape ./otshape/otcore -run '^TestGDEFMarkAdvance' -count=1
 
 **Status:** fixed; accepted 2026-11-01. The three standalone vav/holam
 regressions now run in the ordinary suite. The historical pointed-shalom
-regression now runs in `TestKnownBugSHAPE023HebrewMarkOrdering`
-for the separate [SHAPE-023 Hebrew mark ordering](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
+regression subsequently passed unchanged under
+[SHAPE-023](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order) and
+now runs in the ordinary text suite.
 
 **Cause:** normalization inferred GPOS mark support from allocated user-feature
 masks. It missed unmasked default features and treated disabled or absent
@@ -774,13 +736,12 @@ the seven global-setting cases; the two indexed-range cases use `Shape`.
 cover required/default features, empty/absent features, shared lookup provenance,
 contributor masks, and disabled GPOS.
 
-Pointed shalom now has all seven expected glyphs with matching clusters and
-per-glyph positions. Only the two marks on its initial shin remain reversed;
-the full oracle stays tagged for the
-[SHAPE-023 Hebrew mark ordering](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
+Pointed shalom gained all seven expected glyphs with matching clusters and
+per-glyph positions under this fix. SHAPE-023 subsequently corrected the two
+marks on its initial shin; the full unchanged oracle now runs in the ordinary suite.
 SHAPE-007/011 remain resolved within their accepted scopes. Canonical ordering
 and cmap-aware representation were subsequently resolved under SHAPE-012/013,
-with Hebrew ordering explicitly excluded. Absence of the entire GPOS
+with Hebrew ordering initially excluded and subsequently resolved under SHAPE-023. Absence of the entire GPOS
 table is separately blocked at the parser and deferred under SHAPE-014.
 
 **Recorded implementation verification (2026-11-01):** `go test ./... -count=1`, `go build ./...`, and `go vet ./...`
@@ -800,8 +761,8 @@ go test -tags shaping_knownbugs ./internal/hbcmp -run '^TestKnownBugSHAPE010' -c
 ### SHAPE-011 — Combining-mark clusters differ from HarfBuzz level 0
 
 **Fixed:** implemented and reviewed 2026-10-29 within the agreed Latin/Hebrew
-base/mark grouping scope. No blocking findings; Hebrew internal mark ordering
-and context-safe streaming remain separate.
+base/mark grouping scope. No blocking findings; SHAPE-023 subsequently resolved
+the recorded Hebrew ordering failures. Context-safe streaming remains separate.
 
 **Cause and fix:** base letters and combining marks retained separate scalar
 clusters. [Initial grouping](../otshape/clusters.go) now forms groups before
@@ -850,11 +811,13 @@ merging, source-anchor random selection, or scratch isolation through temporary
 Go overlays triggered their corresponding regressions. No oracle data or
 assertion fields were changed.
 
-**Remaining scope:** the complete historical pointed-shin assertion stays tagged
-for the [SHAPE-023 Hebrew mark ordering](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
+**Remaining scope:** the complete historical pointed-shin assertion was
+subsequently promoted unchanged under
+[SHAPE-023](#shape-023--hebrew-combining-marks-use-the-wrong-internal-order).
 Effective Hebrew mark support was subsequently fixed under SHAPE-010, and
 canonical ordering/font-aware representation under SHAPE-012/013 within their
-agreed scope. Hebrew ordering and streaming/limits (SHAPE-015) remain open;
+agreed scope. SHAPE-023 subsequently resolved the recorded Hebrew ordering
+failures; streaming/limits (SHAPE-015) remain open;
 SHAPE-016 subsequently removes feature-event barriers within a carry. General emoji and other
 script-specific sequence rules are not claimed. Conservative partial compaction
 still rejects repeated output clusters; separate source anchors do not prove
@@ -893,9 +856,9 @@ normalization modes, source anchors, and unavailable custom-hook results.
 
 **Agreed boundary:** applying Unicode CCC sorting to Hebrew regressed the
 accepted shin/dot/qamats case. The user explicitly chose to preserve Hebrew's
-existing order: Hebrew bypasses the new ordering pass, while sharing the
-font-coverage checks. Existing Hebrew ordering failures retain their full tagged
-oracles. SHAPE-016 subsequently removed event-span barriers within each buffered
+existing order in this fix, while sharing the font-coverage checks. SHAPE-023
+subsequently replaced that exclusion with modified Hebrew classes and an early
+reorder hook, promoting both original full oracles unchanged. SHAPE-016 subsequently removed event-span barriers within each buffered
 carry. Script-specific modified classes and streaming safety (SHAPE-015) remain
 separate; this is not full HarfBuzz normalization conformance. No sequence limits or error semantics were introduced.
 
@@ -953,8 +916,8 @@ unchanged. Provenance and preparation commands are in
 The three-pass structure follows HarfBuzz 15's normalizer, using the existing
 `x/text/unicode/norm` data and project hooks. It does not import HarfBuzz's
 script-specific overrides, variation-selector/space fallbacks, or a general
-font-wide representation search. Hebrew ordering and buffer/context limitations
-remain as described under [SHAPE-012](#shape-012--canonical-equivalent-mark-orders-shape-differently),
+font-wide representation search. SHAPE-023 subsequently resolved the recorded
+Hebrew ordering failures; buffer/context limitations remain as described under [SHAPE-012](#shape-012--canonical-equivalent-mark-orders-shape-differently),
 which also records the combined implementation verification.
 
 ```sh
@@ -1016,8 +979,9 @@ failure.
 **Remaining limitations:** SHAPE-015 safe flushing/capacity remains open.
 SHAPE-021 subsequently resolved engine/user precedence. The new mark-range capture exposed the independent
 SHAPE-022 predecessor-selection defect, subsequently fixed with its complete
-expectation promoted unchanged. Broader attachment compatibility, Hebrew
-internal ordering and other script-specific work stay deferred.
+expectation promoted unchanged. SHAPE-023 subsequently resolved the recorded
+Hebrew ordering failures. Broader attachment compatibility and other
+script-specific work stay deferred.
 
 **Recorded implementation verification (2026-11-01):** the full ordinary suite,
 targeted layout/shaping/HarfBuzz race tests, build, and vet passed. Discovery
@@ -1405,9 +1369,83 @@ recapture verified all eleven scope oracles;
 no captured output or font bytes changed. Discovery retains six expected failing
 top-level groups, removing only SHAPE-022, with no unexpected passing known-bug
 groups, build errors, panics, or timeouts. SHAPE-021 subsequently resolved feature
-precedence. Streaming safety (SHAPE-015), Hebrew ordering (SHAPE-023), and broader
-attachment compatibility remain outside this change.
+precedence, and SHAPE-023 subsequently resolved the recorded Hebrew ordering
+failures. Streaming safety (SHAPE-015) and broader attachment compatibility
+remain outside this change.
 
 ```sh
 go test ./otlayout ./internal/hbcmp -run '^TestSHAPE022' -count=1
+```
+
+### SHAPE-023 — Hebrew combining marks use the wrong internal order
+
+**Status:** fixed; accepted 2026-11-02. Originally numbered from the Hebrew
+mark-ordering follow-up. Both original complete oracles are promoted to
+`TestHarfBuzzTextBaselines`; `TestSHAPE023HebrewOrdering` also checks them through
+both APIs, alongside the previously passing reordered-shin control and nine
+new independent captures. Tests are in
+[hebrew_order_test.go](../internal/hbcmp/hebrew_order_test.go).
+
+**Expected behavior and basis:** within each initial Hebrew cluster, logical
+shaping order should match the unchanged HarfBuzz level-0 oracle after the
+agreed reversal of HarfBuzz's final visual output. This is internal mark order,
+not paragraph bidi or a reason to change the logical sink contract (SHAPE-009).
+
+**Original reproductions:** Noto Sans Hebrew, Hebr/he/RTL, default features, whole-input
+buffering, using the complete existing records in `text/baselines.json`:
+
+- `hebrew_shin_pointed`: U+05E9 U+05B8 U+05C1 (shin, qamats, shin dot).
+  All three glyphs had cluster 0 and correct per-glyph positions, but their
+  order was `[96,79,100]` instead of `[96,100,79]`.
+- `hebrew_shalom_pointed`: U+05E9 U+05B8 U+05C1 U+05DC U+05D5 U+05B9 U+05DD.
+  The same initial shin-cluster ordering difference remained. Its seven-glyph
+  count, vav/holam composition, clusters and per-glyph positions already matched.
+
+**Attribution:** these are the former `TestKnownBugSHAPE007HebrewMarkOffsets`
+and `TestKnownBugSHAPE010HebrewComposition/hebrew_shalom_pointed` regressions,
+subsequently grouped under `TestKnownBugSHAPE023HebrewMarkOrdering`. That grouping
+changed attribution only. This fix removes the tagged wrapper and promotes both
+cases without modifying their six-field expectations or captured records.
+
+**Cause and fix:** the shared normalizer had deliberately excluded Hebrew from
+canonical sorting. Hebrew now uses HarfBuzz 15's modified fixed-position classes
+for both stable sorting and composition blocking. Class-zero characters,
+including CGJ, remain ordering barriers; equal-class order is stable.
+The existing patah/qamats–sheva/hiriq–meteg/below adjustment now runs once per mark
+sequence after sorting and before recomposition, as in HarfBuzz. Source indexes
+move with runes; the existing initial level-0 groups still determine masks and
+clusters. Font-coverage checks and plan-wide GPOS `mark` fallback policy are
+unchanged.
+
+The optional `ShapingEngineNormalizationReorderHook` receives aligned rune and
+original-source slices for one sorted nonzero-class span. It supersedes the
+late `ShapingEngineReorderHook` when an engine implements both, preventing a
+second reorder after composition. `NormalizationNone` bypasses this early hook.
+Hebrew retains its standalone `ReorderMarks` method for compatibility; other
+engines keep their existing late-hook timing.
+
+**Independent basis:** [modified Hebrew classes](https://github.com/harfbuzz/harfbuzz/blob/15.0.0/src/hb-unicode.hh#L301-L333),
+[normalization order and blocking](https://github.com/harfbuzz/harfbuzz/blob/15.0.0/src/hb-ot-shape-normalize.cc#L346-L445),
+and [Hebrew special adjustment](https://github.com/harfbuzz/harfbuzz/blob/15.0.0/src/hb-ot-shaper-hebrew.cc#L157-L181).
+The new [capture corpus](../internal/hbcmp/testdata/text/HEBREW_ORDER.md) covers
+sin dot, dagesh, equal classes, meteg, two mark sequences, unblocked and blocked
+fallback composition, meteg before composition, and a feature boundary inside a
+reordered group. All twelve original/control/new cases pass both APIs (24 full
+comparisons). Lower tests cover source indexes, leading marks, starters/CGJ,
+equal-class stability, per-sequence early-hook calls, and no late replay.
+
+**Recorded implementation verification (2026-11-02):** the full ordinary suite
+and `go vet ./...` passed. Tagged
+discovery fails only in SHAPE-004/014/015, with no unexpected known-bug passes,
+build errors, panics or timeouts. See [TESTING.md](TESTING.md).
+
+**Remaining scope:** safe streaming cuts remain SHAPE-015; no new buffer limits,
+CGJ insertion, truncation, or broad script work was introduced. Full-output CGJ
+rendering is not claimed by the lower normalization-barrier tests. Existing
+SHAPE-007/010/011/012/013/022 resolutions retain their accepted scope.
+
+```sh
+go test ./internal/hbcmp -run '^TestSHAPE023' -count=1 -v
+go test ./otshape ./otshape/othebrew -run 'Test.*(Normalization|Reorder|ShaperHook)' -count=1
+python3 testdata/scripts/capture_harfbuzz_hebrew_order.py
 ```

@@ -30,6 +30,9 @@ func TestShaperHookSurface(t *testing.T) {
 	if _, ok := engine.(otshape.ShapingEngineComposeHook); !ok {
 		t.Fatal("hebrew shaper must implement compose hook")
 	}
+	if _, ok := engine.(otshape.ShapingEngineNormalizationReorderHook); !ok {
+		t.Fatal("hebrew shaper must reorder during normalization")
+	}
 	if _, ok := engine.(otshape.ShapingEngineReorderHook); !ok {
 		t.Fatal("hebrew shaper must implement reorder hook")
 	}
@@ -176,5 +179,15 @@ func TestReorderMarksNoopWithoutPattern(t *testing.T) {
 	if run.codepoints[0] != 0x05B0 || run.codepoints[1] != 0x05B7 || run.codepoints[2] != 0x05BD {
 		t.Fatalf("unexpected reorder for non-matching pattern: [%U,%U,%U]",
 			run.codepoints[0], run.codepoints[1], run.codepoints[2])
+	}
+}
+
+func TestNormalizationReorderPreservesOriginalSources(t *testing.T) {
+	s := othebrew.Shaper{}
+	runes := []rune{0x05b7, 0x05b0, 0x05bd}
+	sources := []uint32{31, 32, 33}
+	s.ReorderNormalizationMarks(runes, sources)
+	if runes[0] != 0x05b7 || runes[1] != 0x05bd || runes[2] != 0x05b0 || sources[0] != 31 || sources[1] != 33 || sources[2] != 32 {
+		t.Fatalf("reordered=%U sources=%v", runes, sources)
 	}
 }

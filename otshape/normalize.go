@@ -4,6 +4,7 @@ import (
 	"sort"
 	"unicode"
 
+	"github.com/npillmayer/opentype/internal/hebreworder"
 	"github.com/npillmayer/opentype/ot"
 	"golang.org/x/text/unicode/norm"
 )
@@ -64,12 +65,9 @@ func normalizeRuneStreamWithScratch(
 	nctx := newNormalizeContext(font, ctx, planHasGposMark(pl))
 	runes, clusters = decomposeSupportedRunes(tmpARunes, tmpAClusters, runes, clusters, nctx, mode)
 	tmpARunes, tmpAClusters = runes, clusters
-	// Hebrew needs script-specific combining classes. Preserve its existing
-	// order until the separate Hebrew ordering follow-up is addressed; applying
-	// raw Unicode CCC here regresses the accepted shin/dot/qamats oracle.
-	if ctx.ScriptTag != ot.T("hebr") && ctx.Script.String() != "Hebr" {
-		orderCanonicalMarks(runes, clusters)
-	}
+	class := normalizationClass(ctx)
+	reorder, _ := engine.(ShapingEngineNormalizationReorderHook)
+	orderNormalizationMarks(runes, clusters, class, reorder)
 
 	composeHook, hasComposeHook := engine.(ShapingEngineComposeHook)
 	if !hasComposeHook && mode != NormalizationComposed {
@@ -157,19 +155,30 @@ func canonicalClass(r rune) uint8 {
 	return norm.NFD.PropertiesString(string(r)).CCC()
 }
 
+// Use the same class policy for ordering and composition blocking.
+func normalizationClass(ctx SelectionContext) func(rune) uint8 {
+	if ctx.ScriptTag == ot.T("hebr") || ctx.Script.String() == "Hebr" {
+		return hebreworder.Class
+	}
+	return canonicalClass
+}
+
 // Sort only nonzero-class spans, stably. Starters (including CGJ) are barriers;
 // equal-class marks retain their input order. Sources move with their runes.
-func orderCanonicalMarks(runes []rune, sources []uint32) {
+func orderNormalizationMarks(runes []rune, sources []uint32, class func(rune) uint8, reorder ShapingEngineNormalizationReorderHook) {
 	for start := 0; start < len(runes); {
-		if canonicalClass(runes[start]) == 0 {
+		if class(runes[start]) == 0 {
 			start++
 			continue
 		}
 		end := start + 1
-		for end < len(runes) && canonicalClass(runes[end]) != 0 {
+		for end < len(runes) && class(runes[end]) != 0 {
 			end++
 		}
-		sort.Stable(canonicalSequence{runes[start:end], sources[start:end]})
+		sort.Stable(canonicalSequence{runes[start:end], sources[start:end], class})
+		if reorder != nil {
+			reorder.ReorderNormalizationMarks(runes[start:end], sources[start:end])
+		}
 		start = end
 	}
 }
@@ -177,12 +186,11 @@ func orderCanonicalMarks(runes []rune, sources []uint32) {
 type canonicalSequence struct {
 	runes   []rune
 	sources []uint32
+	class   func(rune) uint8
 }
 
-func (s canonicalSequence) Len() int { return len(s.runes) }
-func (s canonicalSequence) Less(i, j int) bool {
-	return canonicalClass(s.runes[i]) < canonicalClass(s.runes[j])
-}
+func (s canonicalSequence) Len() int           { return len(s.runes) }
+func (s canonicalSequence) Less(i, j int) bool { return s.class(s.runes[i]) < s.class(s.runes[j]) }
 func (s canonicalSequence) Swap(i, j int) {
 	s.runes[i], s.runes[j] = s.runes[j], s.runes[i]
 	s.sources[i], s.sources[j] = s.sources[j], s.sources[i]
@@ -217,6 +225,7 @@ func composeRuneStreamInto(
 	outRunes = outRunes[:0]
 	outClusters = outClusters[:0]
 	starter := 0
+	class := normalizationClass(nctx.Selection())
 	for i, r := range runes {
 		cluster := uint32(i)
 		if len(clusters) == len(runes) {
@@ -228,11 +237,11 @@ func composeRuneStreamInto(
 			continue
 		}
 		last := len(outRunes) - 1
-		ccc := canonicalClass(r)
+		ccc := class(r)
 		// An unconsumed intervening mark with equal or higher class blocks
 		// composition. Adjacent pairs retain the existing custom-hook contract,
 		// including hooks that deliberately compose two class-zero characters.
-		if starter == last || canonicalClass(outRunes[last]) < ccc {
+		if starter == last || class(outRunes[last]) < ccc {
 			a := outRunes[starter]
 			var composed rune
 			var ok bool

@@ -48,6 +48,36 @@ records the implementation gap. Feature ranges address original source scalars,
 not normalized buffer positions (SHAPE-002). A cluster boundary alone does not
 establish a safe streaming cut.
 
+## HarfBuzz compatibility and intentional differences
+
+The compatibility target is the complete shaping result within the supported
+shared/Latin/Hebrew scope, subject to the explicit conventions below. Streaming
+must preserve that result: resource limits permit an explicit error, not
+approximate output, truncation, or a forced unsafe flush. This is not a claim of
+complete HarfBuzz conformance across scripts, fonts, or custom engines.
+
+The HarfBuzz observations below refer to the checked-in captures verified with
+**HarfBuzz 15.0.0**. Older upstream AOTS expectations retain their separately
+recorded revision. See [independent expected output](TESTING.md#independent-expected-output)
+for provenance and comparison rules; these observations are not promises about
+every HarfBuzz version.
+
+| Topic | Our contract and relationship to HarfBuzz | Rationale and evidence |
+| --- | --- | --- |
+| Output order | The sink emits logical shaping order, including RTL. The comparison harness adapts RTL HarfBuzz output to this convention; normalization and script reordering may still change order within a cluster. | Visual ordering belongs to the caller. See [output order and clusters](#output-order-and-clusters) and the [text comparisons](../internal/hbcmp/text_baselines_test.go). |
+| Alternate values | Enablement is separate from the numeric argument. Enabled zero selects the first alternate; positives are one-based; all negatives request random selection; oversized positives leave the glyph unchanged by that substitution. The HarfBuzz adapter maps feature value zero to disabled, rather than to our enabled-zero request. Random choices are stable when a carry is reshaped within a request; matching HarfBuzz's random sequence is not promised. | Preserve the lower-level `ApplyFeature` contract and stable streaming results. See [SHAPE-003](SHAPING_FINDINGS.md#shape-003--feature-values-do-not-select-alternates), [public regressions](../otshape/otcore/alternate_values_test.go), and [carry repeatability tests](../otshape/alternate_values_test.go). Random and oversized values have local contract tests, not an extended upstream alternate oracle. |
+| Shared alternate lookups | Equal active values execute a shared lookup once, with zero equivalent to one and all negatives equivalent to random. Incompatible values return `ErrConflictingAlternates` when a nonempty alternate set matches, including through context or extension lookups. This deliberately differs from the observed HarfBuzz packed-mask numeric behavior. | Avoid exposing mask encoding as alternate-selection semantics. See [SHAPE-020](SHAPING_FINDINGS.md#shape-020--default-features-run-in-feature-order-instead-of-lookup-order), [fixture evidence](../testdata/fonts/LOOKUP_ORDER.md), and [conflict tests](../otlayout/alternate_selection_error_test.go). |
+| Coordinates | Clusters use HarfBuzz level-0 grouping/merging with zero-based original Unicode scalar anchors. Feature ranges also address original scalars, through normalization and substitution. This fixes our API coordinate convention; it is not an assertion that HarfBuzz clusters must use byte offsets. | Keep source correspondence independent of UTF-8 encoding and streaming windows. See [SHAPE-002](SHAPING_FINDINGS.md#shape-002--feature-ranges-use-chunk-local-coordinates) and the scalar-index captures described in [TESTING.md](TESTING.md). |
+| Resource limits and failure | Raw capacity, initial-group and intermediate-buffer limits, conservative whole-run fallback, and partial-output error handling are our own supported-operation policies. They do not promise to reproduce HarfBuzz's limits or acceptance of unusually large inputs. | Bound work while emitting only final output. See the [buffer contract](STREAMING_API.md#agreed-buffer-contract-2026-11-02), [safe-cut policy](STREAMING_API.md#safe-cut-selection), and [limit regressions](../otshape/stream_limits_test.go). |
+
+Intentional semantic differences, API conventions, and resource policies are
+distinguished above so that a limit or representation choice does not become
+permission to change supported glyphs, clusters, advances, or offsets. Keep
+unresolved defects and deferred functionality in [SHAPING_FINDINGS.md](SHAPING_FINDINGS.md);
+they are not accepted compatibility exceptions. A new intentional difference
+requires an explicit decision and corresponding documentation/tests. Preserve
+independent HarfBuzz expectations rather than replacing them with current output.
+
 ## Engine selection and lifetime
 
 ```go

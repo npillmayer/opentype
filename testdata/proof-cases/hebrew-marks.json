@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "font": "../fonts/NotoSansHebrew-Regular.ttf",
+  "font_sha256": "a7fa16fffb27bedb060a0866267c29e9859aeb9c21cc33f5b3aaf6eb062eca85",
+  "text": "שָׁלוֹם",
+  "preset": "hebrew",
+  "features": [],
+  "render": {
+    "ppem": 72,
+    "show_baseline": true,
+    "color_clusters": true
+  },
+  "variants": [
+    {
+      "label": "Default mark positioning"
+    },
+    {
+      "label": "Mark positioning disabled",
+      "features": [
+        "mark=0",
+        "mkmk=0"
+      ]
+    }
+  ]
+}

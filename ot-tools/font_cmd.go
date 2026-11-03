@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"github.com/npillmayer/opentype"
+	"github.com/npillmayer/opentype/internal/proof"
 	"github.com/npillmayer/opentype/ot"
 	"github.com/npillmayer/opentype/otquery"
+
 	"github.com/thatisuday/commando"
 )
 
@@ -63,7 +65,7 @@ func runFontCommand(args map[string]commando.ArgValue, flags map[string]commando
 }
 
 func printSelectedTables(otf *ot.Font, raw string) {
-	requested := splitCSVSpace(raw)
+	requested := proof.SplitCSVSpace(raw)
 	for _, t := range requested {
 		tagName := strings.TrimSpace(t)
 		if tagName == "" {

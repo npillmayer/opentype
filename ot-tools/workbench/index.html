@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpenType proof workbench</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<body>
+<header><div><span class="eyebrow">OPENTYPE / LOCAL WORKBENCH</span><h1>Text, made visible.</h1></div><div class="exports"><button id="save" disabled>Save case</button><button id="png" disabled>Export PNG</button><button id="json" disabled>Export glyph data</button></div></header>
+<main>
+<aside aria-label="Case editor">
+<section><h2>01 / Inputs</h2><label for="casePath">Open a case · local path</label><div class="inline"><input id="casePath" placeholder="/path/to/sample.case.json"><button id="open">Open</button></div><div class="inline examples"><button id="latinExample">Latin example</button><button id="hebrewExample">Hebrew example</button><button id="newCase">New</button></div><p id="directory" class="hint"></p>
+<label for="font">Font · local path</label><input id="font" placeholder="/path/to/font.ttf"><p class="hint">Choose a local font by its path. Relative paths use the server directory.</p>
+<label for="fingerprint">Expected SHA-256 <span class="hint">optional for a new font</span></label><input id="fingerprint" spellcheck="false" placeholder="Recorded after the first successful proof"><p class="hint">Changing font path retains the fingerprint. Clear it explicitly to choose a different font.</p>
+<label for="text">Original source text</label><textarea id="text" rows="4" spellcheck="false" dir="auto"></textarea><p id="scalarCount" class="hint"></p></section>
+<section><h2>02 / Run &amp; features</h2><div class="inline"><button id="latinPreset">Latin defaults</button><button id="hebrewPreset">Hebrew defaults</button></div><div class="triple"><label>Script<input id="script" list="scripts" value="Latn"><datalist id="scripts"><option value="Latn"><option value="Hebr"></datalist></label><label>Language<input id="language" value="en"></label><label>Direction<select id="direction"><option value="ltr">LTR</option><option value="rtl">RTL</option></select></label></div>
+<label for="features">Shared features &amp; scalar ranges</label><input id="features" spellcheck="false" placeholder="liga=1, kern=1, liga[7:13]=0"><p class="hint">Comma/space separated. Ranges are [start, end) in original Unicode scalars. Negative alternate values request random choices.</p>
+<h3>Comparison variants</h3><div id="variants"></div><button id="addVariant">+ Add variant</button><p class="hint">Each row appends its features to the shared list.</p></section>
+<section><h2>03 / Proof settings</h2><label for="ppem">Pixels per em</label><input id="ppem" type="number" min="1" max="4096" value="72"><div id="guides" class="checks"></div>
+<details><summary>Buffer &amp; fixture controls</summary><label>Flush boundary<select id="flush"><option value="run">Run</option><option value="cluster">Cluster</option></select></label><div class="triple"><label>High<input id="high" type="number" value="0"></label><label>Low<input id="low" type="number" value="0"></label><label>Capacity<input id="max" type="number" value="0"></label></div><label class="check"><input id="testfont" type="checkbox">Relaxed test-font parser</label><p class="hint">Zero uses library defaults. Safe-buffer limits still apply.</p></details>
+<button id="refresh" class="primary">Update proof</button><p class="hint">Edits update automatically after a short pause.</p></section>
+</aside>
+<article>
+<div class="statusbar"><span id="status" role="status">Opening workbench…</span><label class="zoom">Zoom <select id="zoom"><option value="50">50%</option><option value="75">75%</option><option value="100" selected>100%</option><option value="150">150%</option><option value="200">200%</option></select></label></div>
+<pre id="error" role="alert" hidden></pre><p id="notes" class="notice" hidden></p>
+<div id="preview" aria-label="Rendered proof"><p class="empty">Open a case, or enter text and a font path.</p></div>
+<p class="hint">Go renders final glyph outlines and positions. Click ink to select; repeated clicks cycle overlapping targets. The glyph list also selects zero-advance and empty glyphs.</p>
+<section class="inspection"><h2>Selected glyph &amp; source cluster</h2><p id="details">No glyph selected.</p><pre id="source" dir="auto" aria-label="Original source cluster"></pre><p id="cluster" class="hint">Highlighting describes a cluster span, not an exact character-to-glyph mapping.</p><p class="guidekey">Selection guides: <span class="inkkey">ink bounds</span> · <span class="penkey">pen and advance</span> · <span class="originkey">positioned origin and offset</span></p></section>
+<section><div class="tableheading"><h2>Logical glyph records</h2><label>Variant <select id="row"></select></label></div><p class="hint">Values below are font units, Y upward. The preview uses pixels, Y downward. RTL reverses the complete record sequence for display.</p><div class="tablewrap"><table><thead><tr><th>Index</th><th>GID</th><th>Cluster</th><th>Visual</th><th>Advance X / Y</th><th>Offset X / Y</th></tr></thead><tbody id="glyphs"></tbody></table></div></section>
+</article>
+</main><footer>One font · one Latin or Hebrew run · original text preserved · no paragraph layout</footer>
+</body></html>

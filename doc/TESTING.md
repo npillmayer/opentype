@@ -1085,11 +1085,24 @@ For manual inspection:
 go run ./ot-tools shape testdata/fonts/GentiumPlus-R.ttf AB
 ```
 
-The CLI also accepts feature, codepoint, and watermark flags, but its feature
-parser does not accept indexed range syntax. See [OT_TOOLS.md](OT_TOOLS.md) for
-`shape`, `view`, and `font`, and [SHAPING_BENCHMARKS.md](SHAPING_BENCHMARKS.md)
-for benchmark scope and historical results. The ordinary-shaping benchmark is a
-small fixture, not a representative complex-script workload.
+The CLI accepts feature ranges in original scalar coordinates, codepoints,
+file/stdin input, and watermark flags. `proof` executes saved comparisons;
+`serve` opens the local browser workbench. See [OT_TOOLS.md](OT_TOOLS.md) for
+runnable instructions and a browser smoke-check recipe, and
+[SHAPING_BENCHMARKS.md](SHAPING_BENCHMARKS.md) for benchmark scope and
+historical results. The ordinary-shaping benchmark is a small fixture, not a
+representative complex-script workload.
+
+Tooling regressions live in `internal/proof` (shared geometry, parsing and seven
+unchanged offline capture checks) and `ot-tools` (CLI actions, HTTP validation,
+session isolation and CLI/HTTP export parity). Browser source/update helpers use
+Node's built-in test runner; Node is not a runtime dependency of `ot-tools`:
+
+```sh
+go test ./internal/proof ./ot-tools -count=1
+go test -race ./internal/proof ./ot-tools -count=1
+node --test ot-tools/workbench/*_test.mjs
+```
 
 ## Next testing priorities
 

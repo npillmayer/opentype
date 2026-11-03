@@ -364,7 +364,3 @@ block export, then correct them. Download all three outputs, reopen the download
 case and replay it with CLI `proof`; PNG bytes and glyph records should match
 for these nonrandom cases. This is manual UI verification, not an independent
 shaping oracle.
-
-Still outside this iteration: event input, mixed-script paragraphs, line breaking,
-font fallback, new script engines, detailed lookup tracing and cloud hosting. HarfBuzz comparison is explicitly outside
-the tool's planned scope; existing offline oracle tests remain regression checks.

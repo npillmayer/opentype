@@ -19,6 +19,15 @@ Create a [Shaper] with the candidate shaping engines, describe the run with
 A zero [BufferOptions] selects default buffering. See the examples for complete
 programs.
 
+For concurrent production and consumption, [NewStreamingShaper] supplies a
+buffered glyph channel and an internal sink. Call [StreamingShaper.Shape]
+sequentially for each run in a producer goroutine, consume
+[StreamingShaper.Glyphs] in another, and call [StreamingShaper.Finish] after the
+last run. After draining the channel, [StreamingShaper.Err] reports the terminal
+result. A failed or canceled call closes the stream automatically. Output
+cluster offsets advance by each run's original scalar count and can be reset
+with [StreamingShaper.SetInitialCluster]; feature ranges remain run-relative.
+
 # Input
 
 [Params] names the font, direction, ISO 15924 script, and BCP 47 language.

@@ -93,6 +93,74 @@ The source must return `io.EOF` to terminate. Rune byte sizes are ignored by
 ordinary ingestion; cluster IDs are monotonically assigned codepoint indexes.
 The sink receives individual records, not batches or flush notifications.
 
+## Buffered channel API
+
+`NewStreamingShaper(capacity, engines...)` creates an ordinary `Shaper`, a
+buffered glyph channel, and an internal channel sink. Capacity must be positive
+and counts output records; it is separate from `BufferOptions` and its raw-input
+limits. Construction starts no goroutines.
+
+```go
+func NewStreamingShaper(capacity int, engines ...ShapingEngine) (*StreamingShaper, error)
+func (s *StreamingShaper) Shape(ctx context.Context, params Params, src RuneSource, opts BufferOptions) error
+func (s *StreamingShaper) SetInitialCluster(id uint32) error
+func (s *StreamingShaper) Glyphs() <-chan GlyphRecord
+func (s *StreamingShaper) Finish() error
+func (s *StreamingShaper) Err() error
+```
+
+Each synchronous `Shape` call handles one uniform run with its own parameters
+and buffer settings. A producer goroutine can call it repeatedly while a
+consumer drains `Glyphs()`. Runs are shaped independently, with no retained
+shaping context between calls. Output stays in logical order, with no run or
+cluster completion records. Itemization, metadata associations, and Unicode
+segmentation remain the caller's responsibility. This wrapper accepts ordinary
+`RuneSource` input; it does not add a channel version of `ShapeEvents`.
+
+The stream starts with cluster offset zero. After each successful run, the
+offset advances by its original scalar count, including scalars merged into
+clusters or producing no output. `SetInitialCluster` overrides the next offset
+before or between calls. Only output cluster IDs are rebased; indexed feature
+ranges, diagnostic source indexes, and other glyph fields keep their ordinary
+run-local meanings. IDs must fit `uint32`; an overflowing source position or
+output cluster fails with `ErrClusterOverflow` rather than wrapping. A single
+call is also limited to `MaxUint32` scalars so the existing internal next-index
+counter remains representable. After the last representable scalar, empty runs
+and `Finish` still succeed, and an explicit cluster reset permits another run.
+
+| Operation/result | Stream behavior |
+| --- | --- |
+| Successful `Shape`, including empty input | Leaves the channel open for the next run. |
+| `Finish` while idle | Closes the channel; queued records can still be drained. Repeated calls return the same terminal result. |
+| Accepted `Shape` fails or is canceled | Stores its error before closing the channel; earlier output remains queued. The error is also returned directly. |
+| `Shape`, `SetInitialCluster`, or `Finish` during an active call | Returns `ErrStreamBusy` without altering that call or the stream's terminal error. |
+| `Shape` or `SetInitialCluster` after closure | Returns `ErrStreamClosed`. |
+
+After draining the closed channel, `Err()` returns the final result: nil on
+successful completion, otherwise the shaping/source/cancellation error. A nil
+`Err()` while the channel remains open does not establish completion. No error
+sentinel is mixed into the glyph channel, and failures are not resumable.
+
+Channel sends select on the supplied context, so cancellation releases a
+producer blocked by a full channel. Cancellation is also checked between source
+reads and before returning success. It does not interrupt a `ReadRune` already
+executing or an executing shaping lookup. Blocking sources must cooperate with
+cancellation themselves. The context applies during that `Shape` call, not
+while the stream is idle: the producer must eventually call `Finish` or submit
+another run. A consumer stopping early must cancel the producer's active
+context. The active producer closes its channel only after it has stopped
+sending; `Finish` does not close underneath it.
+
+Lifecycle operations and `Err` are synchronized. This does not establish
+concurrent safety for fonts or engines shared with other shapers. An instance
+must be constructed with `NewStreamingShaper` and must not be copied.
+
+See `ExampleStreamingShaper` in [example_test.go](../otshape/example_test.go)
+for a complete producer/consumer example. `TestStreamingShaper*` covers reuse,
+output parity across Latin/Hebrew runs and internal flushes, cluster rebasing,
+terminal errors, and cancellation under backpressure. The example's glyph
+expectations come from the existing independent HarfBuzz `office` capture.
+
 ## State and ownership
 
 | Source | Responsibility |

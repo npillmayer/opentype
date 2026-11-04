@@ -30,10 +30,15 @@ Current entry-point signatures are:
 func NewShaper(engines ...ShapingEngine) *Shaper
 func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts BufferOptions) error
 func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink, bufOpts BufferOptions) error
+func NewStreamingShaper(capacity int, engines ...ShapingEngine) (*StreamingShaper, error)
+func (s *StreamingShaper) Shape(ctx context.Context, params Params, src RuneSource, opts BufferOptions) error
 ```
 
 These are method-based calls, not package-level `Shape(req)` functions.
-See [STREAMING_API.md](STREAMING_API.md) for sources, sinks, and events.
+`StreamingShaper` wraps an ordinary shaper with a buffered output channel for
+sequential runs and a concurrent consumer. See
+[STREAMING_API.md](STREAMING_API.md#buffered-channel-api) for its completion,
+cancellation, and cluster-offset contract, as well as sources, sinks, and events.
 
 ## Output order and clusters
 

@@ -37,7 +37,8 @@ func FontSupportsScript(otf *ot.Font, scr ot.Tag, lang ot.Tag) (ot.Tag, ot.Tag) 
 	return scr, ot.DFLT
 }
 
-// FontMetrics retrieves selected metrics of a font.
+// FontMetrics retrieves selected metrics of a font in font units.
+// Use [FontScale] to convert metric distances to a desired em size.
 func FontMetrics(otf *ot.Font) FontMetricsInfo {
 	metrics := FontMetricsInfo{}
 	if table := otf.Table(ot.T("hhea")); table != nil {
@@ -111,7 +112,9 @@ func CodePointForGlyph(otf *ot.Font, gid ot.GlyphIndex) rune {
 	return otf.CMap.GlyphIndexMap.ReverseLookup(gid)
 }
 
-// GlyphMetrics retrieves metrics for a given glyph.
+// GlyphMetrics retrieves nominal metrics for a given glyph in font units,
+// before shaping and positioning adjustments. Use [FontScale] to convert these
+// metrics to a desired em size; use the shaper's final advances for shaped text.
 func GlyphMetrics(otf *ot.Font, gid ot.GlyphIndex) GlyphMetricsInfo {
 	metrics := GlyphMetricsInfo{}
 	//

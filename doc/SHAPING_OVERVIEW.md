@@ -74,6 +74,38 @@ The ordinary request path is:
 The workspace reuses allocations, but reshapes uncommitted carry each cycle.
 See [STREAMING_API.md](STREAMING_API.md) for exact cut semantics and limitations.
 
+## Converting output to pixels or points
+
+`GlyphRecord.Pos` advances and offsets are in font units. Use
+[`otquery.FontScale`](../otquery/scale.go) with the same font used for shaping
+and the desired em size to convert them:
+
+```go
+scale, err := otquery.FontScale(font, 16) // 16 pixels per em
+if err != nil {
+    return err
+}
+// For each output record g, with penX and penY in pixels:
+x := penX + float64(g.Pos.XOffset)*scale
+y := penY - float64(g.Pos.YOffset)*scale
+// Draw g.GID at (x, y), then advance the pen:
+penX += float64(g.Pos.XAdvance) * scale
+penY -= float64(g.Pos.YAdvance) * scale
+```
+
+This example uses screen coordinates with Y increasing downward. For a Y-up
+coordinate system, add the scaled Y values instead. Apply this placement after
+the caller's visual ordering step where required; scaling does not reorder glyphs.
+
+The size determines the output unit: use `12` for 12-point output, `1` for ems,
+or `12 * dpi / 72` for a 12-point font in pixels. Reuse the factor for a fixed
+font and size. Multiplication preserves fractional positions; rounding and
+hinting are separate rendering decisions. Use final shaped advances rather than
+replacing them with the nominal advances returned by `otquery.GlyphMetrics`.
+
+`FontScale` reports invalid sizes and missing or invalid units-per-em data as
+errors. See its Go documentation for the precise input requirements.
+
 ## Normalization
 
 Active normalization is in `normalize.go`. Engine policy selects auto, none,

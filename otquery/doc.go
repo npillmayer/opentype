@@ -9,6 +9,15 @@ Clients of this package will, amongst other, be:
 
 ▪︎ glyph rasterizers, such as FreeType (https://github.com/golang/freetype)
 
+# Converting font units
+
+[FontMetrics] and [GlyphMetrics] return design metrics in font units. [FontScale]
+uses a concrete font's units per em and a requested em size to produce a reusable
+conversion factor. Multiply font-unit values by this factor to obtain pixels,
+points, or another chosen unit. The same factor applies to the final advances
+and offsets emitted by the shaper. Rounding and coordinate transforms belong to
+the caller.
+
 # Status
 
 Work in progress. Handling fonts is fiddly and fonts have become complex software

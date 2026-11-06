@@ -107,6 +107,31 @@ func ExampleShaper_Shape() {
 	// gid=72 cluster=5 advance=946
 }
 
+// Short runs can be shaped synchronously into reusable caller-owned storage.
+func ExampleShaper_ShapeInto() {
+	params := otshape.Params{
+		Font:      loadGentium(),
+		Direction: bidi.LeftToRight,
+		Script:    language.MustParseScript("Latn"),
+		Language:  language.English,
+	}
+	shaper := otshape.NewShaper(otcore.New())
+	var storage [16]otshape.GlyphRecord
+	n, err := shaper.ShapeInto(params, strings.NewReader("office"), storage[:])
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	for _, glyph := range storage[:n] {
+		glyphPrinter{}.WriteGlyph(glyph)
+	}
+	// Output:
+	// gid=82 cluster=0 advance=1030
+	// gid=741 cluster=1 advance=1829
+	// gid=70 cluster=4 advance=895
+	// gid=72 cluster=5 advance=946
+}
+
 // eventList is a minimal InputEventSource that replays a fixed event list.
 type eventList []otshape.InputEvent
 

@@ -93,6 +93,46 @@ The source must return `io.EOF` to terminate. Rune byte sizes are ignored by
 ordinary ingestion; cluster IDs are monotonically assigned codepoint indexes.
 The sink receives individual records, not batches or flush notifications.
 
+## Caller-owned output slice
+
+For short runs such as word fragments, use the synchronous `Shaper.ShapeInto`
+method. It needs no channel, custom sink, or completion call:
+
+```go
+var storage [64]otshape.GlyphRecord
+n, err := shaper.ShapeInto(params, strings.NewReader("hyphen-"), storage[:])
+if err != nil {
+    return err
+}
+glyphs := storage[:n]
+```
+
+`ShapeInto(params Params, src RuneSource, dst []GlyphRecord) (n int, err error)`
+delegates to ordinary `Shape` with default `BufferOptions`. It shapes exactly
+the supplied run, including a visible hyphen if supplied, in logical order.
+Cluster and feature indexes remain relative to this call's original scalars.
+The shaper and output storage can be reused across calls.
+
+Output space is `len(dst)`, not `cap(dst)`. The method never grows or retains
+the slice and leaves `dst[n:]` unchanged. To expose all reusable storage, pass
+`scratch[:cap(scratch)]`. An exact fit succeeds; attempting to emit another
+glyph returns `ErrGlyphBufferFull`, distinct from the internal shaping error
+`ErrBufferFull`. Nil and zero-length destinations are permitted: they succeed
+if shaping succeeds with no output, including when substitutions delete all
+input. Destination size does not bypass input validation or shaping limits.
+
+On any error, `n` reports the records already written. They remain in the
+destination, but the fragment is incomplete and may end inside a cluster;
+use the fragment only after success. Neither input consumption nor destination
+writes are rolled back. To retry overflow, provide a larger destination and a
+fresh or reset reader. The overflow error does not give the total required size.
+
+This API reuses caller-owned output storage, but still allocates internal
+shaping workspace. Its internal buffer limits are independent of output space.
+Clients requiring explicit buffer settings can continue to use `Shape` with a
+sink. See `ExampleShaper_ShapeInto` in
+[example_test.go](../otshape/example_test.go) for a complete example.
+
 ## Buffered channel API
 
 `NewStreamingShaper(capacity, engines...)` creates an ordinary `Shaper`, a

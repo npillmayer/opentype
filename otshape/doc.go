@@ -19,6 +19,16 @@ Create a [Shaper] with the candidate shaping engines, describe the run with
 A zero [BufferOptions] selects default buffering. See the examples for complete
 programs.
 
+For short fragments, [Shaper.ShapeInto] fills a caller-owned slice synchronously:
+
+	var storage [64]otshape.GlyphRecord
+	n, err := shaper.ShapeInto(params, strings.NewReader(text), storage[:])
+
+On success, the complete result is storage[:n]. Only the supplied slice's length
+is writable; the method does not grow it. An extra output glyph returns
+[ErrGlyphBufferFull]. On error, n counts the records already written, but the
+fragment is incomplete. Internal shaping workspace is still allocated.
+
 For concurrent production and consumption, [NewStreamingShaper] supplies a
 buffered glyph channel and an internal sink. Call [StreamingShaper.Shape]
 sequentially for each run in a producer goroutine, consume

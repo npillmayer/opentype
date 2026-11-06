@@ -29,12 +29,16 @@ Current entry-point signatures are:
 ```go
 func NewShaper(engines ...ShapingEngine) *Shaper
 func (s *Shaper) Shape(params Params, src RuneSource, sink GlyphSink, bufOpts BufferOptions) error
+func (s *Shaper) ShapeInto(params Params, src RuneSource, dst []GlyphRecord) (n int, err error)
 func (s *Shaper) ShapeEvents(params Params, src InputEventSource, sink GlyphSink, bufOpts BufferOptions) error
 func NewStreamingShaper(capacity int, engines ...ShapingEngine) (*StreamingShaper, error)
 func (s *StreamingShaper) Shape(ctx context.Context, params Params, src RuneSource, opts BufferOptions) error
 ```
 
 These are method-based calls, not package-level `Shape(req)` functions.
+`ShapeInto` fills caller-owned output storage using default buffering; see
+[the slice API contract](STREAMING_API.md#caller-owned-output-slice) for bounds,
+overflow, and partial-result behavior.
 `StreamingShaper` wraps an ordinary shaper with a buffered output channel for
 sequential runs and a concurrent consumer. See
 [STREAMING_API.md](STREAMING_API.md#buffered-channel-api) for its completion,

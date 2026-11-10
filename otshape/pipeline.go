@@ -16,6 +16,8 @@ type RuneSource interface {
 }
 
 // GlyphRecord is one shaped output glyph in array-of-struct form.
+// Use [GlyphRecord.PositionedGlyph] for a compact rendering view without
+// feature masks, break-safety flags, or attachment diagnostics.
 //
 // Cluster's contract is HarfBuzz level-0 grouping, anchored at zero-based input
 // Unicode scalar indexes (not byte offsets). Base/mark groups share an anchor;

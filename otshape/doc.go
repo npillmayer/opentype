@@ -72,6 +72,12 @@ nominal advance width; offsets move the glyph without moving the pen. The
 fields Mask and UnsafeFlags and the attachment fields of the position are
 internal shaping state; they are not meant for layout decisions.
 
+[GlyphRecord.PositionedGlyph] returns a compact [PositionedGlyph] value with
+the glyph ID, source cluster, and four advance/offset values. The conversion
+preserves font units and ordering and leaves the detailed record unchanged.
+For RTL rendering, apply [VisualOrder] before converting the records. Shaping
+APIs continue to emit [GlyphRecord] for callers needing detailed diagnostics.
+
 # Shaping engines
 
 Script-specific behavior comes from shaping engines (see [ShapingEngine]).

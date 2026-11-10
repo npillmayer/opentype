@@ -84,6 +84,32 @@ The helper does not resolve bidi levels, arrange multiple runs on a line, or
 choose line breaks. It is not idempotent for RTL: applying it twice restores
 the original order. The shaper's sink continues to emit logical order.
 
+### Compact rendering output
+
+`GlyphRecord.PositionedGlyph()` returns an `otshape.PositionedGlyph` value
+containing `GID`, `Cluster`, `XAdvance`, `YAdvance`, `XOffset`, and `YOffset`.
+The cluster is copied from `GlyphRecord.Cluster`, preserving its original
+Unicode scalar index. Position values remain signed font units, with shaping
+adjustments already included. The font and size remain caller-owned context.
+
+For rendering, first arrange a directional run with `VisualOrder`, then convert:
+
+```go
+visual, err := otshape.VisualOrder(logical, params.Direction, false)
+if err != nil {
+    return err
+}
+positioned := make([]otshape.PositionedGlyph, len(visual))
+for i, record := range visual {
+    positioned[i] = record.PositionedGlyph()
+}
+```
+
+Conversion copies values without modifying the record, reordering glyphs,
+scaling, or rounding. Use `otquery.FontScale` for size conversion. Feature masks,
+break-safety flags, and attachment diagnostics are omitted; retain the detailed
+records if those are needed. All shaping APIs continue to emit `GlyphRecord`.
+
 ## HarfBuzz compatibility and intentional differences
 
 The compatibility target is the complete shaping result within the supported

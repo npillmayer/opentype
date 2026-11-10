@@ -57,6 +57,33 @@ records the implementation gap. Feature ranges address original source scalars,
 not normalized buffer positions (SHAPE-002). A cluster boundary alone does not
 establish a safe streaming cut.
 
+### Converting a single run to visual order
+
+`otshape.VisualOrder(glyphs, direction, inPlace)` returns `([]GlyphRecord, error)`.
+Pass the resolved horizontal direction used for shaping. LTR preserves order;
+RTL reverses the entire record sequence, including records within a cluster.
+Positions, clusters, and metadata travel with their glyphs unchanged. Attachment
+diagnostic indexes are not remapped to visual indexes.
+
+With `inPlace=false`, the result is an independent copy, even for LTR. With
+`inPlace=true`, it reuses and modifies the original slice. Nil and empty slices
+are accepted. Mixed, neutral, and invalid directions return an error without
+modifying the input.
+
+```go
+visual, err := otshape.VisualOrder(logical, params.Direction, false)
+if err != nil {
+    return err
+}
+// Accumulate advances and apply offsets from visual when rendering.
+```
+
+Supply a complete directional run or a line fragment selected by layout, in
+logical shaping order. Never reverse arbitrary streaming chunks separately.
+The helper does not resolve bidi levels, arrange multiple runs on a line, or
+choose line breaks. It is not idempotent for RTL: applying it twice restores
+the original order. The shaper's sink continues to emit logical order.
+
 ## HarfBuzz compatibility and intentional differences
 
 The compatibility target is the complete shaping result within the supported

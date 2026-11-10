@@ -96,6 +96,11 @@ penY -= float64(g.Pos.YAdvance) * scale
 This example uses screen coordinates with Y increasing downward. For a Y-up
 coordinate system, add the scaled Y values instead. Apply this placement after
 the caller's visual ordering step where required; scaling does not reorder glyphs.
+For a single horizontal directional run, call
+`otshape.VisualOrder(logical, params.Direction, false)` for a reordered copy, or
+pass `true` to reorder the original slice. Handle its error before rendering.
+See the [single-run contract](SHAPER_INTERFACES.md#converting-a-single-run-to-visual-order)
+for direction validation and streaming restrictions.
 
 The size determines the output unit: use `12` for 12-point output, `1` for ems,
 or `12 * dpi / 72` for a 12-point font in pixels. Reuse the factor for a fixed

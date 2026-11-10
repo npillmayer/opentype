@@ -57,6 +57,11 @@ The sink receives one [GlyphRecord] per glyph, in logical order: the order of
 the text after normalization and reordering, not the visual order. This also
 holds for right-to-left text; visual ordering is the caller's task.
 
+[VisualOrder] converts one horizontal directional run to visual order, either
+on a copy or in place. Collect the complete run (or a line fragment selected by
+layout) before converting; do not reverse arbitrary streaming chunks separately.
+Mixed-direction text needs bidi resolution and run arrangement by the caller.
+
 Each record carries a cluster value. Clusters follow HarfBuzz cluster level 0:
 a base character and its combining marks form one cluster, and its value is the
 index of the cluster's first Unicode scalar value in the input. When glyphs

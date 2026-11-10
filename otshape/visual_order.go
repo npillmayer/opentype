@@ -18,7 +18,9 @@ import (
 // even for left-to-right input. Nil input returns nil; empty input is valid.
 // Invalid directions return nil and an error without modifying glyphs.
 //
-// Each complete GlyphRecord moves with its positions, cluster, and metadata.
+// G may be GlyphRecord, PositionedGlyph, or a client-defined glyph record. No
+// fields are inspected: each complete record moves with its positions, cluster,
+// and metadata. Copy mode copies records shallowly, not any referenced data.
 // Advances and offsets are neither negated nor recomputed. Attachment diagnostic
 // indexes retain their original shaping meaning; they are not remapped to visual
 // indexes. Accumulate advances for rendering after this conversion.
@@ -28,7 +30,7 @@ import (
 // chunks: reversing chunks does not reverse the complete run. This function does
 // not resolve bidi levels, arrange multiple runs, choose line breaks, or validate
 // run boundaries. Calling it again on RTL output reverses that output back.
-func VisualOrder(glyphs []GlyphRecord, direction bidi.Direction, inPlace bool) ([]GlyphRecord, error) {
+func VisualOrder[G any](glyphs []G, direction bidi.Direction, inPlace bool) ([]G, error) {
 	if direction != bidi.LeftToRight && direction != bidi.RightToLeft {
 		return nil, fmt.Errorf("visual order: direction must be left-to-right or right-to-left")
 	}

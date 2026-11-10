@@ -25,7 +25,7 @@ type PositionedGlyph struct {
 // and final advances and offsets. It uses g.Cluster, not g.Pos.Cluster.
 // It does not scale, round, reorder, or finalize positioning. Use it on emitted
 // shaping output. Converting a sequence preserves its existing order; to render
-// an RTL run, apply [VisualOrder] to the detailed records before converting them.
+// an RTL run, apply [VisualOrder] before or after converting the records.
 func (g GlyphRecord) PositionedGlyph() PositionedGlyph {
 	return PositionedGlyph{
 		GID: g.GID, Cluster: g.Cluster,

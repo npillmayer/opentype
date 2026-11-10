@@ -58,7 +58,8 @@ the text after normalization and reordering, not the visual order. This also
 holds for right-to-left text; visual ordering is the caller's task.
 
 [VisualOrder] converts one horizontal directional run to visual order, either
-on a copy or in place. Collect the complete run (or a line fragment selected by
+on a copy or in place. It accepts GlyphRecord, PositionedGlyph, and client-defined
+glyph record slices without conversion. Collect the complete run (or a line fragment selected by
 layout) before converting; do not reverse arbitrary streaming chunks separately.
 Mixed-direction text needs bidi resolution and run arrangement by the caller.
 
@@ -75,8 +76,8 @@ internal shaping state; they are not meant for layout decisions.
 [GlyphRecord.PositionedGlyph] returns a compact [PositionedGlyph] value with
 the glyph ID, source cluster, and four advance/offset values. The conversion
 preserves font units and ordering and leaves the detailed record unchanged.
-For RTL rendering, apply [VisualOrder] before converting the records. Shaping
-APIs continue to emit [GlyphRecord] for callers needing detailed diagnostics.
+For RTL rendering, apply [VisualOrder] before or after converting the records.
+Shaping APIs continue to emit [GlyphRecord] for callers needing detailed diagnostics.
 
 # Shaping engines
 

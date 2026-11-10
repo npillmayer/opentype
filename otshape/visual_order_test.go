@@ -90,3 +90,44 @@ func ExampleVisualOrder() {
 	// gid=10 cluster=0
 	// logical first glyph: 10
 }
+
+// A client record need not embed an OpenType type or even be comparable.
+func TestVisualOrderClientGlyphs(t *testing.T) {
+	type clientGlyph struct {
+		ID              uint32
+		Cluster         uint32
+		Advance, Offset int32
+		Metadata        []string
+	}
+	a := clientGlyph{1, 0, 730, 0, []string{"base"}}
+	b := clientGlyph{2, 0, 0, 539, []string{"mark"}}
+	for _, dir := range []bidi.Direction{bidi.LeftToRight, bidi.RightToLeft} {
+		for _, inPlace := range []bool{false, true} {
+			t.Run(fmt.Sprintf("direction=%d/inPlace=%t", dir, inPlace), func(t *testing.T) {
+				input := []clientGlyph{a, b}
+				want := []clientGlyph{a, b}
+				if dir == bidi.RightToLeft {
+					want = []clientGlyph{b, a}
+				}
+				got, err := otshape.VisualOrder(input, dir, inPlace)
+				if err != nil || !reflect.DeepEqual(got, want) {
+					t.Fatalf("got %+v, %v; want %+v", got, err, want)
+				}
+				if (&got[0] == &input[0]) != inPlace {
+					t.Fatal("unexpected backing array aliasing")
+				}
+				if !inPlace {
+					got[0].ID = 999
+					if !reflect.DeepEqual(input, []clientGlyph{a, b}) {
+						t.Fatal("copy mode modified input")
+					}
+				}
+			})
+		}
+	}
+	// An untyped nil requires an explicit type argument with the generic API.
+	got, err := otshape.VisualOrder[clientGlyph](nil, bidi.RightToLeft, false)
+	if err != nil || got != nil {
+		t.Fatalf("nil input: %v, %v", got, err)
+	}
+}
